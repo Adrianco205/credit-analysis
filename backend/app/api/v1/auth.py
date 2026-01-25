@@ -1,5 +1,7 @@
 import secrets
+import uuid
 from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -11,43 +13,66 @@ from app.models.otp import VerificacionOTP
 from app.repositories.users_repo import UsersRepo
 from app.repositories.otp_repo import OtpRepo
 from app.services.email_otp_service import EmailOtpService
+from app.schemas.auth import (
+    RegisterRequest,
+    RegisterResponse,
+    VerifyOtpRequest,
+    LoginRequest,
+    TokenResponse,
+)
 
 router = APIRouter()
 
 
+
 @router.post("/register", response_model=dict)
-def register(payload, db: Session = Depends(get_db)):
-    # Pydantic manual import (para evitar circular en este snippet)
-    from app.schemas.auth import RegisterRequest, RegisterResponse
-
-    data = RegisterRequest(**payload) if isinstance(payload, dict) else payload
+def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     users = UsersRepo(db)
+    
+    # 1. Buscar si el usuario ya existe (por email o identificación)
+    existing_user = users.get_by_email(str(payload.email)) or \
+                    users.get_by_identificacion(payload.identificacion)
 
-    if users.get_by_email(str(data.email)):
-        raise HTTPException(status_code=409, detail="El email ya está registrado.")
-    if users.get_by_identificacion(data.identificacion):
-        raise HTTPException(status_code=409, detail="La identificación ya está registrada.")
+    if existing_user:
+        # Si ya está activo, lanzamos el error de conflicto
+        if existing_user.status == "ACTIVE":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, 
+                detail="El usuario ya se encuentra registrado y activo."
+            )
+        
+        # SI ESTÁ PENDING: Lo reutilizamos. Actualizamos sus datos por si cambió algo.
+        user = existing_user
+        user.nombres = payload.nombres
+        user.primer_apellido = payload.primer_apellido
+        user.segundo_apellido = payload.segundo_apellido
+        user.password_hash = hash_password(payload.password)
+        user.telefono = payload.telefono
+        user.ciudad_id = payload.ciudad_id
+        db.add(user)
+        db.commit()
+    else:
+        # SI NO EXISTE: Creamos el nuevo registro
+        user = Usuario(
+            nombres=payload.nombres,
+            primer_apellido=payload.primer_apellido,
+            segundo_apellido=payload.segundo_apellido,
+            tipo_identificacion=payload.tipo_identificacion,
+            identificacion=payload.identificacion,
+            email=str(payload.email),
+            telefono=payload.telefono,
+            genero=payload.genero,
+            password_hash=hash_password(payload.password),
+            ciudad_id=payload.ciudad_id,
+            status="PENDING",
+            email_verificado=False,
+        )
+        user = users.create_user(user)
+        # Asignar rol por primera vez
+        users.ensure_role_assignment(user.id, "CLIENT")
 
-    user = Usuario(
-        nombres=data.nombres,
-        primer_apellido=data.primer_apellido,
-        segundo_apellido=data.segundo_apellido,
-        tipo_identificacion=data.tipo_identificacion,
-        identificacion=data.identificacion,
-        email=str(data.email),
-        telefono=data.telefono,
-        genero=data.genero,
-        password_hash=hash_password(data.password),
-        ciudad_id=data.ciudad_id,
-        status="PENDING",
-        email_verificado=False,
-    )
-
-    user = users.create_user(user)
-    users.ensure_role_assignment(user.id, "CLIENT")
-
-    # Crear OTP
-    code = f"{secrets.randbelow(1000000):06d}"
+    # 2. Lógica de OTP (Se genera uno nuevo independientemente de si es nuevo o re-intento)
+    code = f"{secrets.randbelow(1_000_000):06d}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
 
     otp_repo = OtpRepo(db)
@@ -61,81 +86,81 @@ def register(payload, db: Session = Depends(get_db)):
     )
     otp_repo.create(otp)
 
-    # Enviar email
+    # 3. Enviar email
     try:
-        EmailOtpService().send_otp(to_email=str(data.email), code=code)
+        EmailOtpService().send_otp(to_email=str(payload.email), code=code)
     except Exception:
-        # No reveles detalles internos
-        raise HTTPException(status_code=500, detail="No se pudo enviar el OTP al correo.")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, 
+            detail="Error al enviar el código de verificación al correo. Intenta de nuevo."
+        )
 
     return RegisterResponse(
         user_id=str(user.id),
         status=user.status,
-        message="Usuario creado en estado PENDING. Verifica el OTP enviado al correo para activar tu cuenta.",
+        message="Código de verificación enviado. Revisa tu correo para activar tu cuenta.",
     ).model_dump()
 
 
 @router.post("/verify-otp", response_model=dict)
-def verify_otp(payload, db: Session = Depends(get_db)):
-    from app.schemas.auth import VerifyOtpRequest
-
-    data = VerifyOtpRequest(**payload) if isinstance(payload, dict) else payload
-
+def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     users = UsersRepo(db)
     otp_repo = OtpRepo(db)
 
     try:
-        import uuid
-        user_id = uuid.UUID(data.user_id)
+        user_id = uuid.UUID(payload.user_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="user_id inválido.")
+        raise HTTPException(status_code=400, detail="ID de usuario no válido.")
 
     user = users.get_by_id(user_id)
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no existe.")
+        raise HTTPException(status_code=404, detail="El usuario no existe.")
 
+    # Obtenemos el último OTP pendiente
     otp = otp_repo.get_pending(user_id=user.id, tipo="EMAIL")
     if not otp:
-        raise HTTPException(status_code=400, detail="No hay OTP pendiente para este usuario.")
+        raise HTTPException(status_code=400, detail="No tienes códigos de verificación pendientes.")
 
     now = datetime.now(timezone.utc)
+
+    # Verificar expiración
     if otp.expires_at and now > otp.expires_at:
         otp.status = "EXPIRED"
-        otp_repo.save(otp)
-        raise HTTPException(status_code=400, detail="OTP expirado. Solicita uno nuevo.")
+        db.add(otp)
+        db.commit()
+        raise HTTPException(status_code=400, detail="El código ha expirado. Regístrate de nuevo para recibir uno nuevo.")
 
-    if not otp.code_hash or not verify_password(data.code, otp.code_hash):
-        raise HTTPException(status_code=400, detail="OTP incorrecto.")
+    # Verificar validez del código
+    if not verify_password(payload.code, otp.code_hash):
+        raise HTTPException(status_code=400, detail="Código incorrecto.")
 
+    # Marcar como verificado y activar usuario
     otp.status = "VERIFIED"
     otp.used_at = now
-    otp_repo.save(otp)
+    db.add(otp)
 
     user.email_verificado = True
     user.status = "ACTIVE"
     db.add(user)
+    
     db.commit()
     db.refresh(user)
 
-    return {"message": "Cuenta verificada. Ya puedes iniciar sesión.", "status": user.status}
+    return {"message": "¡Cuenta activada con éxito! Ya puedes iniciar sesión.", "status": user.status}
 
 
 @router.post("/login", response_model=dict)
-def login(payload, db: Session = Depends(get_db)):
-    from app.schemas.auth import LoginRequest, TokenResponse
-
-    data = LoginRequest(**payload) if isinstance(payload, dict) else payload
-
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
     users = UsersRepo(db)
-    user = users.get_by_identificacion(data.identificacion)
+    user = users.get_by_identificacion(payload.identificacion)
 
-    if not user or not user.password_hash or not verify_password(data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas.")
+    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Cédula o contraseña incorrectas.")
 
-    if user.status != "ACTIVE" or not user.email_verificado:
+    if user.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cuenta no activa. Verifica tu correo con OTP.",
+            detail="Tu cuenta aún no está activa. Por favor verifica tu correo con el código OTP."
         )
 
     token = create_access_token(subject=str(user.id))

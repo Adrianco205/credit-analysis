@@ -1,8 +1,8 @@
+import uuid  # <--- ESTA ES LA LÍNEA QUE FALTABA
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.user import Usuario
 from app.models.role import Role, UsuarioRole
-
 
 class UsersRepo:
     def __init__(self, db: Session):
@@ -35,3 +35,13 @@ class UsersRepo:
         if not exists:
             self.db.add(UsuarioRole(user_id=user_id, role_id=role.id))
             self.db.commit()
+
+    # Función añadida para el flujo de re-intento de registro
+    def update_pending_user(self, user_id: uuid.UUID, **kwargs) -> Usuario:
+        user = self.get_by_id(user_id)
+        if user and user.status == "PENDING":
+            for key, value in kwargs.items():
+                setattr(user, key, value)
+            self.db.commit()
+            self.db.refresh(user)
+        return user
