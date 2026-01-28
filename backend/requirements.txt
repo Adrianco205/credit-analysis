@@ -10,3 +10,4 @@ bcrypt==4.0.1  # <-- ES VITAL QUE SEA ESTA VERSIÓN
 python-multipart==0.0.9
 email-validator==2.2.0
 apscheduler==3.10.4
+PyPDF2==3.0.1  # Para detección de PDFs encriptados y extracción básica
