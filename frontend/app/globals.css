@@ -1,8 +1,33 @@
 @import "tailwindcss";
 
 :root {
+  /* Base Colors */
   --background: #ffffff;
   --foreground: #171717;
+
+  /* EcoFinanzas Color Palette */
+  --verde-bosque: #1B5E20;
+  --verde-hoja: #4CAF50;
+  --verde-claro: #66BB6A;
+  --verde-suave: #E8F5E9;
+  --blanco: #FFFFFF;
+
+  /* Grays for supporting elements */
+  --gray-50: #F9FAFB;
+  --gray-100: #F3F4F6;
+  --gray-200: #E5E7EB;
+  --gray-300: #D1D5DB;
+  --gray-400: #9CA3AF;
+  --gray-500: #6B7280;
+  --gray-600: #4B5563;
+  --gray-700: #374151;
+  --gray-900: #111827;
+
+  /* Semantic Colors */
+  --success: var(--verde-hoja);
+  --warning: #FBA500;
+  --error: #DC2626;
+  --info: #0284C7;
 }
 
 @theme inline {
@@ -23,4 +48,90 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer base {
+  /* Enlaces con estilo de EcoFinanzas */
+  a {
+    transition: color 200ms;
+
+    &:not([class*='no-color']) {
+      color: var(--verde-bosque);
+      
+      &:hover {
+        color: var(--verde-hoja);
+      }
+    }
+  }
+
+  /* Focus visible para accesibilidad */
+  :focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--background), 0 0 0 4px var(--verde-hoja);
+  }
+}
+
+@layer utilities {
+  /* Utilidades de color personalizadas */
+  .text-verde-bosque { color: var(--verde-bosque); }
+  .text-verde-hoja { color: var(--verde-hoja); }
+  .text-verde-claro { color: var(--verde-claro); }
+  .text-verde-suave { color: var(--verde-suave); }
+
+  .bg-verde-bosque { background-color: var(--verde-bosque); }
+  .bg-verde-hoja { background-color: var(--verde-hoja); }
+  .bg-verde-claro { background-color: var(--verde-claro); }
+  .bg-verde-suave { background-color: var(--verde-suave); }
+
+  .border-verde-bosque { border-color: var(--verde-bosque); }
+  .border-verde-hoja { border-color: var(--verde-hoja); }
+  .border-verde-claro { border-color: var(--verde-claro); }
+  .border-verde-suave { border-color: var(--verde-suave); }
+
+  .ring-verde-bosque { --tw-ring-color: var(--verde-bosque); }
+  .ring-verde-hoja { --tw-ring-color: var(--verde-hoja); }
+  .ring-verde-claro { --tw-ring-color: var(--verde-claro); }
+  .ring-verde-suave { --tw-ring-color: var(--verde-suave); }
+
+  /* Gradientes con tema EcoFinanzas */
+  .gradient-eco-subtle {
+    background-image: linear-gradient(to bottom right, #FFFFFF, #FFFFFF, var(--verde-suave));
+  }
+
+  .gradient-eco-primary {
+    background-image: linear-gradient(to bottom right, var(--verde-bosque), var(--verde-hoja));
+  }
+
+  .gradient-eco-accent {
+    background-image: linear-gradient(to right, var(--verde-hoja), var(--verde-claro));
+  }
+
+  /* Sombras sutiles con verde */
+  .shadow-eco-sm {
+    box-shadow: 0 1px 2px 0 rgba(27, 94, 32, 0.05);
+  }
+
+  .shadow-eco-md {
+    box-shadow: 0 4px 6px -1px rgba(27, 94, 32, 0.1), 0 2px 4px -1px rgba(27, 94, 32, 0.06);
+  }
+
+  .shadow-eco-lg {
+    box-shadow: 0 10px 15px -3px rgba(27, 94, 32, 0.1), 0 4px 6px -2px rgba(27, 94, 32, 0.05);
+  }
+
+  /* Select y opciones */
+  select {
+    color: #111827;
+  }
+
+  select option {
+    color: #111827;
+    background-color: white;
+  }
+
+  select option:checked {
+    background: linear-gradient(#E8F5E9, #E8F5E9), var(--verde-bosque);
+    background-color: var(--verde-bosque);
+    color: white;
+  }
 }
