@@ -1,7 +1,7 @@
 import uuid
 from sqlalchemy import String, Boolean, DateTime, ForeignKey, text
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
@@ -24,3 +24,6 @@ class Usuario(Base):
     status: Mapped[str] = mapped_column(String(20), server_default=text("'PENDING'"))
     email_verificado: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     created_at: Mapped[str | None] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
+
+    # Relaciones
+    referencias = relationship("ReferenciaUsuario", back_populates="usuario", cascade="all, delete-orphan")

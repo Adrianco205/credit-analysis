@@ -1,0 +1,96 @@
+================================================================================
+PROYECTO: ECOFINANZAS - Plataforma de Optimización de Crédito Hipotecario
+CONTEXTO: Sistema de análisis masivo de extractos bancarios para la reducción 
+          de intereses y tiempo de deuda mediante la Ley de Vivienda 546/99.
+================================================================================
+
+1. LÓGICA GENERAL DEL SISTEMA
+--------------------------------------------------------------------------------
+El sistema funciona como un embudo de datos:
+1. El Cliente aporta la "materia prima" (PDF + Datos socioeconómicos).
+2. La IA (Gemini) extrae y valida la veracidad del documento.
+3. El Motor Financiero normaliza los datos (UVR a Pesos) usando Socrata API.
+4. El Administrador refina y genera la "Oportunidad de Ahorro" final.
+
+
+
+2. FASES DE DESARROLLO TÉCNICO
+--------------------------------------------------------------------------------
+
+FASE 1: INTEGRACIÓN SOCRATA (LA VERDAD FINANCIERA)
+- Objetivo: Consultar diariamente el valor de la UVR y la inflación (IPC).
+- Uso: Convertir saldos del extracto a valor real de hoy y proyectar incrementos.
+
+FASE 2: INGESTA Y EXTRACCIÓN (CLIENT SIDE)
+- Endpoint: POST /api/v1/credits/upload
+- Flujo de Validación:
+  1. Verificar si el PDF tiene contraseña. Si sí, usar la proporcionada por el usuario.
+  2. Extracción Gemini: Obtener Saldo, Cuota, Tasa, Seguros, Beneficio FRECH.
+  3. Validación de Identidad: Gemini debe extraer el nombre del titular del PDF.
+     - REGLA: Si 'Nombre_PDF' != 'Nombre_Usuario_DB' -> Rechazar análisis.
+  4. Validación de Tipo: Confirmar que el documento es un extracto hipotecario real.
+- Manual Fallback: Si faltan campos (ej. no se leyó la tasa), permitir que el 
+  usuario los llene, pero BLOQUEAR los campos que la IA sí detectó.
+
+FASE 3: MOTOR FINANCIERO (AMORTIZATION ENGINE)
+- El "Cerebro" de la app. Debe manejar dos sistemas:
+  A. Sistema en Pesos: Amortización francesa estándar.
+  B. Sistema en UVR: Convertir saldo a pesos hoy y proyectar inflación futura.
+- Simulación: Ejecutar 4 simulaciones por crédito:
+  1. Estado Actual (Sin abono extra).
+  2. Opción 1 (Abono X).
+  3. Opción 2 (Abono Y).
+  4. Opción 3 (Abono Z).
+
+FASE 4: DASHBOARD ADMINISTRATIVO (ADMIN CONTROL)
+- Visualización: Filtros por Cédula, Fecha y Número de Crédito.
+- Generación de Propuesta:
+  - Botón "Calcular": Ejecuta el Motor Financiero.
+  - Cálculo de Honorarios: 3% del Ahorro Total Proyectado o Tarifa Mínima.
+  - Ingresos Mínimos: Calcular el 30% de la nueva cuota (Ley de Vivienda).
+- Edición Manual: El Admin puede cambiar el "Ingreso Mensual" o los "Abonos" 
+  para ver cómo cambian las tablas en tiempo real antes de entregar al cliente.
+
+3. ESTRUCTURA DE LA BASE DE DATOS (RELEVANTE AL ANÁLISIS)
+--------------------------------------------------------------------------------
+Tablas clave para el Core:
+
+- analisis_hipotecario:
+  * documento_id (FK)
+  * ingresos_cliente, capacidad_pago, tipo_contrato.
+  * datos_extracto: (saldo, cuota, tasa, frech, seguros, amortizacion).
+  * status: (PENDING, PROCESSED, ERROR_NAME_MISMATCH).
+
+- proyecciones_resultados:
+  * analisis_id (FK)
+  * opcion_numero (1, 2, 3 o Manual)
+  * meses_ahorrados, intereses_ahorrados.
+  * honorarios_calculados (3%).
+  * ingresos_requeridos_demostrar.
+
+4. DETALLE DEL RESUMEN PARA EL CLIENTE (UI/UX)
+--------------------------------------------------------------------------------
+El resumen generado debe agruparse en 4 bloques:
+1. DATOS BÁSICOS: (Cuotas, Valor prestado, Beneficio FRECH actual).
+2. LÍMITES BANCARIOS: (Saldo hoy, total por pagar).
+3. AJUSTE INFLACIÓN: (Específico para UVR. Mostrar cuánto ha subido la deuda en pesos).
+4. COSTOS EXTRA: (Suma de intereses y seguros que no abonan a capital).
+
+
+
+5. DETALLE DE PROYECCIÓN PARA EL ADMIN (NUEVAS OPORTUNIDADES)
+--------------------------------------------------------------------------------
+Cada una de las 3 opciones debe calcular:
+- Meses y años restantes.
+- Nuevo valor de cuota (Cuota actual + Abono extra).
+- Ahorro total en intereses (Dinero que deja de ganar el banco).
+- Veces pagado: (Total pagado proyectado / Valor inicial prestado).
+
+6. SEGURIDAD Y REGLAS DE NEGOCIO
+--------------------------------------------------------------------------------
+- Unicidad: Cédula y Email son UNIQUE en la DB.
+- OTP: Integración necesaria para validar que el usuario es real antes de permitir 
+  la carga de documentos financieros sensibles.
+- Privacidad Admin: El administrador tiene acceso a los datos de contacto 
+  (Teléfono/Email) solo para efectos de cierre de venta del servicio.
+================================================================================
