@@ -36,4 +36,4 @@ def cleanup_expired_pending_users():
         logger.error(f"❌ [CLEANUP ERROR] Falló la limpieza automática: {e}")
         db.rollback()
     finally:
-        db.close()
+        db.close() 
