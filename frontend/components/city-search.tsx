@@ -1,34 +1,73 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, MapPin, Loader2, X } from 'lucide-react';
+import { MapPin, Loader2, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
 export interface Ciudad {
-  id: number;
-  nombre: string;
+  valor: string;
+  ciudad: string;
   departamento: string;
 }
 
 interface CitySearchProps {
-  value?: number;
-  onChange: (ciudadId: number, ciudadNombre: string) => void;
+  value?: string;
+  initialQuery?: string;
+  onChange: (valor: string) => void;
   error?: string;
   disabled?: boolean;
 }
 
 export const CitySearch: React.FC<CitySearchProps> = ({
   value,
+  initialQuery,
   onChange,
   error,
   disabled = false,
 }) => {
-  const [query, setQuery] = useState('');
-  const [ciudades, setCiudades] = useState<Ciudad[]>([]);
+  const [query, setQuery] = useState(initialQuery || '');
+  const [allCities, setAllCities] = useState<Ciudad[]>([]);
+  const [filteredCities, setFilteredCities] = useState<Ciudad[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedCity, setSelectedCity] = useState<Ciudad | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  // Cargar todas las ciudades al montar
+  useEffect(() => {
+    const loadCities = async () => {
+      setLoading(true);
+      try {
+        const response = await apiClient.getCities();
+        setAllCities(response);
+      } catch (error) {
+        console.error('Error loading cities:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadCities();
+  }, []);
+
+  // Actualizar query si initialQuery cambia
+  useEffect(() => {
+    if (initialQuery && !query) {
+      setQuery(initialQuery);
+    }
+  }, [initialQuery]);
+
+  // Filtrar ciudades cuando cambia el query
+  useEffect(() => {
+    if (!query) {
+      setFilteredCities([]);
+      return;
+    }
+    const lowerQuery = query.toLowerCase();
+    const filtered = allCities.filter(c => 
+      c.ciudad.toLowerCase().includes(lowerQuery) || 
+      c.departamento.toLowerCase().includes(lowerQuery)
+    );
+    setFilteredCities(filtered);
+  }, [query, allCities]);
 
   // Cerrar dropdown al hacer click fuera
   useEffect(() => {
@@ -42,40 +81,15 @@ export const CitySearch: React.FC<CitySearchProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Buscar ciudades cuando cambia el query
-  useEffect(() => {
-    const searchCities = async () => {
-      setLoading(true);
-      try {
-        // Si query está vacío, traer todas las ciudades
-        const response = await apiClient.searchCities(query);
-        console.log('Cities response:', response);
-        setCiudades(Array.isArray(response) ? response : []);
-      } catch (error) {
-        console.error('Error searching cities:', error);
-        setCiudades([]);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (!isOpen) return;
-    const debounce = setTimeout(searchCities, 300);
-    return () => clearTimeout(debounce);
-  }, [query, isOpen]);
-
   const handleSelect = (ciudad: Ciudad) => {
-    setSelectedCity(ciudad);
-    setQuery(`${ciudad.nombre}, ${ciudad.departamento}`);
+    setQuery(`${ciudad.ciudad}, ${ciudad.departamento}`);
     setIsOpen(false);
-    onChange(ciudad.id, ciudad.nombre);
+    onChange(ciudad.valor);
   };
 
   const handleClear = () => {
-    setSelectedCity(null);
     setQuery('');
-    setCiudades([]);
-    onChange(0, '');
+    onChange('');
   };
 
   return (
@@ -104,7 +118,8 @@ export const CitySearch: React.FC<CitySearchProps> = ({
             ${error ? 'border-red-400 focus:ring-red-200 focus:border-red-500 bg-red-50/30' : 'border-gray-300'}
             ${disabled ? 'bg-gray-100 text-gray-500 cursor-not-allowed border-gray-200' : ''}
           `}
-        />        {loading && (
+        />
+        {loading && (
           <div className="absolute right-4 top-1/2 -translate-y-1/2">
             <Loader2 size={20} className="animate-spin text-verde-hoja" />
           </div>
@@ -123,11 +138,11 @@ export const CitySearch: React.FC<CitySearchProps> = ({
       </div>
 
       {/* Dropdown de resultados */}
-      {isOpen && ciudades.length > 0 && !disabled && (
+      {isOpen && filteredCities.length > 0 && !disabled && (
         <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-          {ciudades.map((ciudad) => (
+          {filteredCities.map((ciudad) => (
             <button
-              key={ciudad.id}
+              key={ciudad.valor}
               type="button"
               onClick={() => handleSelect(ciudad)}
               className="w-full px-4 py-3 text-left hover:bg-verde-bosque/5 transition-colors border-b border-gray-100 last:border-b-0 flex items-center gap-3 group"
@@ -135,7 +150,7 @@ export const CitySearch: React.FC<CitySearchProps> = ({
               <MapPin size={18} className="text-verde-bosque flex-shrink-0 group-hover:text-verde-hoja" />
               <div>
                 <p className="font-medium text-gray-900 group-hover:text-verde-bosque">
-                  {ciudad.nombre}
+                  {ciudad.ciudad}
                 </p>
                 <p className="text-xs text-gray-500">{ciudad.departamento}</p>
               </div>
@@ -144,7 +159,8 @@ export const CitySearch: React.FC<CitySearchProps> = ({
         </div>
       )}
 
-      {isOpen && query.length > 0 && !loading && ciudades.length === 0 && (
+      {/* Solo mostrar mensaje de "No encontrado" si hay query, no estamos cargando, y ya tenemos ciudades cargadas */}
+      {isOpen && query.length > 0 && !loading && filteredCities.length === 0 && allCities.length > 0 && (
         <div className="absolute z-50 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg p-4 text-center text-gray-500 text-sm">
           No se encontraron ciudades
         </div>

@@ -41,6 +41,7 @@ from app.schemas.analisis import (
     LimitesBancoResumen,
     AjusteInflacionResumen,
     CostosExtraResumen,
+    DesgloseInteresesSeguros,
 )
 from app.schemas.propuestas import (
     TiempoAhorrado,
@@ -74,6 +75,7 @@ class CreateAnalysisRequest(BaseModel):
     """Request para crear un análisis."""
     documento_id: UUID
     datos_usuario: DatosUsuarioRequest
+    banco_id: int | None = None  # ID del banco seleccionado por el usuario
 
 
 class UpdateManualFieldsRequest(BaseModel):
@@ -287,7 +289,8 @@ async def create_analysis(
     result = await service.create_analysis_from_document(
         documento_id=request.documento_id,
         usuario=current_user,
-        datos_usuario=datos_usuario
+        datos_usuario=datos_usuario,
+        banco_id=request.banco_id  # ID del banco seleccionado por el usuario
     )
     
     if not result.success:
@@ -376,7 +379,7 @@ def get_analysis_summary(
     Obtener el resumen del crédito organizado en 4 bloques:
     1. DATOS BÁSICOS
     2. LÍMITES CON EL BANCO  
-    3. AJUSTE POR INFLACIÓN (solo UVR)
+    3. AJUSTE POR INFLACIÓN (para todos los sistemas)
     4. INTERESES Y SEGUROS
     """
     repo = AnalysesRepo(db)
@@ -385,16 +388,39 @@ def get_analysis_summary(
     if not analisis:
         raise HTTPException(status_code=404, detail="Análisis no encontrado")
     
-    # Calcular campos derivados si no están
-    if analisis.total_pagado_fecha is None:
-        repo.calculate_derived_fields(analisis)
-        db.commit()
+    # SIEMPRE recalcular campos derivados para tener datos frescos
+    repo.calculate_derived_fields(analisis)
+    db.commit()
     
     # Bloque 1: Datos Básicos
     cuotas_por_pagar = analisis.cuotas_pendientes or 0
-    cuota_actual = analisis.valor_cuota_con_subsidio or analisis.valor_cuota_con_seguros or Decimal("0")
+    
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # CORRECCIÓN FINAL: Cuotas y valores según extracto Bancolombia
+    # ═══════════════════════════════════════════════════════════════════════════════
+    # 
+    # Del extracto:
+    # - Valor de la cuota sin seguros = $305,034.17 (NO mostrar, usuario no puede pagar esto)
+    # - Valor a Pagar = $326,168.17 = cuota subsidiada + seguros (ESTO es cuota_actual)
+    # - Valor cuota sin subsidio Gobierno = $488,889.82 (cuota plena sin FRECH)
+    # - Beneficio FRECH = $183,855.65
+    #
+    # Cuota Completa sin FRECH = cuota_plena + seguros = ~$510,023
+    # ═══════════════════════════════════════════════════════════════════════════════
+    
+    # Cuota que paga el usuario = valor_cuota_con_seguros (INCLUYE seguros)
+    # Este es el "Valor a Pagar" del extracto: $326,168
+    cuota_actual = analisis.valor_cuota_con_seguros or Decimal("0")
+    
+    # Si no tenemos valor_cuota_con_seguros, calcularlo: cuota_sin_seguros + seguros
+    if cuota_actual == 0 and analisis.valor_cuota_con_subsidio:
+        cuota_actual = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
+    
     beneficio_frech = analisis.beneficio_frech_mensual or Decimal("0")
-    cuota_completa = (analisis.valor_cuota_con_seguros or Decimal("0"))
+    
+    # Cuota Completa sin FRECH = lo que pagaría sin subsidio = cuota_actual + beneficio_frech
+    # Esto representa: (cuota_subsidiada + seguros) + beneficio_frech = $326,168 + $183,855 = $510,023
+    cuota_completa = cuota_actual + beneficio_frech
     
     datos_basicos = DatosBasicosResumen(
         valor_prestado=analisis.valor_prestado_inicial or Decimal("0"),
@@ -410,39 +436,61 @@ def get_analysis_summary(
     )
     
     # Bloque 2: Límites con el Banco
-    # MEJORA 3: abono_adicional_cuota siempre en None (diagnóstico inicial)
     limites_banco = LimitesBancoResumen(
         valor_prestado=analisis.valor_prestado_inicial or Decimal("0"),
         saldo_actual_credito=analisis.saldo_capital_pesos or Decimal("0"),
         abono_adicional_cuota=analisis.abono_adicional_actual  # Siempre NULL inicialmente
     )
     
-    # Bloque 3: Ajuste por Inflación (solo UVR)
+    # Bloque 3: Ajuste por Inflación - PARA TODOS los sistemas (no solo UVR)
     ajuste_inflacion = None
-    if analisis.sistema_amortizacion == "UVR":
+    if analisis.ajuste_inflacion_pesos is not None:
         ajuste_inflacion = AjusteInflacionResumen(
             ajuste_pesos=analisis.ajuste_inflacion_pesos or Decimal("0"),
-            porcentaje_ajuste=analisis.porcentaje_ajuste_inflacion or Decimal("0")
+            porcentaje_ajuste=analisis.porcentaje_ajuste_inflacion or Decimal("0"),
+            metodo=analisis.inflation_method
         )
     
-    # Bloque 4: Costos Extra
-    costos_extra = CostosExtraResumen(
-        total_intereses_seguros=analisis.total_intereses_seguros or Decimal("0")
+    # Bloque 4: Costos Extra (con desglose auditable)
+    desglose = DesgloseInteresesSeguros(
+        interes_corriente=analisis.intereses_corrientes_periodo or Decimal("0"),
+        interes_mora=analisis.intereses_mora or Decimal("0"),
+        seguro_vida=analisis.seguro_vida or Decimal("0"),
+        seguro_incendio=analisis.seguro_incendio or Decimal("0"),
+        seguro_terremoto=analisis.seguro_terremoto or Decimal("0"),
+        otros_cargos=analisis.otros_cargos or Decimal("0")
     )
+    
+    costos_extra = CostosExtraResumen(
+        total_intereses_seguros=analisis.total_intereses_seguros or Decimal("0"),
+        desglose=desglose,
+        capital_pagado_periodo=analisis.capital_pagado_periodo,
+        intereses_corrientes_periodo=analisis.intereses_corrientes_periodo,
+        intereses_mora_periodo=analisis.intereses_mora,
+        seguros_total_periodo=analisis.seguros_total_mensual,
+        otros_cargos_periodo=analisis.otros_cargos,
+        formula="sum(interes_corriente + interes_mora + seguros + otros_cargos)"
+    )
+    
+    # Sistema de amortización COMPLETO (ej: "PESOS - C. FIJA")
+    sistema_completo = analisis.sistema_amortizacion or ""
+    if analisis.plan_credito:
+        sistema_completo = f"{analisis.sistema_amortizacion} - {analisis.plan_credito}"
     
     return ResumenCreditoResponse(
         analisis_id=analisis.id,
         numero_credito=analisis.numero_credito,
         nombre_titular=analisis.nombre_titular_extracto,
         banco_nombre=None,  # TODO: Join con tabla bancos
-        sistema_amortizacion=analisis.sistema_amortizacion,
+        sistema_amortizacion=sistema_completo,
         fecha_extracto=analisis.fecha_extracto,
         datos_basicos=datos_basicos,
         limites_banco=limites_banco,
         ajuste_inflacion=ajuste_inflacion,
         costos_extra=costos_extra,
         tasa_cobrada_con_frech=analisis.tasa_interes_subsidiada_ea,
-        seguros_actuales_mensual=analisis.seguros_total_mensual
+        seguros_actuales_mensual=analisis.seguros_total_mensual,
+        is_total_paid_estimated=analisis.is_total_paid_estimated
     )
 
 

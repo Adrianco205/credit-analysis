@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import {
@@ -17,7 +17,6 @@ import {
 
 import { AuthLayout } from '@/components/auth-layout-glass';
 import { Button } from '@/components/ui/button';
-import { CitySearch } from '@/components/city-search';
 import { Input } from '@/components/ui/input';
 import { apiClient } from '@/lib/api-client';
 import { registerSchema, type RegisterFormData } from '@/lib/validations';
@@ -26,19 +25,22 @@ import type { ApiError } from '@/types/api';
 export default function RegisterPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [cities, setCities] = useState<Array<{ valor: string; ciudad: string; departamento: string }>>([]);
+
+  useEffect(() => {
+    apiClient.getCities().then(setCities).catch(console.error);
+  }, []);
 
   const {
     register,
     handleSubmit,
-    control,
-    setValue,
     formState: { errors },
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
     defaultValues: {
       tipo_identificacion: 'CC',
       genero: 'M',
-      ciudad_id: 0,
+      ciudad_departamento: '',
     },
   });
 
@@ -56,7 +58,7 @@ export default function RegisterPage() {
         telefono: data.telefono,
         genero: data.genero || undefined,
         password: data.password,
-        ciudad_id: data.ciudad_id,
+        ciudad_departamento: data.ciudad_departamento || undefined,
       };
 
       const response = await apiClient.register(requestData);
@@ -234,21 +236,26 @@ export default function RegisterPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <Controller
-                  name="ciudad_id"
-                  control={control}
-                  render={({ field }) => (
-                    <CitySearch
-                      value={field.value}
-                      onChange={(id, nombre) => {
-                        setValue('ciudad_id', id);
-                        setValue('ciudad_nombre', nombre);
-                      }}
-                      error={errors.ciudad_id?.message}
-                      disabled={isLoading}
-                    />
+                <div>
+                  <label className="block text-sm font-semibold text-verde-bosque mb-2 ml-1">
+                    Ciudad
+                  </label>
+                  <select
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-verde-hoja/15 focus:border-verde-hoja outline-none transition-all text-sm md:text-base hover:border-gray-300 text-gray-900 font-medium"
+                    {...register('ciudad_departamento')}
+                    disabled={isLoading}
+                  >
+                    <option value="">Selecciona tu ciudad...</option>
+                    {cities.map((c) => (
+                      <option key={c.valor} value={c.valor}>
+                        {c.ciudad}, {c.departamento}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.ciudad_departamento && (
+                    <p className="text-red-500 text-xs mt-1 ml-1">{errors.ciudad_departamento.message}</p>
                   )}
-                />
+                </div>
 
                 <div>
                   <label className="block text-sm font-semibold text-verde-bosque mb-2 ml-1">

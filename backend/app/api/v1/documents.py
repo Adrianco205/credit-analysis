@@ -375,6 +375,64 @@ async def delete_document(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# ENDPOINT DE DESCARGA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.get("/{document_id}/download")
+async def download_document(
+    document_id: UUID,
+    current_user: Usuario = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Descarga el archivo PDF de un documento.
+    
+    ## Respuestas:
+    - **200 OK**: Retorna el archivo PDF
+    - **404 Not Found**: Documento no encontrado
+    """
+    from fastapi.responses import Response
+    
+    documents_repo = DocumentsRepo(db)
+    storage_service = get_storage_service()
+    
+    # Obtener documento
+    documento = documents_repo.get_by_id_and_user(document_id, current_user.id)
+    
+    if not documento:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Documento no encontrado"
+        )
+    
+    # Obtener contenido del PDF
+    if not documento.s3_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="El documento no tiene archivo asociado"
+        )
+    
+    pdf_content = storage_service.get_pdf(documento.s3_key)
+    
+    if not pdf_content:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Archivo PDF no encontrado en storage"
+        )
+    
+    # Retornar el PDF
+    filename = documento.original_filename or "extracto.pdf"
+    
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS DE EXTRACCIÓN CON GEMINI
 # ═══════════════════════════════════════════════════════════════════════════════
 

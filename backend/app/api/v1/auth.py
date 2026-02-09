@@ -61,7 +61,7 @@ def register(
             user.segundo_apellido = payload.segundo_apellido
             user.password_hash = hash_password(payload.password)
             user.telefono = payload.telefono
-            user.ciudad_id = payload.ciudad_id
+            user.ciudad_departamento = payload.ciudad_departamento
             db.add(user)
             db.commit()
             db.refresh(user)
@@ -77,7 +77,7 @@ def register(
                 telefono=payload.telefono,
                 genero=payload.genero,
                 password_hash=hash_password(payload.password),
-                ciudad_id=payload.ciudad_id,
+                ciudad_departamento=payload.ciudad_departamento,
                 status="PENDING",
                 email_verificado=False,
             )

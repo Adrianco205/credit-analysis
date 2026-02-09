@@ -23,9 +23,7 @@ class UserProfileResponse(BaseModel):
     status: str
     email_verificado: bool
     # Ciudad
-    ciudad_id: int | None
-    ciudad_nombre: str | None
-    departamento_nombre: str | None
+    ciudad_departamento: str | None
     # Rol del usuario
     rol: str | None
 
@@ -45,9 +43,10 @@ class UpdateProfileRequest(BaseModel):
         pattern=r"^\+?[\d\s-]{7,20}$",
         description="Número de teléfono"
     )
-    ciudad_id: int | None = Field(
+    ciudad_departamento: str | None = Field(
         default=None,
-        description="ID de la ciudad"
+        max_length=200,
+        description="Ciudad y departamento (ej: 'Bogotá, Bogotá D.C.')"
     )
 
 

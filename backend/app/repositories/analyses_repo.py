@@ -3,7 +3,7 @@ Repository para Análisis Hipotecario.
 CRUD y consultas especializadas para la tabla analisis_hipotecario.
 """
 import uuid
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Sequence
 
@@ -262,6 +262,11 @@ class AnalysesRepo:
             "seguro_vida": "seguro_vida",
             "seguro_incendio": "seguro_incendio",
             "seguro_terremoto": "seguro_terremoto",
+            # Nuevos campos de componentes del período
+            "capital_pagado_periodo": "capital_pagado_periodo",
+            "intereses_corrientes_periodo": "intereses_corrientes_periodo",
+            "intereses_mora": "intereses_mora",
+            "otros_cargos": "otros_cargos",
         }
         
         for ext_field, model_field in field_mapping.items():
@@ -361,36 +366,182 @@ class AnalysesRepo:
     ) -> AnalisisHipotecario:
         """
         Calcular campos derivados para el resumen del crédito.
-        Debe llamarse después de tener todos los datos básicos.
+        
+        FÓRMULAS CORRECTAS (Alineadas con modelo Excel de Bancolombia):
+        
+        1. cuota_actual = valor_cuota_con_seguros (Valor a Pagar del extracto)
+        2. cuota_completa = cuota_actual + beneficio_frech (lo que recibe el banco)
+        3. Total Intereses y Seguros = monto_real_pagado - capital_amortizado (ACUMULADO)
+        4. Ajuste Inflación = saldo_actual - valor_prestado
         """
-        # Total pagado a la fecha
-        if analisis.valor_cuota_con_seguros and analisis.cuotas_pagadas:
-            analisis.total_pagado_fecha = (
-                analisis.valor_cuota_con_seguros * analisis.cuotas_pagadas
-            )
+        from decimal import Decimal
         
-        # Total FRECH recibido
-        if analisis.beneficio_frech_mensual and analisis.cuotas_pagadas:
-            analisis.total_frech_recibido = (
-                analisis.beneficio_frech_mensual * analisis.cuotas_pagadas
-            )
-        
-        # Monto real pagado al banco (incluyendo FRECH)
-        if analisis.total_pagado_fecha and analisis.total_frech_recibido:
-            analisis.monto_real_pagado_banco = (
-                analisis.total_pagado_fecha + analisis.total_frech_recibido
-            )
-        
-        # Ajuste por inflación (solo UVR)
-        if analisis.sistema_amortizacion == "UVR":
-            if analisis.saldo_capital_pesos and analisis.valor_prestado_inicial:
-                analisis.ajuste_inflacion_pesos = (
-                    analisis.saldo_capital_pesos - analisis.valor_prestado_inicial
+        # ═══════════════════════════════════════════════════════════════════
+        # PASO 1: CALCULAR SALDO EN PESOS (fallback desde UVR)
+        # ═══════════════════════════════════════════════════════════════════
+        if (not analisis.saldo_capital_pesos or analisis.saldo_capital_pesos == 0):
+            if analisis.saldo_capital_uvr and analisis.valor_uvr_fecha_extracto:
+                analisis.saldo_capital_pesos = (
+                    analisis.saldo_capital_uvr * analisis.valor_uvr_fecha_extracto
                 )
-                if analisis.valor_prestado_inicial > 0:
-                    analisis.porcentaje_ajuste_inflacion = (
-                        analisis.ajuste_inflacion_pesos / analisis.valor_prestado_inicial
-                    )
+                analisis.inflation_method = "uvr_calculation"
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PASO 2: SEGUROS TOTALES MENSUALES (suma de componentes)
+        # ═══════════════════════════════════════════════════════════════════
+        seguros = [
+            analisis.seguro_vida,
+            analisis.seguro_incendio,
+            analisis.seguro_terremoto
+        ]
+        seguros_validos = [s for s in seguros if s is not None]
+        if seguros_validos:
+            analisis.seguros_total_mensual = sum(seguros_validos)
+        else:
+            analisis.seguros_total_mensual = Decimal("0")
+        
+        # Guardar componentes del período actual
+        analisis.intereses_corrientes_periodo = analisis.intereses_corrientes_periodo or Decimal("0")
+        analisis.intereses_mora = analisis.intereses_mora or Decimal("0")
+        analisis.otros_cargos = analisis.otros_cargos or Decimal("0")
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PASO 3: TOTALES PAGADOS (debe calcularse ANTES de intereses/seguros)
+        # ═══════════════════════════════════════════════════════════════════
+        # 
+        # Del extracto Bancolombia:
+        # - valor_cuota_con_seguros = $326,168 (Valor a Pagar, incluye seguros)
+        # - beneficio_frech = $183,855
+        # - cuota_completa = $326,168 + $183,855 = $510,023 (lo que recibe el banco)
+        #
+        # Total pagado por usuario = cuota_con_seguros × cuotas_pagadas
+        # Total FRECH recibido = beneficio_frech × cuotas_pagadas  
+        # Monto real al banco = Total pagado + FRECH = cuota_completa × cuotas_pagadas
+        
+        # Cuota que paga el usuario (CON seguros)
+        cuota_usuario = analisis.valor_cuota_con_seguros or Decimal("0")
+        # Si no tenemos valor_cuota_con_seguros, calcular: cuota_sin_seguros + seguros
+        if cuota_usuario == 0 and analisis.valor_cuota_con_subsidio:
+            cuota_usuario = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
+        
+        beneficio_frech = analisis.beneficio_frech_mensual or Decimal("0")
+        cuotas_pagadas = analisis.cuotas_pagadas or 0
+        
+        if cuota_usuario and cuotas_pagadas:
+            analisis.total_pagado_fecha = cuota_usuario * cuotas_pagadas
+            analisis.is_total_paid_estimated = True
+        
+        # Total FRECH recibido = beneficio × cuotas pagadas
+        if beneficio_frech and cuotas_pagadas:
+            analisis.total_frech_recibido = beneficio_frech * cuotas_pagadas
+        else:
+            analisis.total_frech_recibido = Decimal("0")
+        
+        # Monto real al banco = pagado por usuario + FRECH
+        analisis.monto_real_pagado_banco = (
+            (analisis.total_pagado_fecha or Decimal("0")) + 
+            (analisis.total_frech_recibido or Decimal("0"))
+        )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PASO 4: TOTAL INTERESES Y SEGUROS ACUMULADO (FÓRMULA EXCEL)
+        # ═══════════════════════════════════════════════════════════════════
+        # 
+        # Fórmula: monto_real_pagado_banco - capital_amortizado
+        # donde capital_amortizado = valor_prestado - saldo_actual
+        # 
+        # Ejemplo del extracto:
+        # - Monto real pagado al banco: $18,360,828 (cuota_completa × cuotas = $510,023 × 36)
+        # - Capital amortizado: $45,200,180 - $56,069,733 = -$10,869,553 (negativo por inflación)
+        # - Total intereses y seguros = $18,360,828 - (-$10,869,553) = $29,230,381
+        
+        capital_amortizado = Decimal("0")
+        if analisis.valor_prestado_inicial and analisis.saldo_capital_pesos:
+            capital_amortizado = analisis.valor_prestado_inicial - analisis.saldo_capital_pesos
+        
+        # Intereses y seguros acumulados = Todo pagado - capital reducido
+        if analisis.monto_real_pagado_banco and analisis.monto_real_pagado_banco > 0:
+            analisis.total_intereses_seguros = analisis.monto_real_pagado_banco - capital_amortizado
+        else:
+            # Fallback: estimación basada en componentes del período
+            componentes_periodo = (
+                (analisis.intereses_corrientes_periodo or Decimal("0")) +
+                (analisis.intereses_mora or Decimal("0")) +
+                (analisis.seguros_total_mensual or Decimal("0")) +
+                (analisis.otros_cargos or Decimal("0"))
+            )
+            cuotas = cuotas_pagadas or 1
+            analisis.total_intereses_seguros = componentes_periodo * cuotas
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PASO 5: AJUSTE POR INFLACIÓN (AUDITABLE)
+        # ═══════════════════════════════════════════════════════════════════
+        if analisis.saldo_capital_pesos and analisis.valor_prestado_inicial:
+            # Método 1: UVR (más preciso) - ya calculado arriba si aplica
+            # Método 2: Diferencia directa
+            if not analisis.inflation_method:
+                analisis.inflation_method = "direct_difference"
+            
+            analisis.ajuste_inflacion_pesos = (
+                analisis.saldo_capital_pesos - analisis.valor_prestado_inicial
+            )
+            
+            if analisis.valor_prestado_inicial > 0:
+                analisis.porcentaje_ajuste_inflacion = (
+                    (analisis.ajuste_inflacion_pesos / analisis.valor_prestado_inicial) * Decimal("100")
+                )
+        
+        # ═══════════════════════════════════════════════════════════════════
+        # PASO 6: GUARDAR RESUMEN CALCULADO EN JSON (para auditoría)
+        # ═══════════════════════════════════════════════════════════════════
+        # Calcular cuota usuario para JSON (usar valor_cuota_con_seguros preferentemente)
+        cuota_json = analisis.valor_cuota_con_seguros or Decimal("0")
+        if cuota_json == 0 and analisis.valor_cuota_con_subsidio:
+            cuota_json = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
+        
+        analisis.computed_summary_json = {
+            "datos_basicos": {
+                "valor_prestado": str(analisis.valor_prestado_inicial or 0),
+                "cuotas_pactadas": analisis.cuotas_pactadas,
+                "cuotas_pagadas": analisis.cuotas_pagadas,
+                "cuotas_por_pagar": analisis.cuotas_pendientes,
+                # CORRECCIÓN: cuota_actual = valor_cuota_con_seguros (Valor a Pagar)
+                "cuota_actual": str(cuota_json),
+                "beneficio_frech": str(analisis.beneficio_frech_mensual or 0),
+                # CORRECCIÓN: cuota_completa = cuota_actual + beneficio_frech
+                "cuota_completa_sin_frech": str(cuota_json + (analisis.beneficio_frech_mensual or Decimal("0"))),
+                "total_pagado_fecha": str(analisis.total_pagado_fecha or 0),
+                "total_frech_recibido": str(analisis.total_frech_recibido or 0),
+                "monto_real_banco": str(analisis.monto_real_pagado_banco or 0),
+                "is_estimated": analisis.is_total_paid_estimated
+            },
+            "limites_banco": {
+                "valor_prestado": str(analisis.valor_prestado_inicial or 0),
+                "saldo_actual": str(analisis.saldo_capital_pesos or 0)
+            },
+            "ajuste_inflacion": {
+                "ajuste_pesos": str(analisis.ajuste_inflacion_pesos or 0),
+                "porcentaje": str(analisis.porcentaje_ajuste_inflacion or 0),
+                "method": analisis.inflation_method
+            },
+            "intereses_seguros": {
+                "total": str(analisis.total_intereses_seguros or 0),
+                "capital_amortizado": str((analisis.valor_prestado_inicial or Decimal("0")) - (analisis.saldo_capital_pesos or Decimal("0"))),
+                "monto_real_pagado": str(analisis.monto_real_pagado_banco or 0),
+                "desglose_periodo": {
+                    "interes_corriente": str(analisis.intereses_corrientes_periodo or 0),
+                    "interes_mora": str(analisis.intereses_mora or 0),
+                    "seguro_vida": str(analisis.seguro_vida or 0),
+                    "seguro_incendio": str(analisis.seguro_incendio or 0),
+                    "seguro_terremoto": str(analisis.seguro_terremoto or 0),
+                    "otros_cargos": str(analisis.otros_cargos or 0)
+                },
+                "formula": "monto_real_pagado_banco - (valor_prestado - saldo_actual)",
+                "nota": "Acumulado histórico: todo lo pagado menos el capital que se ha reducido"
+            },
+            "calculated_at": datetime.utcnow().isoformat() if 'datetime' in dir() else None,
+            "version": "2.0"
+        }
         
         self.db.flush()
         return analisis

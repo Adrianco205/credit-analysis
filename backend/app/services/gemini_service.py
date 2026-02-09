@@ -118,6 +118,41 @@ Solo si el documento ES un extracto hipotecario válido, extrae TODOS los datos 
 - El beneficio FRECH es un subsidio gubernamental a la tasa de interés
 - Las cuotas pueden incluir seguros de vida, incendio y terremoto
 
+## ⚠️ INSTRUCCIONES CRÍTICAS DE BÚSQUEDA
+
+### SALDO DEL CRÉDITO (OBLIGATORIO encontrar)
+Busca el saldo actual del crédito en estas ubicaciones (en orden de prioridad):
+1. "Saldo a la fecha en que se generó el extracto" → Esto es saldo_capital_pesos
+2. "Saldo actual" / "Saldo capital" / "Saldo del crédito"
+3. "Saldo deuda" / "Total adeudado" / "Saldo vigente"
+4. En la TABLA DE MOVIMIENTOS, busca la última fila con "Saldo" 
+5. Para UVR: "Saldo capital en UVR" multiplicado por "Valor UVR" = saldo_capital_pesos
+
+**Este campo es CRÍTICO y SIEMPRE aparece en los extractos bancarios.**
+
+### COMPONENTES DE LA CUOTA (Del mes actual - tabla de movimientos)
+Busca la tabla de "Detalle del pago" o "Movimientos del período" y extrae:
+- Capital pagado en el período actual
+- Interés corriente pagado
+- Seguro vida
+- Seguro incendio  
+- Seguro terremoto
+- Interés de mora (si hay)
+- Otros cargos
+
+Etiquetas comunes en PDFs colombianos:
+- "INTERÉS CORRIENTE" / "INT. CORRIENTE" / "INTERESES"
+- "SEGURO VIDA" / "SEG. VIDA" / "VIDA"
+- "SEGURO INCENDIO" / "SEG. HOGAR" / "INCENDIO"
+- "SEGURO TERREMOTO" / "SEG. TERREMOTO"
+- "CAPITAL" / "ABONO CAPITAL" / "AMORTIZACIÓN"
+
+### DATOS UVR (Esenciales para créditos UVR)
+Para créditos en UVR, estos campos son OBLIGATORIOS:
+- valor_uvr_fecha_extracto: El valor del UVR a la fecha del extracto
+- saldo_capital_uvr: Saldo en unidades UVR
+- valor_cuota_uvr: Cuota mensual en UVR
+
 ## CAMPOS A EXTRAER (extrae TODOS los que encuentres)
 
 ### Identificación del Titular
@@ -147,27 +182,27 @@ Solo si el documento ES un extracto hipotecario válido, extrae TODOS los datos 
 - tasa_mora_ea: Tasa de mora E.A. (si aparece)
 
 ### Valores en Pesos Colombianos (solo números, sin símbolos)
-- valor_prestado_inicial: Monto inicial del préstamo
+- valor_prestado_inicial: Monto inicial del préstamo / Valor del desembolso
 - valor_cuota_sin_seguros: Cuota sin incluir seguros
-- valor_cuota_con_seguros: Cuota total incluyendo seguros
+- valor_cuota_con_seguros: Cuota total incluyendo seguros (buscar "Valor a pagar")
 - beneficio_frech_mensual: Valor mensual del subsidio FRECH
 - valor_cuota_con_subsidio: Cuota que paga el cliente (con FRECH aplicado)
-- saldo_capital_pesos: Saldo de capital actual en pesos
-- total_por_pagar: Total adeudado
+- saldo_capital_pesos: **IMPORTANTE** Saldo de capital actual en pesos. Buscar "Saldo a la fecha"
+- total_por_pagar: Total adeudado (capital + intereses pendientes)
 
-### Valores UVR (si el crédito es en UVR)
+### Valores UVR (OBLIGATORIOS si el crédito es en UVR)
 - saldo_capital_uvr: Saldo de capital en UVR
 - valor_uvr_fecha_extracto: Valor del UVR a la fecha del extracto
 - valor_cuota_uvr: Valor de la cuota en UVR
 
-### Seguros Mensuales (valores individuales)
-- seguro_vida: Prima mensual de seguro de vida
-- seguro_incendio: Prima mensual de seguro de incendio/hogar
-- seguro_terremoto: Prima mensual de seguro de terremoto
-
-### Intereses del Período
-- intereses_corrientes_periodo: Intereses del mes/período actual
+### Componentes del Período (Del pago actual/última cuota)
+- capital_pagado_periodo: Capital abonado en el período
+- intereses_corrientes_periodo: Interés corriente del mes/período (buscar en tabla de movimientos)
 - intereses_mora: Intereses de mora (si aplica)
+- seguro_vida: Prima de seguro de vida del período
+- seguro_incendio: Prima de seguro de incendio del período
+- seguro_terremoto: Prima de seguro de terremoto del período
+- otros_cargos: Cualquier otro cargo del período
 
 ## FORMATO DE RESPUESTA
 Responde ÚNICAMENTE con un JSON válido con esta estructura:
@@ -211,12 +246,13 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura:
   "valor_uvr_fecha_extracto": 405.72,
   "valor_cuota_uvr": 2850,
   
+  "capital_pagado_periodo": 450000,
+  "intereses_corrientes_periodo": 950000,
+  "intereses_mora": 0,
   "seguro_vida": 85000,
   "seguro_incendio": 45000,
   "seguro_terremoto": 25000,
-  
-  "intereses_corrientes_periodo": 950000,
-  "intereses_mora": 0,
+  "otros_cargos": 0,
   
   "campos_no_encontrados": ["tasa_mora_ea"],
   "notas": "Extracto de Bancolombia con crédito VIS en UVR"
@@ -230,6 +266,8 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura:
 4. Las fechas deben estar en formato YYYY-MM-DD
 5. Si el documento NO es un extracto de crédito hipotecario, responde: {"es_extracto_hipotecario": false, "tipo_documento_detectado": "..."}
 6. El campo "confianza_extraccion" debe ser un número entre 0 y 1 indicando qué tan seguro estás de la extracción
+7. **CRÍTICO**: El campo saldo_capital_pesos DEBE extraerse - buscar "Saldo a la fecha" o calcular de UVR×valor_uvr
+8. Para créditos UVR: Si encuentras saldo en UVR y valor UVR, calcula saldo_capital_pesos = saldo_capital_uvr × valor_uvr_fecha_extracto
 
 Analiza el documento y responde SOLO con el JSON, sin texto adicional."""
 
@@ -619,7 +657,9 @@ class GeminiService:
             "valor_cuota_con_subsidio", "saldo_capital_pesos",
             "total_por_pagar", "saldo_capital_uvr", "valor_uvr_fecha_extracto",
             "valor_cuota_uvr", "seguro_vida", "seguro_incendio",
-            "seguro_terremoto", "intereses_corrientes_periodo", "intereses_mora"
+            "seguro_terremoto", "intereses_corrientes_periodo", "intereses_mora",
+            # Nuevos campos de componentes del período
+            "capital_pagado_periodo", "otros_cargos"
         ]
         for field in decimal_fields:
             if field in data and data[field] is not None:

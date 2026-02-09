@@ -121,14 +121,50 @@ class LimitesBancoResumen(BaseModel):
 
 
 class AjusteInflacionResumen(BaseModel):
-    """Bloque 3: AJUSTE POR INFLACIÓN (Solo para créditos UVR)"""
+    """
+    Bloque 3: AJUSTE POR INFLACIÓN
+    
+    Aplica a todos los créditos, pero es más significativo en UVR.
+    Incluye metadata para auditoría.
+    """
     ajuste_pesos: Decimal  # Diferencia saldo actual - valor prestado
-    porcentaje_ajuste: Decimal  # -24.05% significa que subió 24%
+    porcentaje_ajuste: Decimal  # Positivo = incrementó, Negativo = redujo
+    metodo: str | None = None  # "uvr_calculation", "direct_difference", "manual"
+
+
+class DesgloseInteresesSeguros(BaseModel):
+    """Desglose detallado de intereses y seguros del período"""
+    interes_corriente: Decimal = Decimal("0")
+    interes_mora: Decimal = Decimal("0")
+    seguro_vida: Decimal = Decimal("0")
+    seguro_incendio: Decimal = Decimal("0")
+    seguro_terremoto: Decimal = Decimal("0")
+    otros_cargos: Decimal = Decimal("0")
 
 
 class CostosExtraResumen(BaseModel):
-    """Bloque 4: INTERESES Y SEGUROS"""
-    total_intereses_seguros: Decimal  # Lo que no abona a capital
+    """
+    Bloque 4: INTERESES Y SEGUROS (con desglose auditable)
+    
+    FÓRMULA CORRECTA:
+    total = interes_corriente + interes_mora + seguros + otros_cargos
+    
+    NO usar: monto_real_pagado - capital_amortizado
+    """
+    total_intereses_seguros: Decimal  # Suma de componentes del período
+    
+    # Desglose detallado para auditoría
+    desglose: DesgloseInteresesSeguros | None = None
+    
+    # Campos legacy (para compatibilidad)
+    capital_pagado_periodo: Decimal | None = None
+    intereses_corrientes_periodo: Decimal | None = None
+    intereses_mora_periodo: Decimal | None = None
+    seguros_total_periodo: Decimal | None = None
+    otros_cargos_periodo: Decimal | None = None
+    
+    # Metadata de cálculo
+    formula: str | None = "sum(interes_corriente + interes_mora + seguros + otros_cargos)"
 
 
 class ResumenCreditoResponse(BaseModel):
@@ -147,12 +183,15 @@ class ResumenCreditoResponse(BaseModel):
     # Los 4 bloques
     datos_basicos: DatosBasicosResumen
     limites_banco: LimitesBancoResumen
-    ajuste_inflacion: AjusteInflacionResumen | None  # None si no es UVR
+    ajuste_inflacion: AjusteInflacionResumen | None  # None si no hay datos
     costos_extra: CostosExtraResumen
     
     # Tasas (información adicional)
     tasa_cobrada_con_frech: Decimal | None  # Ej: 4.71% EA
     seguros_actuales_mensual: Decimal | None
+    
+    # Flags de auditoría
+    is_total_paid_estimated: bool = True  # True = estimación, False = historial real
 
 
 class DatosExtractoResponse(BaseModel):

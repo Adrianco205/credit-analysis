@@ -9,6 +9,12 @@ import type {
   UserProfile,
   UpdatePasswordRequest,
   ApiError,
+  DocumentUploadResponse,
+  ExtractDataResponse,
+  CreateAnalysisRequest,
+  CreateAnalysisResponse,
+  AnalysisSummary,
+  EstudiosHistorialResponse,
 } from '@/types/api';
 
 const API_BASE_URL = typeof window !== 'undefined' 
@@ -24,7 +30,7 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      timeout: 10000,
+      timeout: 120000,
     });
 
     // Request interceptor para agregar token
@@ -45,11 +51,42 @@ class ApiClient {
       (error: AxiosError<ApiError>) => {
         if (error.response) {
           // El servidor respondió con un código de error
-          const apiError: ApiError = error.response.data || {
-            error: 'unknown_error',
-            message: 'Ha ocurrido un error desconocido',
-            status_code: error.response.status,
-          };
+          const responseData = error.response.data as any;
+          // Check if responseData has actual content (not empty object)
+          const hasContent = responseData && Object.keys(responseData).length > 0;
+          
+          // Handle FastAPI's default HTTPException format {"detail": "..."}
+          // and convert to our ApiError format
+          let apiError: ApiError;
+          if (hasContent) {
+            if (responseData.error && responseData.message) {
+              // Already in our format
+              apiError = responseData;
+            } else if (responseData.detail) {
+              // FastAPI HTTPException format
+              apiError = {
+                error: 'http_error',
+                message: typeof responseData.detail === 'string' 
+                  ? responseData.detail 
+                  : JSON.stringify(responseData.detail),
+                status_code: error.response.status,
+                detail: responseData.detail
+              };
+            } else {
+              // Unknown format - stringify it
+              apiError = {
+                error: 'unknown_error',
+                message: JSON.stringify(responseData),
+                status_code: error.response.status,
+              };
+            }
+          } else {
+            apiError = {
+              error: 'unknown_error',
+              message: `Error del servidor: ${error.response.status} ${error.response.statusText}`,
+              status_code: error.response.status,
+            };
+          }
           return Promise.reject(apiError);
         } else if (error.request) {
           // La petición se hizo pero no hubo respuesta
@@ -117,15 +154,81 @@ class ApiClient {
     return response.data;
   }
 
+  public async updateProfile(data: { telefono?: string; ciudad_departamento?: string }): Promise<UserProfile> {
+    const response = await this.client.patch<UserProfile>('/users/me', data);
+    return response.data;
+  }
+
   public async updatePassword(data: UpdatePasswordRequest): Promise<{ message: string }> {
     const response = await this.client.patch<{ message: string }>('/users/me/password', data);
     return response.data;
   }
 
   // Location endpoints
-  public async searchCities(query: string): Promise<Array<{ id: number; nombre: string; departamento: string }>> {
-    const response = await this.client.get(`/locations/cities`, {
-      params: { q: query, limit: 50 }
+  public async getCities(): Promise<Array<{ valor: string; ciudad: string; departamento: string }>> {
+    const response = await this.client.get(`/locations/cities`);
+    return response.data;
+  }
+
+  public async getBanks(): Promise<Array<{ id: number; nombre: string }>> {
+    const response = await this.client.get(`/locations/banks`);
+    return response.data;
+  }
+
+  // Documents & Analysis endpoints
+  public async uploadDocument(file: File, password?: string): Promise<DocumentUploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (password) {
+      formData.append('password', password);
+    }
+    const response = await this.client.post<DocumentUploadResponse>('/documents/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  }
+
+  public async extractDocumentData(documentId: string): Promise<ExtractDataResponse> {
+    const response = await this.client.post<ExtractDataResponse>(`/documents/${documentId}/extract`);
+    return response.data;
+  }
+
+  public async createAnalysis(data: CreateAnalysisRequest): Promise<CreateAnalysisResponse> {
+    const response = await this.client.post<CreateAnalysisResponse>('/analyses', data);
+    return response.data;
+  }
+
+  public async getAnalysisSummary(analysisId: string): Promise<any> {
+    const response = await this.client.get(`/analyses/${analysisId}/summary`);
+    return response.data;
+  }
+
+  public async generateProjections(analysisId: string, opciones: any[]): Promise<any> {
+    const response = await this.client.post(`/analyses/${analysisId}/projections`, { opciones });
+    return response.data;
+  }
+
+  public async updateAnalysisManual(analysisId: string, data: any): Promise<any> {
+    const response = await this.client.patch(`/analyses/${analysisId}/manual`, data);
+    return response.data;
+  }
+
+  // User Estudios/History endpoints
+  public async getEstudiosHistorial(params?: { page?: number; limit?: number; status?: string }): Promise<EstudiosHistorialResponse> {
+    const response = await this.client.get<EstudiosHistorialResponse>('/users/me/estudios', { params });
+    return response.data;
+  }
+
+  // Document download - returns the download URL
+  public getDocumentDownloadUrl(documentId: string): string {
+    const token = this.getToken();
+    return `${API_BASE_URL}/documents/${documentId}/download?token=${token}`;
+  }
+
+  // Download document as blob (for programmatic download)
+  public async downloadDocument(documentId: string): Promise<Blob> {
+    const response = await this.client.get(`/documents/${documentId}/download`, {
+      responseType: 'blob'
     });
     return response.data;
   }

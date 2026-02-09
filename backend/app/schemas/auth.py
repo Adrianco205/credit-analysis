@@ -15,7 +15,7 @@ class RegisterRequest(BaseModel):
 
     password: str = Field(min_length=8, max_length=72)
 
-    ciudad_id: int | None = None
+    ciudad_departamento: str | None = None
 
 
 class RegisterResponse(BaseModel):

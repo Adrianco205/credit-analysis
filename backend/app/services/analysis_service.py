@@ -22,6 +22,7 @@ from app.models.analisis import AnalisisHipotecario
 from app.models.documento import DocumentoS3
 from app.models.propuesta import PropuestaAhorro
 from app.models.user import Usuario
+from app.models.banco import Banco
 from app.repositories.analyses_repo import AnalysesRepo
 from app.repositories.propuestas_repo import PropuestasRepo
 from app.repositories.documents_repo import DocumentsRepo
@@ -148,7 +149,8 @@ class AnalysisService:
         documento_id: uuid.UUID,
         usuario: Usuario,
         datos_usuario: DatosUsuarioInput,
-        skip_name_validation: bool = False
+        skip_name_validation: bool = False,
+        banco_id: int | None = None  # ID del banco seleccionado por el usuario
     ) -> AnalysisCreationResult:
         """
         Crea un análisis completo a partir de un documento PDF.
@@ -166,6 +168,7 @@ class AnalysisService:
             usuario: Usuario autenticado
             datos_usuario: Datos socioeconómicos del usuario
             skip_name_validation: Omitir validación de nombre (para testing)
+            banco_id: ID del banco seleccionado por el usuario (prioridad sobre detección automática)
             
         Returns:
             AnalysisCreationResult con el análisis creado o error
@@ -298,6 +301,27 @@ class AnalysisService:
                 if key not in ["documento_id", "usuario_id"] and value is not None:
                     analisis_data[key] = value
             
+            # Resolver banco_id: prioridad al ID proporcionado por el usuario
+            if banco_id:
+                # El usuario seleccionó un banco explícitamente
+                analisis_data["banco_id"] = banco_id
+                logger.info(f"Banco asignado por usuario: ID {banco_id}")
+            else:
+                # Fallback: intentar detectar desde el nombre extraído del PDF
+                banco_detectado = extraction_result.data.get("banco")
+                if banco_detectado:
+                    from sqlalchemy import select, func
+                    # Buscar banco por nombre (case-insensitive, partial match)
+                    stmt = select(Banco).where(
+                        func.lower(Banco.nombre).contains(func.lower(banco_detectado))
+                    )
+                    banco = self.db.execute(stmt).scalar_one_or_none()
+                    if banco:
+                        analisis_data["banco_id"] = banco.id
+                        logger.info(f"Banco detectado automáticamente: {banco_detectado} -> ID {banco.id}")
+                    else:
+                        logger.warning(f"Banco detectado pero no encontrado en BD: {banco_detectado}")
+            
             # Determinar estado inicial
             campos_faltantes = extraction_result.campos_faltantes or []
             requires_manual = self._check_requires_manual_input(
@@ -341,12 +365,16 @@ class AnalysisService:
             )
             
         except Exception as e:
-            logger.exception(f"Error creando análisis: {e}")
+            import traceback
+            error_trace = traceback.format_exc()
+            logger.error(f"Error creando análisis:\n{error_trace}")
             self.db.rollback()
+            # Devolver información del error más detallada para debugging
+            error_msg = f"{type(e).__name__}: {str(e)}"
             return AnalysisCreationResult(
                 success=False,
                 error_code="INTERNAL_ERROR",
-                error_message=str(e)
+                error_message=error_msg
             )
     
     # ═══════════════════════════════════════════════════════════════════════════════

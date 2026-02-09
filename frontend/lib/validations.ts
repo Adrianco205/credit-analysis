@@ -60,9 +60,7 @@ export const registerSchema = z.object({
     .min(8, 'Mínimo 8 caracteres')
     .regex(passwordRegex, 'Debe incluir mayúsculas, minúsculas y números'),
   confirm_password: z.string(),
-  // Usamos coerce por si el valor viene como string desde el HTML
-  ciudad_id: z.coerce.number({ invalid_type_error: "Debes seleccionar una ciudad" }).min(1, 'Selecciona una ciudad'),
-  ciudad_nombre: z.string().optional(),
+  ciudad_departamento: z.string().min(1, 'Selecciona una ciudad'),
 })
 .refine((data) => data.identificacion === data.identificacion_confirm, {
   message: "Los números de identificación no coinciden",

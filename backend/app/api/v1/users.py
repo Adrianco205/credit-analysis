@@ -19,7 +19,6 @@ from app.api.deps import get_db, get_current_user
 from app.core.security import hash_password, verify_password
 from app.models.user import Usuario
 from app.models.role import UsuarioRole, Role
-from app.models.location import Ciudad, Departamento
 from app.models.analisis import AnalisisHipotecario
 from app.models.documento import DocumentoS3
 from app.models.banco import Banco
@@ -58,18 +57,6 @@ def get_my_profile(
     - Ubicación (ciudad, departamento)
     - Rol del usuario (ADMIN, CLIENT)
     """
-    # Obtener ciudad y departamento
-    ciudad_nombre = None
-    departamento_nombre = None
-    if current_user.ciudad_id:
-        stmt = select(Ciudad, Departamento).join(
-            Departamento, Ciudad.departamento_id == Departamento.id
-        ).where(Ciudad.id == current_user.ciudad_id)
-        result = db.execute(stmt).first()
-        if result:
-            ciudad_nombre = result[0].nombre
-            departamento_nombre = result[1].nombre
-
     # Obtener rol del usuario
     rol = None
     stmt = select(Role.code).join(
@@ -91,9 +78,7 @@ def get_my_profile(
         telefono=current_user.telefono,
         status=current_user.status,
         email_verificado=current_user.email_verificado,
-        ciudad_id=current_user.ciudad_id,
-        ciudad_nombre=ciudad_nombre,
-        departamento_nombre=departamento_nombre,
+        ciudad_departamento=current_user.ciudad_departamento,
         rol=rol
     )
 
@@ -112,15 +97,8 @@ def update_my_profile(
     - Ciudad
     """
     # Validar ciudad si se proporciona
-    if payload.ciudad_id is not None:
-        stmt = select(Ciudad).where(Ciudad.id == payload.ciudad_id)
-        ciudad = db.execute(stmt).scalar_one_or_none()
-        if not ciudad:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="La ciudad seleccionada no existe"
-            )
-        current_user.ciudad_id = payload.ciudad_id
+    if payload.ciudad_departamento is not None:
+        current_user.ciudad_departamento = payload.ciudad_departamento
 
     # Actualizar teléfono si se proporciona
     if payload.telefono is not None:
@@ -423,7 +401,7 @@ def get_my_estudios(
             banco_nombre=banco_nombre,
             fecha_subida=documento.created_at if documento else analisis.created_at,
             status=analisis.status,
-            saldo_actual=float(analisis.saldo_actual) if analisis.saldo_actual else None,
+            saldo_actual=float(analisis.saldo_capital_pesos) if analisis.saldo_capital_pesos else None,
             numero_credito=analisis.numero_credito
         ))
     

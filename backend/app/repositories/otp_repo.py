@@ -21,8 +21,8 @@ class OtpRepo:
                 VerificacionOTP.tipo == tipo,
                 VerificacionOTP.status == "PENDING",
             )
-            .order_by(VerificacionOTP.expires_at.desc())
-        ).scalar_one_or_none()
+            .order_by(VerificacionOTP.expires_at.desc())  # Obtener el más reciente
+        ).scalars().first()  # Devuelve el primero o None (no lanza error si hay múltiples)
 
     def save(self, otp: VerificacionOTP):
         self.db.add(otp)

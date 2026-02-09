@@ -100,6 +100,14 @@ class AnalisisHipotecario(Base):
     seguros_total_mensual: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     
     # ═══════════════════════════════════════════════════════════════════
+    # COMPONENTES DEL PERÍODO (Del pago actual)
+    # ═══════════════════════════════════════════════════════════════════
+    capital_pagado_periodo: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Capital abonado en el mes
+    intereses_corrientes_periodo: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Interés del mes
+    intereses_mora: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Mora si hay
+    otros_cargos: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Otros cargos del período
+    
+    # ═══════════════════════════════════════════════════════════════════
     # CÁLCULOS DERIVADOS (Para el Resumen)
     # ═══════════════════════════════════════════════════════════════════
     total_pagado_fecha: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Cuota × meses pagados
@@ -133,6 +141,16 @@ class AnalisisHipotecario(Base):
     campos_manuales: Mapped[list | None] = mapped_column(JSONB)  # ["tasa_interes", "seguros"]
     campos_extraidos_ia: Mapped[list | None] = mapped_column(JSONB)  # Campos exitosamente extraídos (READONLY)
     datos_raw_gemini: Mapped[dict | None] = mapped_column(JSONB)  # Respuesta cruda de Gemini
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # DATOS ESTRUCTURADOS PARA AUDITORÍA (JSONB)
+    # ═══════════════════════════════════════════════════════════════════
+    raw_data_json: Mapped[dict | None] = mapped_column(JSONB)  # Datos crudos con metadata de fuente
+    computed_summary_json: Mapped[dict | None] = mapped_column(JSONB)  # Resumen calculado con fórmulas
+    missing_fields_json: Mapped[list | None] = mapped_column(JSONB)  # Campos no encontrados
+    confidence_map_json: Mapped[dict | None] = mapped_column(JSONB)  # Confianza por campo
+    inflation_method: Mapped[str | None] = mapped_column(String(50))  # uvr_calculation, direct_difference, manual
+    is_total_paid_estimated: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=text("now()"))

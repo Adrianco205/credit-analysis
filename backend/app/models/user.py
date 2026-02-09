@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, text
+from sqlalchemy import String, Boolean, DateTime, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
@@ -19,7 +19,7 @@ class Usuario(Base):
     genero: Mapped[str | None] = mapped_column(String(20))
     password_hash: Mapped[str | None] = mapped_column(String(255))
 
-    ciudad_id: Mapped[int | None] = mapped_column(ForeignKey("ciudades.id", ondelete="SET NULL"), nullable=True)
+    ciudad_departamento: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     status: Mapped[str] = mapped_column(String(20), server_default=text("'PENDING'"))
     email_verificado: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
