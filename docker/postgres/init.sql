@@ -149,6 +149,12 @@ CREATE TABLE IF NOT EXISTS analisis_hipotecario (
     seguro_incendio numeric(12,2),
     seguro_terremoto numeric(12,2),
     seguros_total_mensual numeric(12,2),
+
+    -- --- Componentes del periodo (pago actual) ---
+    capital_pagado_periodo numeric(15,2),
+    intereses_corrientes_periodo numeric(15,2),
+    intereses_mora numeric(15,2),
+    otros_cargos numeric(15,2),
     
     -- --- Cálculos derivados (Para el Resumen) ---
     total_pagado_fecha numeric(15,2),
@@ -172,6 +178,14 @@ CREATE TABLE IF NOT EXISTS analisis_hipotecario (
     campos_manuales jsonb,
     campos_extraidos_ia jsonb,  -- MEJORA 5: Campos extraídos (readonly)
     datos_raw_gemini jsonb,
+
+    -- --- Datos estructurados para auditoria (JSONB) ---
+    raw_data_json jsonb,
+    computed_summary_json jsonb,
+    missing_fields_json jsonb,
+    confidence_map_json jsonb,
+    inflation_method varchar(50),
+    is_total_paid_estimated boolean DEFAULT true,
     
     created_at timestamptz DEFAULT now(),
     updated_at timestamptz

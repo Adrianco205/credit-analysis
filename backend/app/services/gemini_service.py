@@ -121,14 +121,12 @@ Solo si el documento ES un extracto hipotecario válido, extrae TODOS los datos 
 ## ⚠️ INSTRUCCIONES CRÍTICAS DE BÚSQUEDA
 
 ### SALDO DEL CRÉDITO (OBLIGATORIO encontrar)
-Busca el saldo actual del crédito en estas ubicaciones (en orden de prioridad):
-1. "Saldo a la fecha en que se generó el extracto" → Esto es saldo_capital_pesos
+Busca el saldo actual del crédito. TU PRIORIDAD ABSOLUTA es encontrar el valor explícito en pesos:
+1. "Saldo a la fecha en que se generó el extracto" (Extractos Bancolombia - CABECERA GRIS) -> ÚSALO TAL CUAL.
 2. "Saldo actual" / "Saldo capital" / "Saldo del crédito"
-3. "Saldo deuda" / "Total adeudado" / "Saldo vigente"
-4. En la TABLA DE MOVIMIENTOS, busca la última fila con "Saldo" 
-5. Para UVR: "Saldo capital en UVR" multiplicado por "Valor UVR" = saldo_capital_pesos
+3. Solo si NO encuentras valor en Pesos, usa: "Saldo capital en UVR" multiplicado por "Valor UVR"
 
-**Este campo es CRÍTICO y SIEMPRE aparece en los extractos bancarios.**
+**Este campo es CRÍTICO. Si hay un valor explícito en PESOS en la cabecera, ÚSALO, no lo calcules.**
 
 ### COMPONENTES DE LA CUOTA (Del mes actual - tabla de movimientos)
 Busca la tabla de "Detalle del pago" o "Movimientos del período" y extrae:
@@ -171,8 +169,8 @@ Para créditos en UVR, estos campos son OBLIGATORIOS:
 
 ### Cuotas
 - cuotas_pactadas: Total de cuotas pactadas
-- cuotas_pagadas: Cuotas ya pagadas
-- cuotas_pendientes: Cuotas por pagar
+- cuotas_pagadas: Busca "Nro. cuota a cancelar" o "Número de cuota". **IMPORTANTE**: Si el extracto dice "Nro. cuota a cancelar: X", ASUME que el número de cuotas pagadas (o transcurridas para cálculo) es X (ej: si dice 036, pon 36).
+- cuotas_pendientes: Cuotas por pagar (cuotas_pactadas - cuotas_pagadas)
 - cuotas_vencidas: Cuotas en mora (si aplica)
 
 ### Tasas de Interés (como PORCENTAJE, ej: 9.53 para 9.53%)
@@ -187,7 +185,7 @@ Para créditos en UVR, estos campos son OBLIGATORIOS:
 - valor_cuota_con_seguros: Cuota total incluyendo seguros (buscar "Valor a pagar")
 - beneficio_frech_mensual: Valor mensual del subsidio FRECH
 - valor_cuota_con_subsidio: Cuota que paga el cliente (con FRECH aplicado)
-- saldo_capital_pesos: **IMPORTANTE** Saldo de capital actual en pesos. Buscar "Saldo a la fecha"
+- saldo_capital_pesos: **PRIORIDAD CRÍTICA**: Busca explícitamente "Saldo a la fecha en que se generó el extracto", "Saldo a la fecha" o "Saldo Capital". Usa EXACTAMENTE el valor que aparece en pesos. **NO** re-calcules este valor multiplicando UVR si el valor en pesos está explícito.
 - total_por_pagar: Total adeudado (capital + intereses pendientes)
 
 ### Valores UVR (OBLIGATORIOS si el crédito es en UVR)
@@ -266,8 +264,8 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura:
 4. Las fechas deben estar en formato YYYY-MM-DD
 5. Si el documento NO es un extracto de crédito hipotecario, responde: {"es_extracto_hipotecario": false, "tipo_documento_detectado": "..."}
 6. El campo "confianza_extraccion" debe ser un número entre 0 y 1 indicando qué tan seguro estás de la extracción
-7. **CRÍTICO**: El campo saldo_capital_pesos DEBE extraerse - buscar "Saldo a la fecha" o calcular de UVR×valor_uvr
-8. Para créditos UVR: Si encuentras saldo en UVR y valor UVR, calcula saldo_capital_pesos = saldo_capital_uvr × valor_uvr_fecha_extracto
+7. **CRÍTICO**: El campo saldo_capital_pesos DEBE extraerse literalmente si aparece en pesos.
+8. Para créditos UVR: SOLO si NO aparece en pesos, calcula saldo_capital_pesos = saldo_capital_uvr × valor_uvr_fecha_extracto
 
 Analiza el documento y responde SOLO con el JSON, sin texto adicional."""
 
@@ -364,6 +362,7 @@ class GeminiService:
                         top_p=0.8,
                         top_k=40,
                         max_output_tokens=8192,
+                        tools=[],  # Deshabilitar explícitamente el uso de herramientas/funciones
                     )
                 )
                 
@@ -715,6 +714,7 @@ class GeminiService:
                 config=types.GenerateContentConfig(
                     temperature=0.1,
                     max_output_tokens=1024,
+                    tools=[],  # Deshabilitar tools explícitamente
                 )
             )
             

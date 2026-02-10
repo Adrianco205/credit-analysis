@@ -39,7 +39,7 @@ export function Sidebar() {
             <div className="w-16 h-16 bg-white/20 rounded-full mx-auto mb-3 flex items-center justify-center border-2 border-[var(--verde-claro)]">
                 <User size={32} className="text-white" />
             </div>
-            <p className="font-medium text-sm text-[var(--verde-suave)]">Bienvenido al Panel</p>
+            <p className="font-medium text-sm text-[var(--verde-suave)]">Bienvenido</p>
         </div>
 
         {/* Navigation */}

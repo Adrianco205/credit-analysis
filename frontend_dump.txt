@@ -1452,7 +1452,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
             <div className="inline-flex items-center gap-3 px-6 py-3 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20">
               <div className="relative w-10 h-10">
                 <Image
-                  src="/assets/brand/logo.svg"
+                  src="/assets/brand/logo.png"
                   alt="EcoFinanzas"
                   fill
                   className="object-contain"

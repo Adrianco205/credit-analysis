@@ -23,6 +23,8 @@ services:
     env_file: .env
     environment:
       - PYTHONPATH=/app
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
     depends_on:
       db:
         condition: service_healthy
@@ -34,7 +36,6 @@ services:
       uvicorn app.main:app
       --host 0.0.0.0
       --port 8000
-      --reload
 
   frontend:
     build: ./frontend

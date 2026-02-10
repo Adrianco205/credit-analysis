@@ -66,11 +66,19 @@ export default function CreditAnalysisUploadPage() {
 
     const loadProfile = async () => {
         try {
+            const token = localStorage.getItem('access_token');
+            if (!token) {
+                router.push('/auth/login');
+                return;
+            }
             const u = await apiClient.getProfile();
             setUser(u);
         } catch (err: any) {
             console.error('Error loading profile:', err?.message || err?.error || JSON.stringify(err));
-            // Assuming layout handles auth check/redirect
+            if (err?.status_code === 401) {
+                router.push('/auth/login');
+                return;
+            }
         } finally {
             setLoading(false);
         }
@@ -435,7 +443,7 @@ export default function CreditAnalysisUploadPage() {
                                  <div className="w-full bg-gray-100 rounded-lg p-4 text-center space-y-3">
                                      <Loader2 size={32} className="mx-auto animate-spin text-[var(--verde-hoja)]" />
                                      <p className="font-medium text-gray-700">
-                                         {uploading ? 'Subiendo documento...' : 'Analizando extracto con IA...'}
+                                         {uploading ? 'Subiendo documento...' : 'Analizando extracto...'}
                                      </p>
                                      <p className="text-xs text-gray-500">Esto puede tomar unos segundos. Por favor no cierres la página.</p>
                                  </div>

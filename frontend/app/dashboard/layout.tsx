@@ -1,5 +1,14 @@
-import { Sidebar } from '@/components/dashboard/Sidebar';
-import { Navbar } from '@/components/dashboard/Navbar';
+'use client';
+
+import dynamic from 'next/dynamic';
+
+const Sidebar = dynamic(() => import('@/components/dashboard/Sidebar').then(m => m.Sidebar), {
+  ssr: false,
+});
+
+const Navbar = dynamic(() => import('@/components/dashboard/Navbar').then(m => m.Navbar), {
+  ssr: false,
+});
 
 export default function DashboardLayout({
   children,

@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     
     # Google Gemini (para extracción de PDFs)
     GEMINI_API_KEY: Optional[str] = None
+
+    # Feature flags
+    ENABLE_TEST_ENDPOINTS: bool = False
     
     # AWS S3 (para almacenamiento de documentos)
     AWS_ACCESS_KEY_ID: Optional[str] = None

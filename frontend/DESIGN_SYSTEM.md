@@ -192,7 +192,7 @@ Las variables están disponibles como clases de Tailwind:
 
 - Fondo gradiente: `gradient-eco-primary`
 - Efecto glassmorphism con bordes verdes
-- Logo con logo.svg
+- Logo con logo.png
 - Contenedor central con sombra eco
 
 ---

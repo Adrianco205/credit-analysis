@@ -28,6 +28,11 @@ async def test_gemini(request: GeminiTestRequest = GeminiTestRequest()):
     Envía un mensaje simple y retorna la respuesta.
     """
     try:
+        if not settings.GEMINI_API_KEY:
+            raise HTTPException(
+                status_code=503,
+                detail="Gemini API key no configurada"
+            )
         # Crear cliente con API key
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         
@@ -56,6 +61,11 @@ async def test_gemini_simple():
     Endpoint GET simple: envía "Hola" a Gemini.
     """
     try:
+        if not settings.GEMINI_API_KEY:
+            return {
+                "status": "error",
+                "error": "Gemini API key no configurada"
+            }
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         response = client.models.generate_content(
             model="gemini-2.5-flash",
