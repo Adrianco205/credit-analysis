@@ -1,25 +1,50 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { Home, LogOut, User, FileText, History } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
-import { useRouter } from 'next/navigation';
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
+  const [userName, setUserName] = useState('');
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadUserName = async () => {
+      try {
+        const token = localStorage.getItem('access_token');
+        if (!token) return;
+        const user = await apiClient.getProfile();
+        setUserName(user.nombres || '');
+        setUserRole(user.rol || null);
+      } catch {
+        setUserName('');
+        setUserRole(null);
+      }
+    };
+
+    loadUserName();
+  }, []);
 
   const handleLogout = () => {
     apiClient.logout();
     router.push('/auth/login');
   };
 
-  const links = [
-    { href: '/dashboard', label: 'Inicio', icon: Home },
-    { href: '/dashboard/analysis/new', label: 'Analizar crédito', icon: FileText },
-    { href: '/dashboard/historial', label: 'Historial de Análisis', icon: History },
-  ];
+  const links = userRole === 'ADMIN'
+    ? [
+        { href: '/dashboard', label: 'Inicio', icon: Home },
+        { href: '/dashboard/admin/analyses', label: 'Ver historial de análisis', icon: History },
+      ]
+    : [
+        { href: '/dashboard', label: 'Inicio', icon: Home },
+        { href: '/dashboard/analysis/new', label: 'Analizar crédito', icon: FileText },
+        { href: '/dashboard/historial', label: 'Historial de Análisis', icon: History },
+      ];
 
   return (
     <aside className="fixed left-0 top-0 h-full w-[270px] bg-[var(--verde-bosque)] text-white z-50 shadow-2xl overflow-y-auto">
@@ -27,8 +52,8 @@ export function Sidebar() {
         {/* Header / Logo */}
         <div className="p-6 border-b border-[rgba(255,255,255,0.1)]">
           <div className="flex items-center gap-3">
-             <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-[var(--verde-bosque)] font-bold text-xl shadow-lg">
-               E
+             <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg">
+               <Image src="/assets/brand/logo.png" alt="EcoFinanzas" width={28} height={28} />
              </div>
              <h1 className="text-2xl font-bold tracking-tight">EcoFinanzas</h1>
           </div>
@@ -39,7 +64,9 @@ export function Sidebar() {
             <div className="w-16 h-16 bg-white/20 rounded-full mx-auto mb-3 flex items-center justify-center border-2 border-[var(--verde-claro)]">
                 <User size={32} className="text-white" />
             </div>
-            <p className="font-medium text-sm text-[var(--verde-suave)]">Bienvenido</p>
+            <p className="font-medium text-sm text-[var(--verde-suave)]">
+              {userName ? `Bienvenido ${userName}` : 'Bienvenido'}
+            </p>
         </div>
 
         {/* Navigation */}

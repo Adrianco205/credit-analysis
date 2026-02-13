@@ -5,10 +5,10 @@ import { apiClient } from '@/lib/api-client';
 import { EstudioHistorialItem } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
+import { AnalysisActions } from '@/components/dashboard/analysis-actions';
 import { 
     FileText, 
     Download, 
-    Eye, 
     Building2, 
     Calendar, 
     ChevronLeft, 
@@ -240,19 +240,12 @@ export default function HistorialPage() {
 
                                             {/* Acciones */}
                                             <td className="py-4 px-4 text-center">
-                                                {canViewSummary(estudio.status) ? (
-                                                    <Link href={`/dashboard/analysis/${estudio.analisis_id}/summary`}>
-                                                        <Button variant="secondary" size="sm" className="inline-flex items-center gap-1">
-                                                            <Eye size={16} />
-                                                            Ver Resumen
-                                                        </Button>
-                                                    </Link>
-                                                ) : (
-                                                    <Button variant="ghost" size="sm" disabled className="text-gray-400">
-                                                        <Eye size={16} className="mr-1" />
-                                                        No disponible
-                                                    </Button>
-                                                )}
+                                                <AnalysisActions
+                                                    canViewSummary={canViewSummary(estudio.status)}
+                                                    summaryHref={`/dashboard/analysis/${estudio.analisis_id}/summary`}
+                                                    canDownloadPdf={Boolean(estudio.documento_id)}
+                                                    onDownloadPdf={() => estudio.documento_id && handleDownloadDocument(estudio.documento_id)}
+                                                />
                                             </td>
                                         </tr>
                                     ))}

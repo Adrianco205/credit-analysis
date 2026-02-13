@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_current_user, get_db
+from app.api.deps import get_current_user, get_db, require_role
 from app.models.user import Usuario
 from app.models.banco import Banco
 from app.repositories.analyses_repo import AnalysesRepo
@@ -543,7 +543,7 @@ def update_manual_fields(
 def generate_projections(
     analysis_id: UUID,
     request: GenerateProjectionsRequest,
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_role("ADMIN")),
     db: Session = Depends(get_db)
 ):
     """
@@ -582,7 +582,7 @@ def generate_projections(
 @router.get("/{analysis_id}/projections", response_model=list[ProjectionResponse])
 def get_projections(
     analysis_id: UUID,
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_role("ADMIN")),
     db: Session = Depends(get_db)
 ):
     """Obtener proyecciones generadas para un análisis."""
@@ -602,7 +602,7 @@ def get_projections(
 def select_option(
     analysis_id: UUID,
     request: SelectOptionRequest,
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_role("ADMIN")),
     db: Session = Depends(get_db)
 ):
     """Seleccionar una opción de ahorro."""
@@ -629,7 +629,7 @@ def select_option(
 def select_option_get(
     analysis_id: UUID,
     numero_opcion: int = Query(..., ge=1),
-    current_user: Usuario = Depends(get_current_user),
+    current_user: Usuario = Depends(require_role("ADMIN")),
     db: Session = Depends(get_db)
 ):
     """Seleccionar una opción de ahorro (vía GET)."""

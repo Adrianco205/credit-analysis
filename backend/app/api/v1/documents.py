@@ -110,10 +110,13 @@ async def upload_pdf(
     
     # Si está encriptado y no hay contraseña, pedir contraseña
     if validation_result.status == PDFStatus.ENCRYPTED and not password:
-        return DocumentUploadResponse(
-            success=False,
-            message="El PDF está protegido con contraseña. Por favor proporciona la contraseña.",
-            validation=validation_response
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "PDF_PASSWORD_REQUIRED",
+                "message": "El PDF está protegido con contraseña. Por favor proporciona la contraseña.",
+                "requires_password": True
+            }
         )
     
     # Si no es válido (y no es encriptado), retornar error
@@ -137,10 +140,13 @@ async def upload_pdf(
             validation_response.message = decrypt_result.message
             validation_response.is_valid = False
             
-            return DocumentUploadResponse(
-                success=False,
-                message=decrypt_result.message,
-                validation=validation_response
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "PDF_INVALID_PASSWORD",
+                    "message": decrypt_result.message,
+                    "requires_password": True
+                }
             )
         
         # Usar contenido desencriptado

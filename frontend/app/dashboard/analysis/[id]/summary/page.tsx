@@ -6,7 +6,7 @@ import { apiClient } from '@/lib/api-client';
 import { AnalysisSummary } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AnalysisSummaryPage() {
@@ -180,14 +180,6 @@ export default function AnalysisSummaryPage() {
                         Volver al Inicio
                     </Button>
                 </Link>
-                <Button 
-                    onClick={() => router.push(`/dashboard/analysis/${analysisId}/projections`)}
-                    variant="primary"
-                    size="lg"
-                    rightIcon={<ArrowRight size={18} />}
-                >
-                    Generar Proyecciones de Ahorro
-                </Button>
             </div>
         </div>
     );

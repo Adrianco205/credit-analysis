@@ -18,6 +18,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -27,12 +28,25 @@ from app.models.user import Usuario
 from app.models.analisis import AnalisisHipotecario
 from app.models.propuesta import PropuestaAhorro
 from app.repositories.analyses_repo import AnalysesRepo
+from app.repositories.documents_repo import DocumentsRepo
 from app.repositories.propuestas_repo import PropuestasRepo
+from app.repositories.admin_repo import AdminAnalysesRepo
+from app.schemas.admin_analysis import AdminAnalysesListResponse, AdminAnalysesParams
+from app.schemas.analisis import (
+    AjusteInflacionResumen,
+    CostosExtraResumen,
+    DatosBasicosResumen,
+    DesgloseInteresesSeguros,
+    LimitesBancoResumen,
+    ResumenCreditoResponse,
+)
 from app.services.analysis_service import (
     AnalysisService,
     OpcionAbonoInput,
     get_analysis_service
 )
+from app.services.admin_analysis_service import AdminAnalysisService
+from app.services.pdf_service import get_storage_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -260,84 +274,37 @@ class PaginatedResponse(BaseModel):
 # ENDPOINTS - ANÁLISIS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.get("/analyses", response_model=PaginatedResponse)
+@router.get("/analyses", response_model=AdminAnalysesListResponse)
 def list_all_analyses(
-    cedula: str | None = Query(None, description="Filtrar por cédula del usuario"),
-    numero_credito: str | None = Query(None, description="Filtrar por número de crédito"),
-    fecha_desde: date | None = Query(None, description="Fecha extracto desde"),
-    fecha_hasta: date | None = Query(None, description="Fecha extracto hasta"),
-    status: str | None = Query(None, description="Filtrar por estado"),
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(25, ge=1, le=100),
+    customer_id_number: str | None = Query(None, description="Filtro por cédula (contiene)"),
+    customer_name: str | None = Query(None, description="Filtro por nombre/apellidos (contiene, case-insensitive)"),
+    credit_number: str | None = Query(None, description="Filtro por número de crédito"),
+    bank_id: int | None = Query(None, description="Filtro por banco"),
+    uploaded_from: datetime | None = Query(None, description="Fecha/hora inicial de subida"),
+    uploaded_to: datetime | None = Query(None, description="Fecha/hora final de subida"),
+    sort_by: str = Query("uploaded_at", description="uploaded_at|customer_name|bank_name|credit_number"),
+    sort_dir: str = Query("desc", description="asc|desc"),
     admin: Usuario = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
-    """
-    Listar todos los análisis con filtros avanzados.
-    
-    Filtros disponibles:
-    - cedula: Búsqueda parcial por cédula del usuario
-    - numero_credito: Búsqueda parcial por número de crédito
-    - fecha_desde/fecha_hasta: Rango de fechas de extracto
-    - status: Estado del análisis
-    """
-    repo = AnalysesRepo(db)
-    propuestas_repo = PropuestasRepo(db)
-    
-    skip = (page - 1) * page_size
-    
-    analyses, total = repo.search_admin(
-        cedula=cedula,
-        numero_credito=numero_credito,
-        fecha_desde=fecha_desde,
-        fecha_hasta=fecha_hasta,
-        status=status,
-        skip=skip,
-        limit=page_size
-    )
-    
-    # Enriquecer con datos del usuario
-    items = []
-    for a in analyses:
-        # Obtener usuario
-        usuario = db.execute(
-            select(Usuario).where(Usuario.id == a.usuario_id)
-        ).scalar_one_or_none()
-        
-        usuario_nombre = None
-        if usuario:
-            usuario_nombre = f"{usuario.nombres or ''} {usuario.primer_apellido or ''}".strip()
-        
-        max_ahorro = propuestas_repo.get_max_ahorro(a.id)
-        
-        item = AdminAnalysisListItem(
-            id=a.id,
-            documento_id=a.documento_id,
-            usuario_id=a.usuario_id,
-            usuario_nombre=usuario_nombre,
-            usuario_cedula=usuario.identificacion if usuario else None,
-            usuario_email=usuario.email if usuario else None,
-            usuario_telefono=usuario.telefono if usuario else None,
-            numero_credito=a.numero_credito,
-            saldo_capital_pesos=a.saldo_capital_pesos,
-            sistema_amortizacion=a.sistema_amortizacion,
-            status=a.status,
-            nombre_coincide=a.nombre_coincide,
-            fecha_extracto=a.fecha_extracto,
-            created_at=a.created_at,
-            tiene_propuestas=propuestas_repo.has_propuestas(a.id),
-            max_ahorro_potencial=max_ahorro
-        )
-        items.append(item)
-    
-    pages = (total + page_size - 1) // page_size
-    
-    return PaginatedResponse(
-        items=[i.model_dump() for i in items],
-        total=total,
+    """Historial administrativo de análisis (server-side: paginación, filtros y orden)."""
+    _ = admin
+    params = AdminAnalysesParams(
         page=page,
-        pages=pages
+        page_size=page_size,
+        customer_id_number=customer_id_number,
+        customer_name=customer_name,
+        credit_number=credit_number,
+        bank_id=bank_id,
+        uploaded_from=uploaded_from,
+        uploaded_to=uploaded_to,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
+    service = AdminAnalysisService(AdminAnalysesRepo(db))
+    return service.list_analyses(params)
 
 
 @router.get("/analyses/{analysis_id}", response_model=AdminAnalysisDetail)
@@ -402,6 +369,128 @@ def get_analysis_admin(
         ajuste_inflacion_pesos=analisis.ajuste_inflacion_pesos,
         campos_manuales=analisis.campos_manuales,
         created_at=analisis.created_at
+    )
+
+
+@router.get("/analyses/{analysis_id}/summary", response_model=ResumenCreditoResponse)
+def get_analysis_admin_summary(
+    analysis_id: UUID,
+    admin: Usuario = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """Resumen del análisis para admin (equivalente al flujo cliente, pero sin restricción de propietario)."""
+    _ = admin
+    repo = AnalysesRepo(db)
+
+    analisis = repo.get_by_id(analysis_id)
+    if not analisis:
+        raise HTTPException(status_code=404, detail="Análisis no encontrado")
+
+    repo.calculate_derived_fields(analisis)
+    db.commit()
+
+    cuota_actual = analisis.valor_cuota_con_seguros or Decimal("0")
+    if cuota_actual == 0 and analisis.valor_cuota_con_subsidio:
+        cuota_actual = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
+
+    beneficio_frech = analisis.beneficio_frech_mensual or Decimal("0")
+    cuota_completa = cuota_actual + beneficio_frech
+
+    datos_basicos = DatosBasicosResumen(
+        valor_prestado=analisis.valor_prestado_inicial or Decimal("0"),
+        cuotas_pactadas=analisis.cuotas_pactadas or 0,
+        cuotas_pagadas=analisis.cuotas_pagadas or 0,
+        cuotas_por_pagar=analisis.cuotas_pendientes or 0,
+        cuota_actual_aprox=cuota_actual,
+        beneficio_frech=beneficio_frech,
+        cuota_completa_aprox=cuota_completa,
+        total_pagado_fecha=analisis.total_pagado_fecha or Decimal("0"),
+        total_frech_recibido=analisis.total_frech_recibido or Decimal("0"),
+        monto_real_pagado_banco=analisis.monto_real_pagado_banco or Decimal("0"),
+    )
+
+    limites_banco = LimitesBancoResumen(
+        valor_prestado=analisis.valor_prestado_inicial or Decimal("0"),
+        saldo_actual_credito=analisis.saldo_capital_pesos or Decimal("0"),
+        abono_adicional_cuota=analisis.abono_adicional_actual,
+    )
+
+    ajuste_inflacion = None
+    if analisis.ajuste_inflacion_pesos is not None:
+        ajuste_inflacion = AjusteInflacionResumen(
+            ajuste_pesos=analisis.ajuste_inflacion_pesos or Decimal("0"),
+            porcentaje_ajuste=analisis.porcentaje_ajuste_inflacion or Decimal("0"),
+            metodo=analisis.inflation_method,
+        )
+
+    desglose = DesgloseInteresesSeguros(
+        interes_corriente=analisis.intereses_corrientes_periodo or Decimal("0"),
+        interes_mora=analisis.intereses_mora or Decimal("0"),
+        seguro_vida=analisis.seguro_vida or Decimal("0"),
+        seguro_incendio=analisis.seguro_incendio or Decimal("0"),
+        seguro_terremoto=analisis.seguro_terremoto or Decimal("0"),
+        otros_cargos=analisis.otros_cargos or Decimal("0"),
+    )
+
+    costos_extra = CostosExtraResumen(
+        total_intereses_seguros=analisis.total_intereses_seguros or Decimal("0"),
+        desglose=desglose,
+        capital_pagado_periodo=analisis.capital_pagado_periodo,
+        intereses_corrientes_periodo=analisis.intereses_corrientes_periodo,
+        intereses_mora_periodo=analisis.intereses_mora,
+        seguros_total_periodo=analisis.seguros_total_mensual,
+        otros_cargos_periodo=analisis.otros_cargos,
+        formula="sum(interes_corriente + interes_mora + seguros + otros_cargos)",
+    )
+
+    sistema_completo = analisis.sistema_amortizacion or ""
+    if analisis.plan_credito:
+        sistema_completo = f"{analisis.sistema_amortizacion} - {analisis.plan_credito}"
+
+    return ResumenCreditoResponse(
+        analisis_id=analisis.id,
+        numero_credito=analisis.numero_credito,
+        nombre_titular=analisis.nombre_titular_extracto,
+        banco_nombre=None,
+        sistema_amortizacion=sistema_completo,
+        fecha_extracto=analisis.fecha_extracto,
+        datos_basicos=datos_basicos,
+        limites_banco=limites_banco,
+        ajuste_inflacion=ajuste_inflacion,
+        costos_extra=costos_extra,
+        tasa_cobrada_con_frech=analisis.tasa_interes_subsidiada_ea,
+        seguros_actuales_mensual=analisis.seguros_total_mensual,
+        is_total_paid_estimated=analisis.is_total_paid_estimated,
+    )
+
+
+@router.get("/documents/{document_id}/download")
+def admin_download_document(
+    document_id: UUID,
+    admin: Usuario = Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    """Descarga PDF para admin sin restricción de propietario."""
+    _ = admin
+    documents_repo = DocumentsRepo(db)
+    storage_service = get_storage_service()
+
+    documento = documents_repo.get_by_id(document_id)
+    if not documento:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    if not documento.s3_key:
+        raise HTTPException(status_code=404, detail="El documento no tiene archivo asociado")
+
+    pdf_content = storage_service.get_pdf(documento.s3_key)
+    if not pdf_content:
+        raise HTTPException(status_code=404, detail="Archivo PDF no encontrado en storage")
+
+    filename = documento.original_filename or "extracto.pdf"
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

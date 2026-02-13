@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/build/pdf';
 import { 
     FileText, 
     Upload, 
@@ -21,6 +22,11 @@ import {
     Loader2,
     Lock
 } from 'lucide-react';
+
+GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
+).toString();
 
 export default function CreditAnalysisUploadPage() {
     const router = useRouter();
@@ -42,6 +48,9 @@ export default function CreditAnalysisUploadPage() {
     const [banks, setBanks] = useState<Array<{ id: number; nombre: string }>>([]);
     const [bankId, setBankId] = useState<number | null>(null);
     const [pdfPassword, setPdfPassword] = useState('');
+    const [pdfRequiresPassword, setPdfRequiresPassword] = useState(false);
+    const [pdfPasswordError, setPdfPasswordError] = useState('');
+    const [checkingPdf, setCheckingPdf] = useState(false);
     const [documentId, setDocumentId] = useState<string | null>(null);
     const [uploading, setUploading] = useState(false);
     const [processing, setProcessing] = useState(false);
@@ -114,6 +123,9 @@ export default function CreditAnalysisUploadPage() {
                 return;
             }
             setFile(selectedFile);
+            setPdfPassword('');
+            setPdfPasswordError('');
+            checkPdfEncryption(selectedFile);
         }
     };
 
@@ -130,6 +142,43 @@ export default function CreditAnalysisUploadPage() {
                 return;
             }
             setFile(selectedFile);
+            setPdfPassword('');
+            setPdfPasswordError('');
+            checkPdfEncryption(selectedFile);
+        }
+    };
+
+    const checkPdfEncryption = async (selectedFile: File) => {
+        setCheckingPdf(true);
+        setPdfRequiresPassword(false);
+        try {
+            const buffer = await selectedFile.arrayBuffer();
+            await getDocument({ data: buffer, password: '' }).promise;
+            setPdfRequiresPassword(false);
+        } catch (err: any) {
+            const isPasswordError = err?.name === 'PasswordException' || err?.code === 1 || err?.code === 2;
+            if (isPasswordError) {
+                setPdfRequiresPassword(true);
+                return;
+            }
+            setFile(null);
+            toast.error('No se pudo leer el PDF. Verifica que sea valido.');
+        } finally {
+            setCheckingPdf(false);
+        }
+    };
+
+    const verifyPdfPassword = async (selectedFile: File, password: string) => {
+        const buffer = await selectedFile.arrayBuffer();
+        try {
+            await getDocument({ data: buffer, password }).promise;
+            return true;
+        } catch (err: any) {
+            const isPasswordError = err?.name === 'PasswordException' || err?.code === 1 || err?.code === 2;
+            if (isPasswordError) {
+                return false;
+            }
+            throw err;
         }
     };
 
@@ -142,20 +191,41 @@ export default function CreditAnalysisUploadPage() {
             toast.error("Debes seleccionar el banco del crédito");
             return;
         }
+        if (checkingPdf) {
+            toast.error("Estamos validando el PDF, espera un momento");
+            return;
+        }
+        if (pdfRequiresPassword) {
+            if (!pdfPassword) {
+                setPdfPasswordError('Debes ingresar la contraseña del PDF');
+                toast.error('El PDF requiere contraseña');
+                return;
+            }
+            const isValid = await verifyPdfPassword(file, pdfPassword);
+            if (!isValid) {
+                setPdfPasswordError('Contraseña incorrecta');
+                toast.error('Contraseña incorrecta');
+                return;
+            }
+            setPdfPasswordError('');
+        }
 
         setUploading(true);
         try {
             // 1. Upload Document
-            const uploadRes = await apiClient.uploadDocument(file, pdfPassword || undefined);
+            const uploadRes = await apiClient.uploadDocument(
+                file,
+                pdfRequiresPassword ? pdfPassword : undefined
+            );
             
             if (!uploadRes.success) {
-                // If requires password
                 if (uploadRes.validation?.requires_password) {
-                     toast.error("El PDF está protegido. Por favor ingresa la contraseña.");
-                     setUploading(false);
-                     return;
+                    setPdfRequiresPassword(true);
+                    toast.error("El PDF está protegido. Por favor ingresa la contraseña.");
+                    setUploading(false);
+                    return;
                 }
-                 throw new Error(uploadRes.message || "Error al subir documento");
+                throw new Error(uploadRes.message || "Error al subir documento");
             }
             
             const docId = uploadRes.document_id;
@@ -209,7 +279,11 @@ export default function CreditAnalysisUploadPage() {
                     ingresos_mensuales: Number(income),
                     capacidad_pago_max: Number(paymentCapacity),
                     tipo_contrato_laboral: contractType,
-                    opciones_abono_preferidas: [Number(option1), Number(option2), Number(option3)]
+                    opciones_abono_preferidas: [
+                        Number(option1 || 0),
+                        Number(option2 || 0),
+                        Number(option3 || 0)
+                    ].filter((value) => value > 0)
                 },
                 banco_id: bankId || undefined
             });
@@ -236,8 +310,14 @@ export default function CreditAnalysisUploadPage() {
 
         } catch (err: any) {
             console.error("Create Analysis Error:", err);
-            const msg = err.response?.data?.detail || err.message || 'Ocurrió un error en el proceso';
-            toast.error(msg);
+            const detail = err?.detail;
+            if (detail?.requires_password) {
+                setPdfRequiresPassword(true);
+                toast.error(detail.message || 'El PDF requiere contraseña');
+            } else {
+                const msg = err.response?.data?.detail || err.message || 'Ocurrió un error en el proceso';
+                toast.error(msg);
+            }
         } finally {
             setUploading(false);
             setProcessing(false);
@@ -276,7 +356,7 @@ export default function CreditAnalysisUploadPage() {
                             <DollarSign className="text-[var(--verde-hoja)]" />
                             1. Información Financiera
                         </h2>
-                        <p className="text-gray-500 text-sm mt-1">Ingresa tus datos para personalizar las proyecciones.</p>
+                        <p className="text-gray-500 text-sm mt-1">Ingresa tus datos para personalizar el análisis.</p>
                     </CardHeader>
                     
                     <form onSubmit={handleStep1Submit} className="space-y-6 mt-4">
@@ -287,7 +367,7 @@ export default function CreditAnalysisUploadPage() {
                                 value={creditType}
                                 onChange={(e) => setCreditType(e.target.value)}
                             >
-                                <option value="Hipotecario">Crédito Hipotecario / Leasing Habitacional</option>
+                                <option value="Hipotecario">Crédito Hipotecario</option>
                             </select>
                             <p className="text-xs text-gray-500 ml-1">Por el momento solo soportamos análisis de créditos hipotecarios.</p>
                         </div>
@@ -295,21 +375,21 @@ export default function CreditAnalysisUploadPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <Input 
                                 label="Ingresos Mensuales Total (COP) *"
-                                type="number"
-                                placeholder="Ej: 5000000"
-                                value={income}
-                                onChange={(e) => setIncome(e.target.value)}
-                                min="0"
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="Ej: 5.000.000"
+                                value={formatNumberInput(income)}
+                                onChange={(e) => setIncome(cleanNumberInput(e.target.value))}
                                 required
                             />
                             <Input 
                                 label="Capacidad de Pago Máxima (COP) *"
-                                type="number"
-                                placeholder="Ej: 1500000"
+                                type="text"
+                                inputMode="numeric"
+                                placeholder="Ej: 1.500.000"
                                 helperText="Lo máximo que puedes pagar mensual por la cuota"
-                                value={paymentCapacity}
-                                onChange={(e) => setPaymentCapacity(e.target.value)}
-                                min="0"
+                                value={formatNumberInput(paymentCapacity)}
+                                onChange={(e) => setPaymentCapacity(cleanNumberInput(e.target.value))}
                                 required
                             />
                         </div>
@@ -332,12 +412,30 @@ export default function CreditAnalysisUploadPage() {
                         <div className="bg-[var(--gray-50)] p-4 rounded-xl border border-gray-200">
                             <h3 className="font-semibold text-gray-700 mb-3 text-sm flex items-center gap-2">
                                 <CheckCircle2 size={16} className="text-[var(--verde-hoja)]"/>
-                                Opciones de Abono Extra (Simulación)
+                                Opciones de Abono Extra (Simulacion)
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <Input label="Opción 1" type="number" value={option1} onChange={e => setOption1(e.target.value)} min="0" />
-                                <Input label="Opción 2" type="number" value={option2} onChange={e => setOption2(e.target.value)} min="0" />
-                                <Input label="Opción 3" type="number" value={option3} onChange={e => setOption3(e.target.value)} min="0" />
+                                <Input
+                                    label="Opcion 1"
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={formatNumberInput(option1)}
+                                    onChange={(e) => setOption1(cleanNumberInput(e.target.value))}
+                                />
+                                <Input
+                                    label="Opcion 2"
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={formatNumberInput(option2)}
+                                    onChange={(e) => setOption2(cleanNumberInput(e.target.value))}
+                                />
+                                <Input
+                                    label="Opcion 3"
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={formatNumberInput(option3)}
+                                    onChange={(e) => setOption3(cleanNumberInput(e.target.value))}
+                                />
                             </div>
                         </div>
 
@@ -357,7 +455,7 @@ export default function CreditAnalysisUploadPage() {
                {step === 2 && (
                    <div className="flex justify-between items-center bg-gray-50 border border-gray-200 p-4 rounded-lg mb-6">
                        <div className="text-sm text-gray-600">
-                            <strong>Ingresos:</strong> ${Number(income).toLocaleString()} | <strong>Contrato:</strong> {contractType}
+                           <strong>Ingresos:</strong> ${formatNumberInput(income)} | <strong>Contrato:</strong> {contractType}
                        </div>
                        <Button variant="ghost" size="sm" onClick={() => setStep(1)} disabled={uploading || processing}>
                            Editar
@@ -426,15 +524,31 @@ export default function CreditAnalysisUploadPage() {
                                     </select>
                                 </div>
                             </div>
-                            <Input 
-                                label="Contraseña del PDF (Opcional)"
-                                type="password"
-                                placeholder="Solo si el archivo pide clave"
-                                value={pdfPassword}
-                                onChange={(e) => setPdfPassword(e.target.value)}
-                                leftIcon={<Lock size={18} />}
-                                showPasswordToggle
-                            />
+                            {pdfRequiresPassword ? (
+                                <Input 
+                                    label="Contraseña del PDF"
+                                    type="password"
+                                    placeholder="Ingresa la clave del PDF"
+                                    value={pdfPassword}
+                                    onChange={(e) => {
+                                        setPdfPassword(e.target.value);
+                                        if (pdfPasswordError) setPdfPasswordError('');
+                                    }}
+                                    leftIcon={<Lock size={18} />}
+                                    showPasswordToggle
+                                    error={pdfPasswordError || undefined}
+                                    helperText={!pdfPasswordError ? "Este PDF esta protegido" : undefined}
+                                />
+                            ) : (
+                                <div className="text-sm text-gray-500 flex items-center">
+                                    {checkingPdf
+                                        ? 'Validando PDF...'
+                                        : file
+                                            ? 'PDF sin contrasena detectado'
+                                            : 'Selecciona un PDF para validar'
+                                    }
+                                </div>
+                            )}
                         </div>
 
                         {/* Actions */}
@@ -557,20 +671,21 @@ export default function CreditAnalysisUploadPage() {
                      </div>
                  )}
 
-                 <div className="flex justify-end gap-4 pt-2">
-                    <Button 
-                        onClick={() => router.push(`/dashboard/analysis/${analysisId}/projections`)}
-                        variant="primary"
-                        size="lg"
-                        rightIcon={<ArrowRight size={18} />}
-                    >
-                        Generar Proyecciones de Ahorro
-                    </Button>
-                 </div>
                  </div>
             )}
         </div>
     );
+}
+
+function cleanNumberInput(value: string) {
+    return value.replace(/[^\d]/g, '');
+}
+
+function formatNumberInput(value: string) {
+    if (!value) return '';
+    const parsed = Number(value);
+    if (Number.isNaN(parsed)) return '';
+    return new Intl.NumberFormat('es-CO').format(parsed);
 }
 
 function Row({ label, value, valueClass = "text-gray-900" }: { label: string, value: any, valueClass?: string }) {

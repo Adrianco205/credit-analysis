@@ -196,6 +196,9 @@ CREATE INDEX IF NOT EXISTS ix_analisis_numero_credito ON analisis_hipotecario(nu
 CREATE INDEX IF NOT EXISTS ix_analisis_fecha_extracto ON analisis_hipotecario(fecha_extracto);
 CREATE INDEX IF NOT EXISTS ix_analisis_status ON analisis_hipotecario(status);
 CREATE INDEX IF NOT EXISTS ix_analisis_usuario_id ON analisis_hipotecario(usuario_id);
+CREATE INDEX IF NOT EXISTS ix_analisis_created_at ON analisis_hipotecario(created_at);
+CREATE INDEX IF NOT EXISTS ix_analisis_banco_id ON analisis_hipotecario(banco_id);
+CREATE INDEX IF NOT EXISTS ix_usuarios_identificacion ON usuarios(identificacion);
 
 -- ==========================================
 -- 3.1 PROPUESTAS DE AHORRO

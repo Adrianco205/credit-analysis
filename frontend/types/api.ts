@@ -206,3 +206,74 @@ export interface EstudiosHistorialResponse {
   total_pages: number;
   estudios: EstudioHistorialItem[];
 }
+
+// ==========================================
+// ADMIN - HISTORIAL GLOBAL DE ANÁLISIS
+// ==========================================
+
+export interface AdminAnalysisActions {
+  can_view_summary: boolean;
+  can_view_detail: boolean;
+  can_view_pdf: boolean;
+}
+
+export interface AdminAnalysisItem {
+  analysis_id: string;
+  uploaded_at: string | null;
+  document_id: string | null;
+  credit_number: string | null;
+  status: string;
+  customer: {
+    user_id: string;
+    full_name: string;
+    id_number: string | null;
+  };
+  bank: {
+    id: number | null;
+    name: string | null;
+  };
+  actions: AdminAnalysisActions;
+}
+
+export interface AdminAnalysesResponse {
+  data: AdminAnalysisItem[];
+  pagination: {
+    page: number;
+    page_size: number;
+    total: number;
+    total_pages: number;
+  };
+  filters: {
+    bank_options: Array<{ id: number; name: string }>;
+  };
+}
+
+export interface AdminAnalysisDetailResponse {
+  id: string;
+  documento_id: string;
+  usuario_id: string;
+  status: string;
+  usuario_nombre?: string | null;
+  usuario_cedula?: string | null;
+  usuario_email?: string | null;
+  usuario_telefono?: string | null;
+  numero_credito?: string | null;
+  sistema_amortizacion?: string | null;
+  plan_credito?: string | null;
+  fecha_extracto?: string | null;
+  saldo_capital_pesos?: number | null;
+  created_at?: string | null;
+}
+
+export interface AdminAnalysesParams {
+  page?: number;
+  page_size?: number;
+  customer_id_number?: string;
+  customer_name?: string;
+  credit_number?: string;
+  bank_id?: number;
+  uploaded_from?: string;
+  uploaded_to?: string;
+  sort_by?: 'uploaded_at' | 'customer_name' | 'bank_name' | 'credit_number';
+  sort_dir?: 'asc' | 'desc';
+}

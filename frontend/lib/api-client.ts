@@ -15,6 +15,9 @@ import type {
   CreateAnalysisResponse,
   AnalysisSummary,
   EstudiosHistorialResponse,
+  AdminAnalysesResponse,
+  AdminAnalysesParams,
+  AdminAnalysisDetailResponse,
 } from '@/types/api';
 
 const API_BASE_URL = typeof window !== 'undefined' 
@@ -216,6 +219,29 @@ class ApiClient {
   // User Estudios/History endpoints
   public async getEstudiosHistorial(params?: { page?: number; limit?: number; status?: string }): Promise<EstudiosHistorialResponse> {
     const response = await this.client.get<EstudiosHistorialResponse>('/users/me/estudios', { params });
+    return response.data;
+  }
+
+  // Admin analyses endpoints
+  public async getAdminAnalyses(params?: AdminAnalysesParams): Promise<AdminAnalysesResponse> {
+    const response = await this.client.get<AdminAnalysesResponse>('/admin/analyses', { params });
+    return response.data;
+  }
+
+  public async getAdminAnalysisSummary(analysisId: string): Promise<any> {
+    const response = await this.client.get(`/admin/analyses/${analysisId}/summary`);
+    return response.data;
+  }
+
+  public async getAdminAnalysisDetail(analysisId: string): Promise<AdminAnalysisDetailResponse> {
+    const response = await this.client.get<AdminAnalysisDetailResponse>(`/admin/analyses/${analysisId}`);
+    return response.data;
+  }
+
+  public async downloadAdminDocument(documentId: string): Promise<Blob> {
+    const response = await this.client.get(`/admin/documents/${documentId}/download`, {
+      responseType: 'blob'
+    });
     return response.data;
   }
 
