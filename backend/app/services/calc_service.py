@@ -164,6 +164,15 @@ class CalculadoraFinanciera:
     def __init__(self):
         self._precision_dinero = PRECISION_DINERO
         self._precision_tasa = PRECISION_TASA
+
+    def _normalize_tasa_ea(self, tasa_ea: Decimal) -> Decimal:
+        if tasa_ea <= 0:
+            return Decimal("0")
+        if tasa_ea > 1:
+            tasa_normalizada = tasa_ea / Decimal("100")
+        else:
+            tasa_normalizada = tasa_ea
+        return tasa_normalizada
     
     # ═══════════════════════════════════════════════════════════════════════════
     # CONVERSIONES DE TASAS
@@ -177,13 +186,14 @@ class CalculadoraFinanciera:
         
         Ejemplo: 4.71% EA → 0.3844% mensual
         """
-        if tasa_ea <= 0:
+        tasa_ea_normalizada = self._normalize_tasa_ea(tasa_ea)
+        if tasa_ea_normalizada <= 0:
             return Decimal("0")
         
         # (1 + EA)^(1/12) - 1
         uno = Decimal("1")
         exponente = Decimal("1") / Decimal("12")
-        base = uno + tasa_ea
+        base = uno + tasa_ea_normalizada
         
         # Usamos float para la potencia fraccionaria y volvemos a Decimal
         tasa_mensual = Decimal(str(float(base) ** float(exponente))) - uno
@@ -252,6 +262,9 @@ class CalculadoraFinanciera:
         tasa_mensual: Decimal,
         cuota_fija: Decimal,
         abono_extra: Decimal = Decimal("0"),
+        seguros_mensual: Decimal = Decimal("0"),
+        sistema_amortizacion: str = "PESOS",
+        valor_uvr_actual: Decimal | None = None,
         max_cuotas: int = 600  # Límite de seguridad (50 años)
     ) -> ResultadoAmortizacion:
         """
@@ -268,7 +281,15 @@ class CalculadoraFinanciera:
             ResultadoAmortizacion con tabla completa y totales
         """
         tabla: List[FilaAmortizacion] = []
-        saldo = saldo_inicial
+
+        usa_uvr = sistema_amortizacion == "UVR" and valor_uvr_actual is not None and valor_uvr_actual > 0
+        factor_uvr = valor_uvr_actual if usa_uvr else Decimal("1")
+
+        saldo = saldo_inicial / factor_uvr
+        cuota_fija_unidad = cuota_fija / factor_uvr
+        abono_extra_unidad = abono_extra / factor_uvr
+        seguros_unidad = seguros_mensual / factor_uvr
+
         total_intereses = Decimal("0")
         total_capital = Decimal("0")
         total_pagado = Decimal("0")
@@ -281,18 +302,21 @@ class CalculadoraFinanciera:
             # Interés del mes
             interes_mes = (saldo * tasa_mensual).quantize(self._precision_dinero)
             
-            # Abono a capital = cuota - interés
-            abono_capital_base = cuota_fija - interes_mes
+            # Abono a capital = (cuota - seguros) - interés
+            abono_capital_base = cuota_fija_unidad - seguros_unidad - interes_mes
+            if abono_capital_base < 0:
+                abono_capital_base = Decimal("0")
             
             # Si el saldo es menor que el abono, ajustar última cuota
-            if saldo <= abono_capital_base + abono_extra:
+            if saldo <= abono_capital_base + abono_extra_unidad:
                 abono_capital_real = saldo
                 abono_extra_real = Decimal("0")
-                cuota_real = interes_mes + saldo
+                cuota_sin_seguros_real = interes_mes + saldo
+                cuota_real = cuota_sin_seguros_real + seguros_unidad
             else:
                 abono_capital_real = abono_capital_base
-                abono_extra_real = abono_extra
-                cuota_real = cuota_fija + abono_extra
+                abono_extra_real = abono_extra_unidad
+                cuota_real = cuota_fija_unidad + abono_extra_unidad
             
             # Actualizar saldo
             saldo = saldo - abono_capital_real - abono_extra_real
@@ -304,22 +328,34 @@ class CalculadoraFinanciera:
             total_capital += abono_capital_real + abono_extra_real
             total_pagado += cuota_real
             
+            # Convertir valores de iteración a pesos para salida
+            saldo_inicio_salida = (saldo_inicio_mes * factor_uvr).quantize(self._precision_dinero)
+            cuota_real_salida = (cuota_real * factor_uvr).quantize(self._precision_dinero)
+            interes_salida = (interes_mes * factor_uvr).quantize(self._precision_dinero)
+            abono_capital_salida = (abono_capital_real * factor_uvr).quantize(self._precision_dinero)
+            abono_extra_salida = (abono_extra_real * factor_uvr).quantize(self._precision_dinero)
+            saldo_salida = (saldo * factor_uvr).quantize(self._precision_dinero)
+
             # Agregar fila
             tabla.append(FilaAmortizacion(
                 numero_cuota=cuota_num,
-                saldo_inicial=saldo_inicio_mes,
-                cuota_total=cuota_real,
-                interes=interes_mes,
-                abono_capital=abono_capital_real,
-                abono_extra=abono_extra_real,
-                saldo_final=saldo
+                saldo_inicial=saldo_inicio_salida,
+                cuota_total=cuota_real_salida,
+                interes=interes_salida,
+                abono_capital=abono_capital_salida,
+                abono_extra=abono_extra_salida,
+                saldo_final=saldo_salida
             ))
+
+        total_pagado_salida = (total_pagado * factor_uvr).quantize(self._precision_dinero)
+        total_intereses_salida = (total_intereses * factor_uvr).quantize(self._precision_dinero)
+        total_capital_salida = (total_capital * factor_uvr).quantize(self._precision_dinero)
         
         return ResultadoAmortizacion(
             cuotas_totales=cuota_num,
-            total_pagado=total_pagado.quantize(self._precision_dinero),
-            total_intereses=total_intereses.quantize(self._precision_dinero),
-            total_capital=total_capital.quantize(self._precision_dinero),
+            total_pagado=total_pagado_salida,
+            total_intereses=total_intereses_salida,
+            total_capital=total_capital_salida,
             tabla=tabla
         )
     
@@ -349,7 +385,10 @@ class CalculadoraFinanciera:
             saldo_inicial=datos.saldo_capital,
             tasa_mensual=tasa_mensual,
             cuota_fija=datos.valor_cuota_actual,
-            abono_extra=Decimal("0")
+            abono_extra=Decimal("0"),
+            seguros_mensual=datos.seguros_mensual,
+            sistema_amortizacion=datos.sistema_amortizacion,
+            valor_uvr_actual=datos.valor_uvr_actual
         )
         
         # ═══════════════════════════════════════════════════════════════════
@@ -359,14 +398,19 @@ class CalculadoraFinanciera:
             saldo_inicial=datos.saldo_capital,
             tasa_mensual=tasa_mensual,
             cuota_fija=datos.valor_cuota_actual,
-            abono_extra=abono_extra
+            abono_extra=abono_extra,
+            seguros_mensual=datos.seguros_mensual,
+            sistema_amortizacion=datos.sistema_amortizacion,
+            valor_uvr_actual=datos.valor_uvr_actual
         )
         
         # ═══════════════════════════════════════════════════════════════════
         # CÁLCULOS DE AHORRO
         # ═══════════════════════════════════════════════════════════════════
         
-        cuotas_reducidas = resultado_actual.cuotas_totales - resultado_con_abono.cuotas_totales
+        cuotas_reducidas = datos.cuotas_pendientes - resultado_con_abono.cuotas_totales
+        if cuotas_reducidas < 0:
+            cuotas_reducidas = 0
         tiempo_ahorrado = TiempoAhorro.desde_meses(cuotas_reducidas)
         tiempo_restante = TiempoAhorro.desde_meses(resultado_con_abono.cuotas_totales)
         

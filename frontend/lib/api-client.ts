@@ -8,16 +8,35 @@ import type {
   TokenResponse,
   UserProfile,
   UpdatePasswordRequest,
+  ForgotPasswordRequest,
+  ForgotPasswordResponse,
+  ResetPasswordRequest,
+  ResetPasswordResponse,
   ApiError,
   DocumentUploadResponse,
   ExtractDataResponse,
   CreateAnalysisRequest,
   CreateAnalysisResponse,
   AnalysisSummary,
+  ProjectionRequestOption,
+  ProjectionResponse,
+  UpdateManualFieldsRequest,
   EstudiosHistorialResponse,
   AdminAnalysesResponse,
   AdminAnalysesParams,
   AdminAnalysisDetailResponse,
+  AdminProjectionOptionRequest,
+  AdminProjectionResponse,
+  PropuestaCompletaResponse,
+  UVRResponse,
+  IPCResponse,
+  DTFResponse,
+  IndicadoresConsolidadosResponse,
+  HistoricoUVRResponse,
+  ConversionUVRRequest,
+  ConversionUVRResponse,
+  ProyeccionUVRRequest,
+  ProyeccionUVRResponse,
 } from '@/types/api';
 
 const API_BASE_URL = typeof window !== 'undefined' 
@@ -33,7 +52,7 @@ class ApiClient {
       headers: {
         'Content-Type': 'application/json',
       },
-      timeout: 120000,
+      timeout: 300000,
     });
 
     // Request interceptor para agregar token
@@ -147,6 +166,16 @@ class ApiClient {
     return response.data;
   }
 
+  public async forgotPassword(data: ForgotPasswordRequest): Promise<ForgotPasswordResponse> {
+    const response = await this.client.post<ForgotPasswordResponse>('/auth/forgot-password', data);
+    return response.data;
+  }
+
+  public async resetPassword(data: ResetPasswordRequest): Promise<ResetPasswordResponse> {
+    const response = await this.client.post<ResetPasswordResponse>('/auth/reset-password', data);
+    return response.data;
+  }
+
   public logout(): void {
     this.removeToken();
   }
@@ -201,18 +230,18 @@ class ApiClient {
     return response.data;
   }
 
-  public async getAnalysisSummary(analysisId: string): Promise<any> {
-    const response = await this.client.get(`/analyses/${analysisId}/summary`);
+  public async getAnalysisSummary(analysisId: string): Promise<AnalysisSummary> {
+    const response = await this.client.get<AnalysisSummary>(`/analyses/${analysisId}/summary`);
     return response.data;
   }
 
-  public async generateProjections(analysisId: string, opciones: any[]): Promise<any> {
-    const response = await this.client.post(`/analyses/${analysisId}/projections`, { opciones });
+  public async generateProjections(analysisId: string, opciones: ProjectionRequestOption[]): Promise<ProjectionResponse[]> {
+    const response = await this.client.post<ProjectionResponse[]>(`/analyses/${analysisId}/projections`, { opciones });
     return response.data;
   }
 
-  public async updateAnalysisManual(analysisId: string, data: any): Promise<any> {
-    const response = await this.client.patch(`/analyses/${analysisId}/manual`, data);
+  public async updateAnalysisManual(analysisId: string, data: UpdateManualFieldsRequest): Promise<CreateAnalysisResponse> {
+    const response = await this.client.patch<CreateAnalysisResponse>(`/analyses/${analysisId}/manual`, data);
     return response.data;
   }
 
@@ -228,8 +257,8 @@ class ApiClient {
     return response.data;
   }
 
-  public async getAdminAnalysisSummary(analysisId: string): Promise<any> {
-    const response = await this.client.get(`/admin/analyses/${analysisId}/summary`);
+  public async getAdminAnalysisSummary(analysisId: string): Promise<AnalysisSummary> {
+    const response = await this.client.get<AnalysisSummary>(`/admin/analyses/${analysisId}/summary`);
     return response.data;
   }
 
@@ -238,9 +267,26 @@ class ApiClient {
     return response.data;
   }
 
+  public async calculateAdminProjections(
+    analysisId: string,
+    opciones: AdminProjectionOptionRequest[]
+  ): Promise<PropuestaCompletaResponse | AdminProjectionResponse[]> {
+    const response = await this.client.post<PropuestaCompletaResponse | AdminProjectionResponse[]>(`/admin/analyses/${analysisId}/calculate`, {
+      opciones,
+    });
+    return response.data;
+  }
+
   public async downloadAdminDocument(documentId: string): Promise<Blob> {
     const response = await this.client.get(`/admin/documents/${documentId}/download`, {
       responseType: 'blob'
+    });
+    return response.data;
+  }
+
+  public async downloadAdminProposalPdf(analysisId: string): Promise<Blob> {
+    const response = await this.client.get(`/admin/analyses/${analysisId}/proposal/pdf`, {
+      responseType: 'blob',
     });
     return response.data;
   }
@@ -256,6 +302,52 @@ class ApiClient {
     const response = await this.client.get(`/documents/${documentId}/download`, {
       responseType: 'blob'
     });
+    return response.data;
+  }
+
+  public async getIndicadorUVR(fecha?: string): Promise<UVRResponse> {
+    const response = await this.client.get<UVRResponse>('/indicadores/uvr', {
+      params: fecha ? { fecha } : undefined,
+    });
+    return response.data;
+  }
+
+  public async getIndicadorIPC(anio?: number, mes?: number): Promise<IPCResponse> {
+    const response = await this.client.get<IPCResponse>('/indicadores/ipc', {
+      params: anio && mes ? { anio, mes } : undefined,
+    });
+    return response.data;
+  }
+
+  public async getIndicadorDTF(fecha?: string): Promise<DTFResponse> {
+    const response = await this.client.get<DTFResponse>('/indicadores/dtf', {
+      params: fecha ? { fecha } : undefined,
+    });
+    return response.data;
+  }
+
+  public async getIndicadoresConsolidados(): Promise<IndicadoresConsolidadosResponse> {
+    const response = await this.client.get<IndicadoresConsolidadosResponse>('/indicadores/consolidados');
+    return response.data;
+  }
+
+  public async getHistoricoUVR(fechaInicio: string, fechaFin: string): Promise<HistoricoUVRResponse> {
+    const response = await this.client.get<HistoricoUVRResponse>('/indicadores/uvr/historico', {
+      params: {
+        fecha_inicio: fechaInicio,
+        fecha_fin: fechaFin,
+      },
+    });
+    return response.data;
+  }
+
+  public async convertirUVR(data: ConversionUVRRequest): Promise<ConversionUVRResponse> {
+    const response = await this.client.post<ConversionUVRResponse>('/indicadores/uvr/convertir', data);
+    return response.data;
+  }
+
+  public async proyectarUVR(data: ProyeccionUVRRequest): Promise<ProyeccionUVRResponse> {
+    const response = await this.client.post<ProyeccionUVRResponse>('/indicadores/uvr/proyectar', data);
     return response.data;
   }
 }

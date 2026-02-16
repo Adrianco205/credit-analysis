@@ -6,7 +6,7 @@ CRUD para DocumentoS3 usando SQLAlchemy 2.0.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select, and_
@@ -116,6 +116,32 @@ class DocumentsRepo:
                     DocumentoS3.usuario_id == usuario_id
                 )
             )
+        ).scalar_one_or_none()
+
+    def get_by_checksum_and_user_in_current_month(
+        self,
+        checksum: str,
+        usuario_id: uuid.UUID,
+        reference_datetime: Optional[datetime] = None,
+    ) -> Optional[DocumentoS3]:
+        """Obtiene un documento duplicado (mismo checksum) del usuario en el mes calendario actual."""
+        now = reference_datetime or datetime.now(timezone.utc)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        if month_start.month == 12:
+            next_month_start = month_start.replace(year=month_start.year + 1, month=1)
+        else:
+            next_month_start = month_start.replace(month=month_start.month + 1)
+
+        return self.db.execute(
+            select(DocumentoS3).where(
+                and_(
+                    DocumentoS3.checksum_sha256 == checksum,
+                    DocumentoS3.usuario_id == usuario_id,
+                    DocumentoS3.created_at >= month_start,
+                    DocumentoS3.created_at < next_month_start,
+                )
+            ).order_by(DocumentoS3.created_at.desc())
         ).scalar_one_or_none()
     
     def list_by_user(

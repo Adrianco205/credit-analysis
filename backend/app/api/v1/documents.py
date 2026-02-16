@@ -12,6 +12,7 @@ Endpoints:
 
 import io
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -157,20 +158,24 @@ async def upload_pdf(
         validation_response.page_count = decrypt_result.page_count
         validation_response.requires_password = False
     
-    # Paso 3: Verificar duplicados (por checksum)
+    # Paso 3: Verificar duplicados del mes (por checksum)
     import hashlib
     checksum = hashlib.sha256(content_to_save).hexdigest()
     
-    existing_doc = documents_repo.get_by_checksum_and_user(checksum, current_user.id)
+    existing_doc = documents_repo.get_by_checksum_and_user_in_current_month(
+        checksum,
+        current_user.id,
+        reference_datetime=datetime.now(timezone.utc),
+    )
     if existing_doc:
         return DocumentUploadResponse(
             success=False,
-            message="Ya tienes este documento subido anteriormente",
+            message="Este documento ya lo ha subido anteriormente. Puede ver el resumen de su análisis en la sección de 'Historial de análisis'.",
             document_id=existing_doc.id,
             validation=PDFValidationResponse(
                 is_valid=True,
                 status=PDFUploadStatus.OK,
-                message="Documento duplicado",
+                message="Podrá volver a subir este documento el próximo mes, una vez que se reflejen nuevos movimientos en su extracto.",
                 requires_password=False
             )
         )

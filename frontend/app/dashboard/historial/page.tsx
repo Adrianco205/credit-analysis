@@ -80,6 +80,9 @@ export default function HistorialPage() {
             'PROCESSING': 'bg-yellow-100 text-yellow-700',
             'PENDING': 'bg-gray-100 text-gray-600',
             'PENDING_MANUAL': 'bg-blue-100 text-blue-700',
+            'PENDING_PROJECTION': 'bg-indigo-100 text-indigo-700',
+            'VALIDATED': 'bg-emerald-100 text-emerald-700',
+            'PROJECTED': 'bg-teal-100 text-teal-700',
             'EXTRACTED': 'bg-green-100 text-green-700',
             'FAILED': 'bg-red-100 text-red-700',
             'ERROR': 'bg-red-100 text-red-700',
@@ -95,6 +98,9 @@ export default function HistorialPage() {
             'PROCESSING': 'Procesando',
             'PENDING': 'Pendiente',
             'PENDING_MANUAL': 'Datos pendientes',
+            'PENDING_PROJECTION': 'Pendiente de proyección',
+            'VALIDATED': 'Validado y listo para proyección',
+            'PROJECTED': 'Proyección generada',
             'EXTRACTED': 'Extraído',
             'FAILED': 'Fallido',
             'ERROR': 'Error',
@@ -102,11 +108,6 @@ export default function HistorialPage() {
             'NAME_MISMATCH': 'Nombre no coincide',
         };
         return statusTexts[status] || status;
-    };
-    
-    // Estados que permiten ver el resumen (tienen datos extraídos)
-    const canViewSummary = (status: string) => {
-        return ['COMPLETED', 'EXTRACTED', 'NAME_MISMATCH', 'PENDING_MANUAL'].includes(status);
     };
 
     if (loading && estudios.length === 0) {
@@ -241,10 +242,8 @@ export default function HistorialPage() {
                                             {/* Acciones */}
                                             <td className="py-4 px-4 text-center">
                                                 <AnalysisActions
-                                                    canViewSummary={canViewSummary(estudio.status)}
+                                                    canViewSummary={Boolean(estudio.analisis_id)}
                                                     summaryHref={`/dashboard/analysis/${estudio.analisis_id}/summary`}
-                                                    canDownloadPdf={Boolean(estudio.documento_id)}
-                                                    onDownloadPdf={() => estudio.documento_id && handleDownloadDocument(estudio.documento_id)}
                                                 />
                                             </td>
                                         </tr>

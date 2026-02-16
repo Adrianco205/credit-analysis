@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { UserProfile, DocumentUploadResponse, AnalysisSummary } from '@/types/api';
@@ -8,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/build/pdf';
+import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist/build/pdf.mjs';
 import { 
     FileText, 
     Upload, 
@@ -56,8 +57,77 @@ export default function CreditAnalysisUploadPage() {
     const [processing, setProcessing] = useState(false);
     const [analysisId, setAnalysisId] = useState<string | null>(null);
     const [summaryData, setSummaryData] = useState<AnalysisSummary | null>(null);
+    const [monthlyDuplicateWarning, setMonthlyDuplicateWarning] = useState(false);
+
+    const nextUploadAvailability = getNextUploadAvailability();
 
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const isTransientRequestError = (error: unknown) => {
+        const raw = (error && typeof error === 'object') ? error as Record<string, unknown> : {};
+        const message = String(raw.message || '').toLowerCase();
+        const code = String(raw.code || '').toUpperCase();
+        const errorType = String(raw.error || '').toLowerCase();
+        return (
+            code === 'ECONNRESET' ||
+            code === 'ECONNABORTED' ||
+            message.includes('socket hang up') ||
+            message.includes('timeout') ||
+            errorType === 'network_error'
+        );
+    };
+
+    const getErrorMessage = (error: unknown) => {
+        if (error && typeof error === 'object') {
+            const raw = error as Record<string, unknown>;
+            const statusCode = Number(raw.status_code || 0);
+            if (statusCode === 503) {
+                return 'El servicio de extracción está temporalmente ocupado. Intenta nuevamente en unos segundos.';
+            }
+
+            const detail = raw.detail;
+
+            if (typeof detail === 'string' && detail.trim().length > 0 && detail !== '{}') {
+                return detail;
+            }
+
+            if (detail && typeof detail === 'object') {
+                const detailObj = detail as Record<string, unknown>;
+                if (typeof detailObj.message === 'string' && detailObj.message.trim().length > 0) {
+                    return detailObj.message;
+                }
+            }
+
+            if (typeof raw.message === 'string' && raw.message.trim().length > 0 && raw.message !== '{}') {
+                return raw.message;
+            }
+        }
+
+        if (error instanceof Error && error.message && error.message.trim().length > 0) {
+            return error.message;
+        }
+
+        return 'Ocurrió un error en el proceso. Intenta nuevamente en unos segundos.';
+    };
+
+    const extractWithRetry = async (docId: string, maxAttempts = 2): Promise<Awaited<ReturnType<typeof apiClient.extractDocumentData>>> => {
+        let lastError: unknown;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                return await apiClient.extractDocumentData(docId);
+            } catch (error) {
+                lastError = error;
+                if (attempt < maxAttempts && isTransientRequestError(error)) {
+                    await new Promise((resolve) => setTimeout(resolve, 1500 * attempt));
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        throw lastError;
+    };
 
     useEffect(() => {
         loadProfile();
@@ -123,6 +193,7 @@ export default function CreditAnalysisUploadPage() {
                 return;
             }
             setFile(selectedFile);
+            setMonthlyDuplicateWarning(false);
             setPdfPassword('');
             setPdfPasswordError('');
             checkPdfEncryption(selectedFile);
@@ -142,6 +213,7 @@ export default function CreditAnalysisUploadPage() {
                 return;
             }
             setFile(selectedFile);
+            setMonthlyDuplicateWarning(false);
             setPdfPassword('');
             setPdfPasswordError('');
             checkPdfEncryption(selectedFile);
@@ -219,6 +291,13 @@ export default function CreditAnalysisUploadPage() {
             );
             
             if (!uploadRes.success) {
+                const duplicateMessage = "Este documento ya lo ha subido anteriormente. Puede ver el resumen de su análisis en la sección de 'Historial de análisis'.";
+                if (uploadRes.message === duplicateMessage) {
+                    setMonthlyDuplicateWarning(true);
+                    setUploading(false);
+                    return;
+                }
+
                 if (uploadRes.validation?.requires_password) {
                     setPdfRequiresPassword(true);
                     toast.error("El PDF está protegido. Por favor ingresa la contraseña.");
@@ -236,7 +315,7 @@ export default function CreditAnalysisUploadPage() {
             setProcessing(true); // Switch to processing state UI
             setUploading(false); // Upload done
             
-            const extractRes = await apiClient.extractDocumentData(docId);
+            const extractRes = await extractWithRetry(docId);
             
             if (!extractRes.success) {
                 // Check if it failed because it's not a mortgage credit
@@ -308,15 +387,16 @@ export default function CreditAnalysisUploadPage() {
             setStep(3);
             toast.success("¡Análisis creado exitosamente!");
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Create Analysis Error:", err);
-            const detail = err?.detail;
+            const detail = (err && typeof err === 'object')
+                ? (err as { detail?: { requires_password?: boolean; message?: string } }).detail
+                : undefined;
             if (detail?.requires_password) {
                 setPdfRequiresPassword(true);
                 toast.error(detail.message || 'El PDF requiere contraseña');
             } else {
-                const msg = err.response?.data?.detail || err.message || 'Ocurrió un error en el proceso';
-                toast.error(msg);
+                toast.error(getErrorMessage(err));
             }
         } finally {
             setUploading(false);
@@ -473,6 +553,27 @@ export default function CreditAnalysisUploadPage() {
                     </CardHeader>
                     
                     <div className="space-y-6 mt-4">
+                        {monthlyDuplicateWarning && (
+                            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900 space-y-2">
+                                <p className="text-sm font-medium">
+                                    Este documento ya lo ha subido anteriormente. Puede ver el resumen de su análisis en la sección de{' '}
+                                    <Link href="/dashboard/historial" className="underline font-semibold hover:text-amber-700">
+                                        Historial de análisis
+                                    </Link>
+                                    .
+                                </p>
+                                <p className="text-sm">
+                                    Podrá volver a subir este documento el próximo mes, una vez que se reflejen nuevos movimientos en su extracto.
+                                </p>
+                                <div className="inline-flex items-center gap-2 rounded-lg border border-amber-400/60 bg-white px-3 py-2 text-xs font-semibold text-amber-800">
+                                    <Calendar size={14} />
+                                    <span>
+                                        Habilitado nuevamente el {nextUploadAvailability.dateLabel} · faltan {nextUploadAvailability.daysRemaining} día{nextUploadAvailability.daysRemaining === 1 ? '' : 's'}
+                                    </span>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Drag & Drop Area */}
                         <div 
                             className={`border-2 border-dashed rounded-2xl p-10 text-center transition-colors cursor-pointer
@@ -609,7 +710,7 @@ export default function CreditAnalysisUploadPage() {
                                 <Row label="Beneficio FRECH (cuota)" value={formatMoney(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
                                 <Row label="Cuota Completa Aprox. (sin FRECH)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
                                 <div className="col-span-full border-t my-2" />
-                                <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold" />
+                                <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
                                 <Row label="Total Beneficio FRECH Recibido" value={formatMoney(summaryData.datos_basicos?.total_frech_recibido)} valueClass="text-green-600 font-semibold" />
                                 <Row label="Monto Real Pagado al Banco" value={formatMoney(summaryData.datos_basicos?.monto_real_pagado_banco)} valueClass="font-bold text-lg text-[var(--verde-bosque)] bg-yellow-100 px-2 py-1 rounded" />
                              </div>
@@ -622,7 +723,7 @@ export default function CreditAnalysisUploadPage() {
                              </CardHeader>
                              <div className="p-4 pt-3 text-sm space-y-1">
                                 <Row label="Valor Prestado" value={formatMoney(summaryData.limites_banco?.valor_prestado)} />
-                                <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg" />
+                                <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg text-gray-900" />
                              </div>
                          </Card>
 
@@ -688,11 +789,29 @@ function formatNumberInput(value: string) {
     return new Intl.NumberFormat('es-CO').format(parsed);
 }
 
+function getNextUploadAvailability() {
+    const now = new Date();
+    const nextMonthFirstDay = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const daysRemaining = Math.max(1, Math.ceil((nextMonthFirstDay.getTime() - now.getTime()) / msPerDay));
+
+    const dateLabel = new Intl.DateTimeFormat('es-CO', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+    }).format(nextMonthFirstDay);
+
+    return {
+        dateLabel,
+        daysRemaining,
+    };
+}
+
 function Row({ label, value, valueClass = "text-gray-900" }: { label: string, value: any, valueClass?: string }) {
     if (value === undefined || value === null) return null;
     return (
         <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
-            <span className="text-gray-500">{label}</span>
+            <span className="text-gray-700">{label}</span>
             <span className={`font-medium ${valueClass}`}>{value}</span>
         </div>
     );
@@ -703,6 +822,7 @@ function formatMoney(amount?: number) {
     return new Intl.NumberFormat('es-CO', { 
         style: 'currency', 
         currency: 'COP', 
-        maximumFractionDigits: 0 
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2 
     }).format(amount);
 }

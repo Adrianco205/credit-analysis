@@ -4,10 +4,15 @@ import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, LogOut, User, FileText, History } from 'lucide-react';
+import { Home, LogOut, User, FileText, History, Sparkles, ChartColumn, X } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
+export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [userName, setUserName] = useState('');
@@ -30,15 +35,36 @@ export function Sidebar() {
     loadUserName();
   }, []);
 
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen, onClose]);
+
   const handleLogout = () => {
     apiClient.logout();
     router.push('/auth/login');
+  };
+
+  const handleNavClick = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+      onClose();
+    }
   };
 
   const links = userRole === 'ADMIN'
     ? [
         { href: '/dashboard', label: 'Inicio', icon: Home },
         { href: '/dashboard/admin/analyses', label: 'Ver historial de análisis', icon: History },
+        { href: '/dashboard/admin/proyecciones', label: 'Generar proyecciones', icon: Sparkles },
+        { href: '/dashboard/admin/indicadores-financieros', label: 'Indicadores Financieros', icon: ChartColumn },
       ]
     : [
         { href: '/dashboard', label: 'Inicio', icon: Home },
@@ -47,7 +73,20 @@ export function Sidebar() {
       ];
 
   return (
-    <aside className="fixed left-0 top-0 h-full w-[270px] bg-[var(--verde-bosque)] text-white z-50 shadow-2xl overflow-y-auto">
+    <>
+      <div
+        className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 lg:hidden ${
+          isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      <aside
+        className={`fixed inset-y-0 left-0 w-[270px] bg-[var(--verde-bosque)] text-white z-50 shadow-2xl overflow-y-auto transform transition-transform duration-300 lg:translate-x-0 ${
+          isOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
       <div className="h-full flex flex-col">
         {/* Header / Logo */}
         <div className="p-6 border-b border-[rgba(255,255,255,0.1)]">
@@ -56,6 +95,14 @@ export function Sidebar() {
                <Image src="/assets/brand/logo.png" alt="EcoFinanzas" width={28} height={28} />
              </div>
              <h1 className="text-2xl font-bold tracking-tight">EcoFinanzas</h1>
+             <button
+               type="button"
+               onClick={onClose}
+               className="ml-auto p-2 rounded-lg hover:bg-white/10 lg:hidden"
+               aria-label="Cerrar menú lateral"
+             >
+               <X size={18} />
+             </button>
           </div>
         </div>
 
@@ -73,11 +120,15 @@ export function Sidebar() {
         <nav className="flex-1 py-6 px-4 space-y-2">
           {links.map((link) => {
             const Icon = link.icon;
-            const isActive = pathname === link.href;
+            const isHomeLink = link.href === '/dashboard';
+            const isActive = isHomeLink
+              ? pathname === '/dashboard'
+              : pathname === link.href || pathname.startsWith(`${link.href}/`);
             return (
               <Link 
                 key={link.href}
                 href={link.href}
+                onClick={handleNavClick}
                 className={`flex items-center gap-4 px-4 py-3 rounded-lg transition-all duration-200 ${
                   isActive 
                     ? 'bg-[var(--verde-hoja)] text-white shadow-md translate-x-1 font-medium' 
@@ -103,5 +154,6 @@ export function Sidebar() {
         </div>
       </div>
     </aside>
+    </>
   );
 }

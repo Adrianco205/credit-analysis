@@ -420,7 +420,22 @@ class AnalysesRepo:
         
         # Cuota que paga el usuario (CON seguros)
         cuota_usuario = analisis.valor_cuota_con_seguros or Decimal("0")
-        # Si no tenemos valor_cuota_con_seguros, calcular: cuota_sin_seguros + seguros
+
+        # Componentes del último período pagado
+        capital_pagado_periodo = analisis.capital_pagado_periodo or Decimal("0")
+        componentes_no_capital_periodo = (
+            (analisis.intereses_corrientes_periodo or Decimal("0")) +
+            (analisis.intereses_mora or Decimal("0")) +
+            (analisis.seguros_total_mensual or Decimal("0")) +
+            (analisis.otros_cargos or Decimal("0"))
+        )
+        cuota_periodo_real = capital_pagado_periodo + componentes_no_capital_periodo
+
+        # Si la cuota del extracto actual viene en cero, usar la última cuota realmente pagada
+        if cuota_usuario == 0 and cuota_periodo_real > 0:
+            cuota_usuario = cuota_periodo_real
+
+        # Fallback adicional: cuota subsidiada + seguros
         if cuota_usuario == 0 and analisis.valor_cuota_con_subsidio:
             cuota_usuario = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
         
@@ -444,34 +459,18 @@ class AnalysesRepo:
         )
         
         # ═══════════════════════════════════════════════════════════════════
-        # PASO 4: TOTAL INTERESES Y SEGUROS ACUMULADO (FÓRMULA EXCEL)
+        # PASO 4: INTERESES Y SEGUROS DEL PERÍODO (NO ABONA A CAPITAL)
         # ═══════════════════════════════════════════════════════════════════
-        # 
-        # Fórmula: monto_real_pagado_banco - capital_amortizado
-        # donde capital_amortizado = valor_prestado - saldo_actual
-        # 
-        # Ejemplo del extracto:
-        # - Monto real pagado al banco: $18,360,828 (cuota_completa × cuotas = $510,023 × 36)
-        # - Capital amortizado: $45,200,180 - $56,069,733 = -$10,869,553 (negativo por inflación)
-        # - Total intereses y seguros = $18,360,828 - (-$10,869,553) = $29,230,381
-        
-        capital_amortizado = Decimal("0")
-        if analisis.valor_prestado_inicial and analisis.saldo_capital_pesos:
-            capital_amortizado = analisis.valor_prestado_inicial - analisis.saldo_capital_pesos
-        
-        # Intereses y seguros acumulados = Todo pagado - capital reducido
-        if analisis.monto_real_pagado_banco and analisis.monto_real_pagado_banco > 0:
-            analisis.total_intereses_seguros = analisis.monto_real_pagado_banco - capital_amortizado
+        # En la UI este bloque representa el costo del último período pagado,
+        # por lo que NO debe calcularse como acumulado histórico.
+        if componentes_no_capital_periodo > 0:
+            analisis.total_intereses_seguros = componentes_no_capital_periodo
         else:
-            # Fallback: estimación basada en componentes del período
-            componentes_periodo = (
-                (analisis.intereses_corrientes_periodo or Decimal("0")) +
-                (analisis.intereses_mora or Decimal("0")) +
-                (analisis.seguros_total_mensual or Decimal("0")) +
-                (analisis.otros_cargos or Decimal("0"))
-            )
-            cuotas = cuotas_pagadas or 1
-            analisis.total_intereses_seguros = componentes_periodo * cuotas
+            analisis.total_intereses_seguros = Decimal("0")
+
+        # Si el monto real pagado al banco no se pudo estimar, usar última cuota real
+        if (not analisis.monto_real_pagado_banco or analisis.monto_real_pagado_banco == 0) and cuota_periodo_real > 0:
+            analisis.monto_real_pagado_banco = cuota_periodo_real + (beneficio_frech or Decimal("0"))
         
         # ═══════════════════════════════════════════════════════════════════
         # PASO 5: AJUSTE POR INFLACIÓN (AUDITABLE)
@@ -536,8 +535,8 @@ class AnalysesRepo:
                     "seguro_terremoto": str(analisis.seguro_terremoto or 0),
                     "otros_cargos": str(analisis.otros_cargos or 0)
                 },
-                "formula": "monto_real_pagado_banco - (valor_prestado - saldo_actual)",
-                "nota": "Acumulado histórico: todo lo pagado menos el capital que se ha reducido"
+                "formula": "intereses_corrientes_periodo + intereses_mora + seguros_total_mensual + otros_cargos",
+                "nota": "Costo del último período (lo que NO abona a capital)"
             },
             "calculated_at": datetime.utcnow().isoformat() if 'datetime' in dir() else None,
             "version": "2.0"

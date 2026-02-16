@@ -38,14 +38,14 @@ async def test_gemini(request: GeminiTestRequest = GeminiTestRequest()):
         
         # Generar respuesta
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=settings.GEMINI_MODEL,
             contents=request.mensaje
         )
         
         return GeminiTestResponse(
             mensaje_enviado=request.mensaje,
             respuesta=response.text,
-            modelo="gemini-2.5-flash"
+            modelo=settings.GEMINI_MODEL
         )
         
     except Exception as e:
@@ -68,7 +68,7 @@ async def test_gemini_simple():
             }
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model=settings.GEMINI_MODEL,
             contents="Hola, responde brevemente en español"
         )
         
@@ -76,7 +76,7 @@ async def test_gemini_simple():
             "status": "ok",
             "mensaje": "Hola",
             "respuesta": response.text,
-            "modelo": "gemini-2.5-flash"
+            "modelo": settings.GEMINI_MODEL
         }
     except Exception as e:
         return {

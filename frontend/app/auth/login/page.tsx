@@ -44,14 +44,22 @@ export default function LoginPage() {
     } catch (error) {
       const apiError = error as ApiError;
 
-      if (apiError.status_code === 401) {
-        toast.error('Credenciales incorrectas');
+      if (apiError.status_code === 404) {
+        toast.error('Cédula no encontrada', {
+          description: apiError.message || 'La cédula no existe en el sistema.',
+        });
+      } else if (apiError.status_code === 401) {
+        toast.error('Contraseña incorrecta', {
+          description: apiError.message || 'Verifica tu contraseña e intenta nuevamente.',
+        });
       } else if (apiError.status_code === 403) {
         toast.error('Cuenta no activada', {
-          description: 'Verifica tu correo electrónico',
+          description: apiError.message || 'Verifica tu correo electrónico',
         });
       } else {
-        toast.error('Error al iniciar sesión');
+        toast.error('Error al iniciar sesión', {
+          description: apiError.message || 'Intenta nuevamente.',
+        });
       }
     } finally {
       setIsLoading(false);

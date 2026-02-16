@@ -64,6 +64,11 @@ class TestConversionTasas:
         """Tasa 0% debe retornar 0"""
         assert calculadora.tasa_ea_a_mensual(Decimal("0")) == Decimal("0")
 
+    def test_tasa_ea_porcentaje_a_mensual(self, calculadora):
+        """Debe aceptar tasa EA en porcentaje (9.53) además de decimal."""
+        tasa_mensual = calculadora.tasa_ea_a_mensual(Decimal("9.53"))
+        assert Decimal("0.007") < tasa_mensual < Decimal("0.008")
+
 
 class TestCuotaFija:
     """Tests para cálculo de cuota sistema francés"""
@@ -142,6 +147,37 @@ class TestTablaAmortizacion:
         
         assert resultado_con.total_intereses < resultado_sin.total_intereses
 
+    def test_seguros_no_amortizan_capital(self, calculadora):
+        """Los seguros se pagan pero no deben abonar capital."""
+        resultado = calculadora.generar_tabla_amortizacion(
+            saldo_inicial=Decimal("1200000"),
+            tasa_mensual=Decimal("0"),
+            cuota_fija=Decimal("200000"),
+            abono_extra=Decimal("0"),
+            seguros_mensual=Decimal("20000"),
+        )
+
+        # El capital amortizado total sigue siendo exactamente el saldo inicial
+        assert resultado.total_capital == Decimal("1200000.00")
+        # El total pagado incluye seguros (debe ser mayor al capital)
+        assert resultado.total_pagado > resultado.total_capital
+
+    def test_amortizacion_uvr_retorna_totales_en_pesos(self, calculadora):
+        """En UVR el cálculo interno es en UVR, pero los totales deben salir en pesos."""
+        resultado = calculadora.generar_tabla_amortizacion(
+            saldo_inicial=Decimal("56069733.47"),
+            tasa_mensual=Decimal("0.003844"),
+            cuota_fija=Decimal("305034.17"),
+            abono_extra=Decimal("200000"),
+            seguros_mensual=Decimal("21134"),
+            sistema_amortizacion="UVR",
+            valor_uvr_actual=Decimal("376.1794"),
+        )
+
+        assert resultado.total_pagado > Decimal("0")
+        assert resultado.total_intereses > Decimal("0")
+        assert resultado.total_capital > Decimal("0")
+
 
 class TestProyeccion:
     """Tests para proyecciones con datos reales"""
@@ -198,6 +234,19 @@ class TestProyeccion:
         # A mayor abono, menos cuotas
         assert proyecciones[0].cuotas_nuevas > proyecciones[1].cuotas_nuevas
         assert proyecciones[1].cuotas_nuevas > proyecciones[2].cuotas_nuevas
+
+    def test_cuotas_reducidas_usa_cuotas_pendientes_reales(self, calculadora, datos_extracto_bancolombia):
+        """Cuotas reducidas debe basarse en el dato real del banco."""
+        proyeccion = calculadora.calcular_proyeccion(
+            datos_extracto_bancolombia,
+            abono_extra=Decimal("200000"),
+            numero_opcion=1,
+        )
+
+        esperado = datos_extracto_bancolombia.cuotas_pendientes - proyeccion.cuotas_nuevas
+        if esperado < 0:
+            esperado = 0
+        assert proyeccion.cuotas_reducidas == esperado
 
 
 class TestHonorarios:

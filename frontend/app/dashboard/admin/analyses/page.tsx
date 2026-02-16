@@ -6,8 +6,10 @@ import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
   ArrowUpDown,
+  Check,
   ChevronLeft,
   ChevronRight,
+  Copy,
   FileSearch,
   Filter,
 } from 'lucide-react';
@@ -28,6 +30,9 @@ const STATUS_TEXT: Record<string, string> = {
   PROCESSING: 'Procesando',
   PENDING: 'Pendiente',
   PENDING_MANUAL: 'Datos pendientes',
+  PENDING_PROJECTION: 'Pendiente de proyección',
+  VALIDATED: 'Validado y listo para proyección',
+  PROJECTED: 'Proyección generada',
   EXTRACTED: 'Extraído',
   FAILED: 'Fallido',
   ERROR: 'Error',
@@ -40,6 +45,9 @@ const STATUS_BADGE: Record<string, string> = {
   PROCESSING: 'bg-yellow-100 text-yellow-700',
   PENDING: 'bg-gray-100 text-gray-600',
   PENDING_MANUAL: 'bg-blue-100 text-blue-700',
+  PENDING_PROJECTION: 'bg-indigo-100 text-indigo-700',
+  VALIDATED: 'bg-emerald-100 text-emerald-700',
+  PROJECTED: 'bg-teal-100 text-teal-700',
   EXTRACTED: 'bg-green-100 text-green-700',
   FAILED: 'bg-red-100 text-red-700',
   ERROR: 'bg-red-100 text-red-700',
@@ -55,6 +63,7 @@ export default function AdminAnalysesPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [items, setItems] = useState<AdminAnalysisItem[]>([]);
   const [bankOptions, setBankOptions] = useState<Array<{ id: number; name: string }>>([]);
 
@@ -180,6 +189,16 @@ export default function AdminAnalysesPage() {
       document.body.removeChild(anchor);
     } catch (err: any) {
       setError(err?.message || 'No se pudo descargar el documento');
+    }
+  };
+
+  const handleCopyAnalysisId = async (analysisId: string) => {
+    try {
+      await navigator.clipboard.writeText(analysisId);
+      setCopiedId(analysisId);
+      setTimeout(() => setCopiedId((current) => (current === analysisId ? null : current)), 1500);
+    } catch {
+      setError('No se pudo copiar el Analysis ID');
     }
   };
 
@@ -346,6 +365,7 @@ export default function AdminAnalysesPage() {
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Cédula</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Banco</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">N° crédito</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Analysis ID</th>
                     <th className="text-left py-3 px-4 text-sm font-semibold text-gray-600">Estado</th>
                     <th className="text-center py-3 px-4 text-sm font-semibold text-gray-600">Acciones</th>
                   </tr>
@@ -358,6 +378,21 @@ export default function AdminAnalysesPage() {
                       <td className="py-4 px-4 text-sm text-gray-700">{item.customer.id_number || 'N/A'}</td>
                       <td className="py-4 px-4 text-sm text-gray-700">{item.bank.name || 'Sin banco'}</td>
                       <td className="py-4 px-4 text-sm text-gray-700">{item.credit_number || 'N/A'}</td>
+                      <td className="py-4 px-4 text-sm text-gray-700">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono">{item.analysis_id}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyAnalysisId(item.analysis_id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                            aria-label="Copiar Analysis ID"
+                            title="Copiar Analysis ID"
+                          >
+                            {copiedId === item.analysis_id ? <Check size={12} /> : <Copy size={12} />}
+                            {copiedId === item.analysis_id ? 'Copiado' : 'Copiar'}
+                          </button>
+                        </div>
+                      </td>
                       <td className="py-4 px-4">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadge(item.status)}`}>
                           {getStatusText(item.status)}
@@ -369,7 +404,7 @@ export default function AdminAnalysesPage() {
                             compact
                             canViewDetail={item.actions.can_view_detail}
                             detailHref={`/dashboard/admin/analyses/${item.analysis_id}`}
-                            canViewSummary={item.actions.can_view_summary}
+                            canViewSummary={Boolean(item.analysis_id)}
                             summaryHref={`/dashboard/admin/analyses/${item.analysis_id}/summary`}
                             canDownloadPdf={item.actions.can_view_pdf && Boolean(item.document_id)}
                             onDownloadPdf={() => item.document_id && downloadDocument(item.document_id)}
@@ -396,6 +431,20 @@ export default function AdminAnalysesPage() {
                     <p><strong>Cédula:</strong> {item.customer.id_number || 'N/A'}</p>
                     <p><strong>Banco:</strong> {item.bank.name || 'Sin banco'}</p>
                     <p><strong>N° crédito:</strong> {item.credit_number || 'N/A'}</p>
+                    <p className="flex flex-wrap items-center gap-2">
+                      <strong>Analysis ID:</strong>
+                      <span className="font-mono">{item.analysis_id}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyAnalysisId(item.analysis_id)}
+                        className="inline-flex items-center gap-1 rounded-md border border-gray-200 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
+                        aria-label="Copiar Analysis ID"
+                        title="Copiar Analysis ID"
+                      >
+                        {copiedId === item.analysis_id ? <Check size={12} /> : <Copy size={12} />}
+                        {copiedId === item.analysis_id ? 'Copiado' : 'Copiar'}
+                      </button>
+                    </p>
                     <p><strong>Fecha:</strong> {formatDate(item.uploaded_at)}</p>
                   </div>
 
@@ -403,7 +452,7 @@ export default function AdminAnalysesPage() {
                     <AnalysisActions
                       canViewDetail={item.actions.can_view_detail}
                       detailHref={`/dashboard/admin/analyses/${item.analysis_id}`}
-                      canViewSummary={item.actions.can_view_summary}
+                      canViewSummary={Boolean(item.analysis_id)}
                       summaryHref={`/dashboard/admin/analyses/${item.analysis_id}/summary`}
                       canDownloadPdf={item.actions.can_view_pdf && Boolean(item.document_id)}
                       onDownloadPdf={() => item.document_id && downloadDocument(item.document_id)}

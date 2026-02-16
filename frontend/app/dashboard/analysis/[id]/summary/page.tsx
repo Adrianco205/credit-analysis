@@ -110,7 +110,7 @@ export default function AnalysisSummaryPage() {
                             <Row label="Beneficio FRECH (cuota)" value={formatMoney(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
                             <Row label="Cuota Completa Aprox. (sin FRECH)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
                             <div className="col-span-full border-t my-2" />
-                            <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold" />
+                            <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
                             <Row label="Total Beneficio FRECH Recibido" value={formatMoney(summaryData.datos_basicos?.total_frech_recibido)} valueClass="text-green-600 font-semibold" />
                             <Row label="Monto Real Pagado al Banco" value={formatMoney(summaryData.datos_basicos?.monto_real_pagado_banco)} valueClass="font-bold text-lg text-[var(--verde-bosque)] bg-yellow-100 px-2 py-1 rounded" />
                         </div>
@@ -123,7 +123,7 @@ export default function AnalysisSummaryPage() {
                         </CardHeader>
                         <div className="p-4 pt-3 text-sm space-y-1">
                             <Row label="Valor Prestado" value={formatMoney(summaryData.limites_banco?.valor_prestado)} />
-                            <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg" />
+                            <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg text-gray-900" />
                         </div>
                     </Card>
 
@@ -189,7 +189,7 @@ function Row({ label, value, valueClass = "text-gray-900" }: { label: string, va
     if (value === undefined || value === null) return null;
     return (
         <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
-            <span className="text-gray-500">{label}</span>
+            <span className="text-gray-700">{label}</span>
             <span className={`font-medium ${valueClass}`}>{value}</span>
         </div>
     );
@@ -200,6 +200,7 @@ function formatMoney(amount?: number) {
     return new Intl.NumberFormat('es-CO', { 
         style: 'currency', 
         currency: 'COP', 
-        maximumFractionDigits: 0 
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2 
     }).format(amount);
 }

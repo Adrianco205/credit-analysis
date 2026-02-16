@@ -20,6 +20,10 @@ from app.schemas.auth import (
     VerifyOtpRequest,
     LoginRequest,
     TokenResponse,
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
 )
 
 router = APIRouter()
@@ -185,8 +189,11 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     users = UsersRepo(db)
     user = users.get_by_identificacion(payload.identificacion)
 
-    if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Cédula o contraseña incorrectas.")
+    if not user:
+        raise HTTPException(status_code=404, detail="La cédula no existe en el sistema.")
+
+    if not user.password_hash or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="La contraseña es incorrecta.")
 
     if user.status != "ACTIVE":
         raise HTTPException(
@@ -196,3 +203,102 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     token = create_access_token(subject=str(user.id))
     return TokenResponse(access_token=token).model_dump()
+
+
+@router.post("/forgot-password", response_model=dict)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Solicita recuperación de contraseña por correo.
+
+    Siempre responde exitosamente para no revelar si el correo existe o no.
+    """
+    users = UsersRepo(db)
+    otp_repo = OtpRepo(db)
+
+    user = users.get_by_email(str(payload.email))
+    if user and user.status == "ACTIVE":
+        otp_repo.expire_pending(user.id, "PASSWORD_RESET")
+
+        reset_secret = secrets.token_urlsafe(32)
+        expires = datetime.now(timezone.utc) + timedelta(minutes=settings.PASSWORD_RESET_EXPIRE_MINUTES)
+
+        reset_otp = VerificacionOTP(
+            user_id=user.id,
+            code_hash=hash_password(reset_secret),
+            tipo="PASSWORD_RESET",
+            status="PENDING",
+            expires_at=expires,
+            used_at=None,
+        )
+        reset_otp = otp_repo.create(reset_otp)
+
+        token = f"{reset_otp.id}.{reset_secret}"
+        frontend_base_url = settings.FRONTEND_BASE_URL.rstrip("/")
+        reset_link = f"{frontend_base_url}/auth/reset-password?token={token}"
+
+        background_tasks.add_task(
+            EmailOtpService.send_password_reset_link,
+            to_email=str(payload.email),
+            reset_link=reset_link,
+        )
+
+    return ForgotPasswordResponse(
+        message="Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
+    ).model_dump()
+
+
+@router.post("/reset-password", response_model=dict)
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Restablece contraseña usando token de recuperación de un solo uso.
+    """
+    users = UsersRepo(db)
+    otp_repo = OtpRepo(db)
+
+    try:
+        otp_id_raw, reset_secret = payload.token.split(".", 1)
+        otp_id = uuid.UUID(otp_id_raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="El enlace de recuperación no es válido")
+
+    otp = otp_repo.get_by_id(otp_id)
+    if not otp or otp.tipo != "PASSWORD_RESET" or otp.status != "PENDING":
+        raise HTTPException(status_code=400, detail="El enlace de recuperación no es válido")
+
+    now = datetime.now(timezone.utc)
+    if otp.expires_at and now > otp.expires_at:
+        otp.status = "EXPIRED"
+        db.add(otp)
+        db.commit()
+        raise HTTPException(status_code=400, detail="El enlace de recuperación expiró")
+
+    if not otp.code_hash or not verify_password(reset_secret, otp.code_hash):
+        raise HTTPException(status_code=400, detail="El enlace de recuperación no es válido")
+
+    user = users.get_by_id(otp.user_id)
+    if not user or user.status != "ACTIVE":
+        raise HTTPException(status_code=400, detail="No se pudo restablecer la contraseña")
+
+    if user.password_hash and verify_password(payload.new_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="La nueva contraseña debe ser diferente a la actual")
+
+    user.password_hash = hash_password(payload.new_password)
+    db.add(user)
+
+    otp.status = "VERIFIED"
+    otp.used_at = now
+    db.add(otp)
+    db.commit()
+
+    otp_repo.expire_pending(user.id, "PASSWORD_RESET")
+
+    return ResetPasswordResponse(
+        message="Tu contraseña fue actualizada correctamente"
+    ).model_dump()

@@ -28,3 +28,24 @@ class OtpRepo:
         self.db.add(otp)
         self.db.commit()
         self.db.refresh(otp)
+
+    def get_by_id(self, otp_id) -> VerificacionOTP | None:
+        return self.db.execute(
+            select(VerificacionOTP).where(VerificacionOTP.id == otp_id)
+        ).scalar_one_or_none()
+
+    def expire_pending(self, user_id, tipo: str) -> int:
+        pendings = self.db.execute(
+            select(VerificacionOTP).where(
+                VerificacionOTP.user_id == user_id,
+                VerificacionOTP.tipo == tipo,
+                VerificacionOTP.status == "PENDING",
+            )
+        ).scalars().all()
+
+        for otp in pendings:
+            otp.status = "EXPIRED"
+            self.db.add(otp)
+
+        self.db.commit()
+        return len(pendings)

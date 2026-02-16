@@ -128,7 +128,7 @@ Busca el saldo actual del crédito. TU PRIORIDAD ABSOLUTA es encontrar el valor 
 
 **Este campo es CRÍTICO. Si hay un valor explícito en PESOS en la cabecera, ÚSALO, no lo calcules.**
 
-### COMPONENTES DE LA CUOTA (Del mes actual - tabla de movimientos)
+### COMPONENTES DE LA CUOTA (PRIORIZAR ÚLTIMO PAGO REAL)
 Busca la tabla de "Detalle del pago" o "Movimientos del período" y extrae:
 - Capital pagado en el período actual
 - Interés corriente pagado
@@ -137,6 +137,11 @@ Busca la tabla de "Detalle del pago" o "Movimientos del período" y extrae:
 - Seguro terremoto
 - Interés de mora (si hay)
 - Otros cargos
+
+Regla crítica para extractos en PESOS (cuota fija):
+- Si la sección "Detalle Cuota a Pagar" tiene valores en 0.00 o vacíos, NO uses esos ceros.
+- En ese caso, toma los valores desde "Detalle Cuota Periodo Anterior" (o "última cuota pagada").
+- Para el resumen de costos del período, prioriza SIEMPRE los conceptos que realmente se pagaron en la última cuota.
 
 Etiquetas comunes en PDFs colombianos:
 - "INTERÉS CORRIENTE" / "INT. CORRIENTE" / "INTERESES"
@@ -201,6 +206,10 @@ Para créditos en UVR, estos campos son OBLIGATORIOS:
 - seguro_incendio: Prima de seguro de incendio del período
 - seguro_terremoto: Prima de seguro de terremoto del período
 - otros_cargos: Cualquier otro cargo del período
+
+Para créditos "CUOTA FIJA EN PESOS":
+- Ignora valores 0.0000 de columnas UVR cuando exista columna en Pesos con valor > 0.
+- Si hay discrepancia entre tablas, usa los valores del "Periodo Anterior" para estos campos de período.
 
 ## FORMATO DE RESPUESTA
 Responde ÚNICAMENTE con un JSON válido con esta estructura:
@@ -302,8 +311,8 @@ class GeminiService:
     Usa el nuevo SDK google-genai con Client().
     """
     
-    # Modelo a usar (gemini-2.5-flash es el más reciente y económico)
-    MODEL_NAME = "gemini-2.5-flash"
+    # Modelo a usar (configurable por settings)
+    MODEL_NAME = settings.GEMINI_MODEL
     
     def __init__(self, api_key: str | None = None):
         """
@@ -490,7 +499,33 @@ class GeminiService:
                 )
             
             # Parsear respuesta JSON
-            return self._parse_extraction_response(response.text)
+            parsed_result = self._parse_extraction_response(response.text)
+            if parsed_result.status != ExtractionStatus.API_ERROR:
+                return parsed_result
+
+            # Reintento adicional SOLO para errores de parseo IA
+            logger.warning(
+                "Fallo de parseo en respuesta de Gemini; ejecutando un reintento adicional de extracción"
+            )
+
+            retry_response = self._call_with_retry(contents)
+            if not retry_response or not retry_response.text:
+                return ExtractionResult(
+                    status=ExtractionStatus.API_ERROR,
+                    message="Gemini no retornó respuesta en el reintento de parseo",
+                    confidence=0.0,
+                )
+
+            retry_parsed_result = self._parse_extraction_response(retry_response.text)
+            if retry_parsed_result.status != ExtractionStatus.API_ERROR:
+                return retry_parsed_result
+
+            return ExtractionResult(
+                status=ExtractionStatus.API_ERROR,
+                message="No se pudo interpretar la respuesta del motor de extracción tras un reintento automático. Intenta nuevamente en unos segundos.",
+                confidence=0.0,
+                raw_response=retry_parsed_result.raw_response or parsed_result.raw_response,
+            )
         
         except Exception as e:
             error_str = str(e).lower()
@@ -530,18 +565,7 @@ class GeminiService:
         Parsea la respuesta JSON de Gemini.
         """
         try:
-            # Limpiar respuesta (puede venir con markdown)
-            json_text = response_text.strip()
-            
-            # Remover bloques de código markdown si existen
-            if json_text.startswith("```"):
-                # Encontrar el JSON dentro del bloque de código
-                match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', json_text)
-                if match:
-                    json_text = match.group(1)
-            
-            # Parsear JSON
-            data = json.loads(json_text)
+            data = self._extract_json_payload(response_text)
             
             # Verificar si es un extracto hipotecario
             if not data.get("es_extracto_hipotecario", True):
@@ -599,10 +623,48 @@ class GeminiService:
             logger.debug(f"Respuesta recibida: {response_text[:500]}")
             return ExtractionResult(
                 status=ExtractionStatus.API_ERROR,
-                message=f"Error parseando respuesta de Gemini: {str(e)}",
+                message="No se pudo interpretar la respuesta del motor de extracción. Intenta nuevamente en unos segundos.",
                 confidence=0.0,
                 raw_response=response_text
             )
+
+    def _extract_json_payload(self, response_text: str) -> dict:
+        """Extrae y parsea JSON válido desde una respuesta potencialmente ruidosa de LLM."""
+        cleaned = (response_text or "").strip()
+        if not cleaned:
+            raise json.JSONDecodeError("Empty response", cleaned, 0)
+
+        candidates: list[str] = [cleaned]
+
+        fenced_matches = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', cleaned, flags=re.IGNORECASE)
+        candidates.extend(match.strip() for match in fenced_matches if match and match.strip())
+
+        first_obj = cleaned.find("{")
+        last_obj = cleaned.rfind("}")
+        if first_obj != -1 and last_obj != -1 and last_obj > first_obj:
+            candidates.append(cleaned[first_obj:last_obj + 1].strip())
+
+        decoder = json.JSONDecoder()
+        last_error: json.JSONDecodeError | None = None
+
+        for candidate in candidates:
+            candidate_text = candidate.strip()
+            if not candidate_text:
+                continue
+
+            try:
+                return json.loads(candidate_text)
+            except json.JSONDecodeError as e:
+                last_error = e
+
+            try:
+                parsed, _ = decoder.raw_decode(candidate_text)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError as e:
+                last_error = e
+
+        raise last_error or json.JSONDecodeError("No valid JSON object found", cleaned, 0)
     
     def _normalize_extracted_data(self, data: dict) -> dict:
         """
@@ -903,4 +965,13 @@ def map_extraction_to_analysis(
         "seguro_vida": data.get("seguro_vida"),
         "seguro_incendio": data.get("seguro_incendio"),
         "seguro_terremoto": data.get("seguro_terremoto"),
+
+        # Componentes del período (última cuota pagada)
+        "capital_pagado_periodo": data.get("capital_pagado_periodo"),
+        "intereses_corrientes_periodo": data.get("intereses_corrientes_periodo"),
+        "intereses_mora": data.get("intereses_mora"),
+        "otros_cargos": data.get("otros_cargos"),
+
+        # Total reportado en extracto (si existe)
+        "total_por_pagar": data.get("total_por_pagar"),
     }

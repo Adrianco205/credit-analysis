@@ -179,6 +179,16 @@ class PropuestaPDFGenerator:
         self.verde_primario = colors.HexColor('#1B5E20')
         self.verde_claro = colors.HexColor('#E8F5E9')
         self.gris_claro = colors.HexColor('#F5F5F5')
+
+    def _format_tasa_ea(self, tasa_ea: Decimal | None) -> str:
+        """Formatea tasa E.A. para mostrar en porcentaje humano.
+
+        - Si llega en decimal (0.0471), muestra 4.71%.
+        - Si llega ya en porcentaje (4.71), mantiene 4.71%.
+        """
+        tasa = tasa_ea or Decimal("0")
+        porcentaje = tasa * Decimal("100") if tasa <= Decimal("1") else tasa
+        return f"{porcentaje:.2f}% E.A."
     
     def generar_propuesta(self, datos: DatosPropuesta) -> bytes:
         """
@@ -308,7 +318,7 @@ class PropuestaPDFGenerator:
             ['Número de crédito:', credito.numero_credito],
             ['Sistema:', credito.sistema_amortizacion],
             ['Saldo actual:', f"${credito.saldo_capital:,.0f} COP"],
-            ['Tasa de interés:', f"{credito.tasa_interes_ea:.2f}% E.A."],
+            ['Tasa de interés:', self._format_tasa_ea(credito.tasa_interes_ea)],
             ['Cuota mensual:', f"${credito.cuota_mensual:,.0f} COP"],
             ['Cuotas pendientes:', f"{credito.cuotas_pendientes} ({tiempo_restante})"],
             ['Cuotas pagadas:', str(credito.cuotas_pagadas)],

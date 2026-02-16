@@ -2,7 +2,7 @@
 Tests para los endpoints de Indicadores Financieros.
 """
 import pytest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.v1.indicadores import router as indicadores_router
+from app.services.indicadores_service import FuenteDatos, IndicadorNoDisponibleError
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -37,7 +38,8 @@ def mock_uvr_response():
     return ValorUVR(
         fecha=date.today(),
         valor=Decimal("385.4521"),
-        fuente=FuenteDatos.SOCRATA
+        fuente=FuenteDatos.BANREP_API,
+        fecha_actualizacion=datetime.now()
     )
 
 
@@ -50,7 +52,8 @@ def mock_ipc_response():
         valor=Decimal("158.50"),
         variacion_mensual=Decimal("0.45"),
         variacion_anual=Decimal("5.80"),
-        fuente=FuenteDatos.SOCRATA
+        fuente=FuenteDatos.BANREP_API,
+        fecha_actualizacion=datetime.now()
     )
 
 
@@ -61,7 +64,8 @@ def mock_dtf_response():
     return ValorDTF(
         fecha=date.today(),
         valor=Decimal("10.50"),
-        fuente=FuenteDatos.SOCRATA
+        fuente=FuenteDatos.BANREP_API,
+        fecha_actualizacion=datetime.now()
     )
 
 
@@ -74,7 +78,8 @@ def mock_ibr_response():
         overnight=Decimal("9.75"),
         un_mes=Decimal("9.80"),
         tres_meses=Decimal("9.90"),
-        fuente=FuenteDatos.MANUAL
+        fuente=FuenteDatos.BANREP_API,
+        fecha_actualizacion=datetime.now()
     )
 
 
@@ -99,7 +104,9 @@ class TestEndpointUVR:
             assert "fecha" in data
             assert "valor" in data
             assert "fuente" in data
-            assert data["fuente"] == "SOCRATA"
+            assert data["fuente"] == "BANREP_API"
+            assert "fecha_actualizacion" in data
+            assert "warning" in data
     
     def test_get_uvr_fecha_especifica(self, client, mock_uvr_response):
         """GET /indicadores/uvr?fecha=2025-01-15 retorna UVR de esa fecha"""
@@ -113,6 +120,17 @@ class TestEndpointUVR:
             assert response.status_code == 200
             data = response.json()
             assert "valor" in data
+
+    def test_get_uvr_500_when_no_cache_and_provider_down(self, client):
+        with patch('app.api.v1.indicadores.obtener_servicio_indicadores') as mock_service:
+            mock_instance = MagicMock()
+            mock_instance.obtener_uvr_actual = AsyncMock(side_effect=IndicadorNoDisponibleError("down"))
+            mock_service.return_value = mock_instance
+
+            response = client.get("/api/v1/indicadores/uvr")
+
+            assert response.status_code == 500
+            assert "sin caché utilizable" in response.json()["detail"]
 
 
 class TestEndpointIPC:
@@ -194,7 +212,9 @@ class TestEndpointConsolidado:
             uvr=Decimal("385.45"),
             dtf=Decimal("10.50"),
             ibr_overnight=Decimal("9.75"),
-            ipc_anual=Decimal("5.80")
+            ipc_anual=Decimal("5.80"),
+            fuente=FuenteDatos.BANREP_API,
+            fecha_actualizacion=datetime.now()
         )
         
         with patch('app.api.v1.indicadores.obtener_servicio_indicadores') as mock_service:
@@ -210,6 +230,9 @@ class TestEndpointConsolidado:
             assert "dtf" in data
             assert "ibr_overnight" in data
             assert "ipc_anual" in data
+            assert data["fuente"] == "BANREP_API"
+            assert "fecha_actualizacion" in data
+            assert "warning" in data
 
 
 class TestEndpointHistorico:
@@ -371,7 +394,8 @@ class TestSchemas:
         response = UVRResponse(
             fecha=date.today(),
             valor=Decimal("385.4521"),
-            fuente="SOCRATA"
+            fuente="BANREP_API",
+            fecha_actualizacion=datetime.now()
         )
         
         assert response.fecha == date.today()

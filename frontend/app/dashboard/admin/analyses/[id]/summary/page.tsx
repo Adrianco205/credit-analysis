@@ -91,6 +91,16 @@ export default function AdminAnalysisSummaryPage() {
         <div className="space-y-4">
           <Card>
             <CardHeader className="pb-2 border-b">
+              <h3 className="font-semibold text-gray-700">PERFIL FINANCIERO DEL CLIENTE</h3>
+            </CardHeader>
+            <div className="p-4 pt-3 text-sm space-y-1">
+              <Row label="Ingresos mensuales" value={formatMoney(summaryData.ingresos_mensuales)} valueClass="font-semibold text-gray-900" />
+              <Row label="Capacidad de pago máxima" value={formatMoney(summaryData.capacidad_pago_max)} valueClass="font-semibold text-gray-900" />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2 border-b">
               <h3 className="font-semibold text-gray-700">DATOS BÁSICOS</h3>
             </CardHeader>
             <div className="p-4 pt-3 text-sm grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
@@ -102,7 +112,7 @@ export default function AdminAnalysisSummaryPage() {
               <Row label="Beneficio FRECH (cuota)" value={formatMoney(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
               <Row label="Cuota Completa Aprox. (sin FRECH)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
               <div className="col-span-full border-t my-2" />
-              <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold" />
+              <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
               <Row label="Total Beneficio FRECH Recibido" value={formatMoney(summaryData.datos_basicos?.total_frech_recibido)} valueClass="text-green-600 font-semibold" />
               <Row label="Monto Real Pagado al Banco" value={formatMoney(summaryData.datos_basicos?.monto_real_pagado_banco)} valueClass="font-bold text-lg text-[var(--verde-bosque)] bg-yellow-100 px-2 py-1 rounded" />
             </div>
@@ -114,9 +124,43 @@ export default function AdminAnalysisSummaryPage() {
             </CardHeader>
             <div className="p-4 pt-3 text-sm space-y-1">
               <Row label="Valor Prestado" value={formatMoney(summaryData.limites_banco?.valor_prestado)} />
-              <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg" />
+              <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg text-gray-900" />
             </div>
           </Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card>
+              <CardHeader className="pb-2 border-b">
+                <h3 className="font-semibold text-gray-700">AJUSTE POR INFLACIÓN</h3>
+              </CardHeader>
+              <div className="p-4 pt-3 text-sm space-y-1">
+                <Row
+                  label="Ajuste en Pesos"
+                  value={summaryData.ajuste_inflacion ? formatMoney(summaryData.ajuste_inflacion.ajuste_pesos) : 'N/A'}
+                  valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.ajuste_pesos) > 0 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'}
+                />
+                <Row
+                  label="% Ajustado (Incremento por Inflación)"
+                  value={summaryData.ajuste_inflacion ? `${Number(summaryData.ajuste_inflacion.porcentaje_ajuste).toFixed(2)}%` : 'N/A'}
+                  valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.porcentaje_ajuste) > 0 ? 'text-red-600' : 'text-green-600'}
+                />
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-2 border-b">
+                <h3 className="font-semibold text-gray-700">INTERESES Y SEGUROS</h3>
+              </CardHeader>
+              <div className="p-4 pt-3 text-sm space-y-1">
+                <Row
+                  label="Total Intereses y Seguros"
+                  value={formatMoney(summaryData.costos_extra?.total_intereses_seguros)}
+                  valueClass="text-red-600 font-bold text-lg"
+                />
+                <p className="text-xs text-gray-500 mt-2">Lo que NO abona a capital</p>
+              </div>
+            </Card>
+          </div>
         </div>
       )}
     </div>
@@ -127,17 +171,18 @@ function Row({ label, value, valueClass = 'text-gray-900' }: { label: string; va
   if (value === undefined || value === null) return null;
   return (
     <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
-      <span className="text-gray-500">{label}</span>
+      <span className="text-gray-700">{label}</span>
       <span className={`font-medium ${valueClass}`}>{value}</span>
     </div>
   );
 }
 
-function formatMoney(amount?: number) {
+function formatMoney(amount?: number | null) {
   if (amount === undefined || amount === null) return '-';
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
     currency: 'COP',
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(amount);
 }

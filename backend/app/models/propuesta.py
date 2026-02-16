@@ -78,4 +78,3 @@ class PropuestaAhorro(Base):
     es_opcion_seleccionada: Mapped[bool | None] = mapped_column(default=False)  # La que eligió el cliente
     
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
-    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), onupdate=text("now()"))

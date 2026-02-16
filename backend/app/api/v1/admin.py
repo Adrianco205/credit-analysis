@@ -16,16 +16,18 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
+import io
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from fastapi.responses import Response
-from pydantic import BaseModel, Field, ConfigDict
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db
 from app.models.user import Usuario
 from app.models.analisis import AnalisisHipotecario
+from app.models.banco import Banco
 from app.models.propuesta import PropuestaAhorro
 from app.repositories.analyses_repo import AnalysesRepo
 from app.repositories.documents_repo import DocumentsRepo
@@ -47,6 +49,14 @@ from app.services.analysis_service import (
 )
 from app.services.admin_analysis_service import AdminAnalysisService
 from app.services.pdf_service import get_storage_service
+from app.services.proposal_pdf_service import (
+    PropuestaPDFGenerator,
+    DatosPropuesta,
+    DatosCliente,
+    DatosCredito,
+    OpcionAhorro,
+    generar_numero_propuesta,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -117,6 +127,7 @@ class AdminAnalysisDetail(BaseModel):
     
     # Datos del crédito
     numero_credito: str | None
+    banco_nombre: str | None
     sistema_amortizacion: str | None
     plan_credito: str | None
     
@@ -153,6 +164,7 @@ class AdminAnalysisDetail(BaseModel):
     ingresos_mensuales: Decimal | None
     capacidad_pago_max: Decimal | None
     tipo_contrato_laboral: str | None
+    opciones_abono_preferidas: list[Decimal] | None
     
     # Cálculos derivados
     total_pagado_fecha: Decimal | None
@@ -173,8 +185,18 @@ class AdminUpdateAnalysisRequest(BaseModel):
     # Admin puede sobrescribir campos que el usuario no pudo llenar
     saldo_capital_pesos: Decimal | None = Field(None, gt=0)
     cuotas_pendientes: int | None = Field(None, gt=0)
-    tasa_interes_cobrada_ea: Decimal | None = Field(None, ge=0, le=1)
+    tasa_interes_cobrada_ea: Decimal | None = Field(None, ge=0, le=100)
     valor_cuota_con_seguros: Decimal | None = Field(None, gt=0)
+    capital_pagado_periodo: Decimal | None = Field(None, ge=0)
+    intereses_corrientes_periodo: Decimal | None = Field(None, ge=0)
+    intereses_mora: Decimal | None = Field(None, ge=0)
+    otros_cargos: Decimal | None = Field(None, ge=0)
+
+    @model_validator(mode="after")
+    def normalize_interest_rates(self):
+        if self.tasa_interes_cobrada_ea is not None and self.tasa_interes_cobrada_ea > 1:
+            self.tasa_interes_cobrada_ea = self.tasa_interes_cobrada_ea / Decimal("100")
+        return self
 
 
 class AdminGenerateProjectionsRequest(BaseModel):
@@ -318,6 +340,8 @@ def get_analysis_admin(
     
     analisis = repo.get_by_id(analysis_id)
     if not analisis:
+        analisis = repo.get_by_documento(analysis_id)
+    if not analisis:
         raise HTTPException(status_code=404, detail="Análisis no encontrado")
     
     # Obtener usuario
@@ -328,6 +352,12 @@ def get_analysis_admin(
     usuario_nombre = None
     if usuario:
         usuario_nombre = f"{usuario.nombres or ''} {usuario.primer_apellido or ''} {usuario.segundo_apellido or ''}".strip()
+
+    banco_nombre = None
+    if analisis.banco_id:
+        banco = db.get(Banco, analisis.banco_id)
+        if banco and banco.nombre:
+            banco_nombre = banco.nombre
     
     return AdminAnalysisDetail(
         id=analisis.id,
@@ -342,6 +372,7 @@ def get_analysis_admin(
         nombre_titular_extracto=analisis.nombre_titular_extracto,
         es_extracto_hipotecario=analisis.es_extracto_hipotecario,
         numero_credito=analisis.numero_credito,
+        banco_nombre=banco_nombre,
         sistema_amortizacion=analisis.sistema_amortizacion,
         plan_credito=analisis.plan_credito,
         fecha_desembolso=analisis.fecha_desembolso,
@@ -364,6 +395,7 @@ def get_analysis_admin(
         ingresos_mensuales=analisis.ingresos_mensuales,
         capacidad_pago_max=analisis.capacidad_pago_max,
         tipo_contrato_laboral=analisis.tipo_contrato_laboral,
+        opciones_abono_preferidas=analisis.opciones_abono_preferidas,
         total_pagado_fecha=analisis.total_pagado_fecha,
         total_frech_recibido=analisis.total_frech_recibido,
         ajuste_inflacion_pesos=analisis.ajuste_inflacion_pesos,
@@ -383,6 +415,8 @@ def get_analysis_admin_summary(
     repo = AnalysesRepo(db)
 
     analisis = repo.get_by_id(analysis_id)
+    if not analisis:
+        analisis = repo.get_by_documento(analysis_id)
     if not analisis:
         raise HTTPException(status_code=404, detail="Análisis no encontrado")
 
@@ -460,6 +494,8 @@ def get_analysis_admin_summary(
         costos_extra=costos_extra,
         tasa_cobrada_con_frech=analisis.tasa_interes_subsidiada_ea,
         seguros_actuales_mensual=analisis.seguros_total_mensual,
+        ingresos_mensuales=analisis.ingresos_mensuales,
+        capacidad_pago_max=analisis.capacidad_pago_max,
         is_total_paid_estimated=analisis.is_total_paid_estimated,
     )
 
@@ -595,6 +631,136 @@ def get_projections_admin(
     repo = PropuestasRepo(db)
     propuestas = repo.list_by_analisis(analysis_id)
     return [ProjectionAdminResponse.model_validate(p) for p in propuestas]
+
+
+@router.get(
+    "/analyses/{analysis_id}/proposal/pdf",
+    summary="Descargar propuesta PDF (admin)",
+    description="Genera y descarga el PDF de proyecciones para uso administrativo.",
+    responses={
+        200: {
+            "content": {"application/pdf": {}},
+            "description": "PDF de propuesta administrativa"
+        }
+    }
+)
+def download_admin_proposal_pdf(
+    analysis_id: UUID,
+    admin: Usuario = Depends(verify_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Genera y descarga el PDF de propuesta para administradores.
+    Incluye datos del cliente, crédito, proyecciones y honorarios.
+    """
+    _ = admin
+    analyses_repo = AnalysesRepo(db)
+    analisis = analyses_repo.get_by_id(analysis_id)
+    if not analisis:
+        raise HTTPException(status_code=404, detail="Análisis no encontrado")
+
+    propuestas_repo = PropuestasRepo(db)
+    propuestas = propuestas_repo.list_by_analisis(analysis_id)
+
+    if not propuestas:
+        raise HTTPException(
+            status_code=400,
+            detail="El análisis no tiene proyecciones generadas para exportar."
+        )
+
+    usuario = db.execute(
+        select(Usuario).where(Usuario.id == analisis.usuario_id)
+    ).scalar_one_or_none()
+
+    nombre_completo = "No registrado"
+    if usuario:
+        nombre_completo = " ".join(
+            [
+                usuario.nombres or "",
+                usuario.primer_apellido or "",
+                usuario.segundo_apellido or "",
+            ]
+        ).strip() or "No registrado"
+
+    datos_cliente = DatosCliente(
+        nombre_completo=nombre_completo,
+        cedula=usuario.identificacion if usuario and usuario.identificacion else "No registrada",
+        email=usuario.email if usuario and usuario.email else "No registrado",
+        telefono=usuario.telefono if usuario else None,
+        ingresos_mensuales=analisis.ingresos_mensuales or Decimal("0"),
+    )
+
+    banco_nombre = "No especificado"
+    if analisis.banco_id:
+        banco = db.get(Banco, analisis.banco_id)
+        if banco and banco.nombre:
+            banco_nombre = banco.nombre
+
+    cuota_mensual = analisis.valor_cuota_con_seguros or analisis.valor_cuota_sin_seguros or Decimal("0")
+    tasa_interes = analisis.tasa_interes_cobrada_ea or analisis.tasa_interes_pactada_ea or Decimal("0")
+
+    datos_credito = DatosCredito(
+        numero_credito=analisis.numero_credito or "No especificado",
+        banco=banco_nombre,
+        saldo_capital=analisis.saldo_capital_pesos or Decimal("0"),
+        tasa_interes_ea=tasa_interes,
+        cuota_mensual=cuota_mensual,
+        cuotas_pendientes=analisis.cuotas_pendientes or 0,
+        cuotas_pagadas=analisis.cuotas_pagadas or 0,
+        fecha_desembolso=analisis.fecha_desembolso,
+        sistema_amortizacion=analisis.sistema_amortizacion or "PESOS",
+    )
+
+    opciones: list[OpcionAhorro] = []
+    for p in propuestas:
+        tiempo_ahorrado_meses = (p.tiempo_ahorrado_anios or 0) * 12 + (p.tiempo_ahorrado_meses or 0)
+        abono_extra = p.abono_adicional_mensual or Decimal("0")
+        nueva_cuota = p.nuevo_valor_cuota or (cuota_mensual + abono_extra)
+
+        opcion = OpcionAhorro(
+            numero_opcion=p.numero_opcion,
+            nombre=p.nombre_opcion or f"Opción {p.numero_opcion}",
+            abono_extra_mensual=abono_extra,
+            cuotas_nuevas=p.cuotas_nuevas or 0,
+            tiempo_ahorrado_meses=tiempo_ahorrado_meses,
+            intereses_ahorrados=p.valor_ahorrado_intereses or Decimal("0"),
+            honorarios=p.honorarios_calculados or Decimal("0"),
+            honorarios_con_iva=p.honorarios_con_iva or Decimal("0"),
+            ingreso_minimo_requerido=p.ingreso_minimo_requerido or Decimal("0"),
+            nueva_cuota=nueva_cuota,
+        )
+        opciones.append(opcion)
+
+    opciones.sort(key=lambda x: x.numero_opcion)
+
+    fecha_generacion = datetime.now()
+    datos_propuesta = DatosPropuesta(
+        cliente=datos_cliente,
+        credito=datos_credito,
+        opciones=opciones,
+        fecha_generacion=fecha_generacion,
+        numero_propuesta=generar_numero_propuesta(str(analysis_id), fecha_generacion),
+    )
+
+    try:
+        generator = PropuestaPDFGenerator()
+        pdf_bytes = generator.generar_propuesta(datos_propuesta)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generando PDF: {str(e)}"
+        )
+
+    filename = f"propuesta_admin_ecofinanzas_{analysis_id}.pdf"
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+            "Content-Length": str(len(pdf_bytes)),
+        }
+    )
 
 
 @router.put("/projections/{projection_id}", response_model=ProjectionAdminResponse)

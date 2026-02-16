@@ -80,17 +80,19 @@ export default function AdminAnalysisDetailPage() {
           <Info label="Plan" value={detail.plan_credito} />
           <Info label="Fecha extracto" value={detail.fecha_extracto} />
           <Info label="Saldo capital" value={formatMoney(detail.saldo_capital_pesos)} />
+          <Info label="Ingresos mensuales" value={formatMoney(detail.ingresos_mensuales)} />
+          <Info label="Capacidad de pago máxima" value={formatMoney(detail.capacidad_pago_max)} />
         </div>
       </Card>
     </div>
   );
 }
 
-function Info({ label, value }: { label: string; value?: string | null }) {
+function Info({ label, value }: { label: string; value?: string | number | null }) {
   return (
     <div className="border border-gray-100 rounded-lg p-3">
       <p className="text-gray-500">{label}</p>
-      <p className="font-medium text-gray-800">{value || 'N/A'}</p>
+      <p className="font-medium text-gray-800">{value ?? 'N/A'}</p>
     </div>
   );
 }

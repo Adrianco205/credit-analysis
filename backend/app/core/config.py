@@ -10,15 +10,17 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     OTP_EXPIRE_MINUTES: int = 10
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
     SMTP_HOST: str
     SMTP_PORT: int = 587
     SMTP_USER: str
     SMTP_PASSWORD: str
-    SMTP_FROM_NAME: str = "Credit Analysis"
+    SMTP_FROM_NAME: str = "EcoFinanzas"
     SMTP_FROM_EMAIL: str
 
-    APP_PUBLIC_NAME: str = "Credit Analysis"
+    APP_PUBLIC_NAME: str = "EcoFinanzas"
+    FRONTEND_BASE_URL: str = "http://localhost:3000"
     
     # ═══════════════════════════════════════════════════════════════════════════
     # INDICADORES FINANCIEROS
@@ -29,6 +31,7 @@ class Settings(BaseSettings):
     
     # Google Gemini (para extracción de PDFs)
     GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-3-pro-preview"
 
     # Feature flags
     ENABLE_TEST_ENDPOINTS: bool = False

@@ -93,3 +93,28 @@ export const otpSchema = z.object({
 });
 
 export type OtpFormData = z.infer<typeof otpSchema>;
+
+/**
+ * Esquema para solicitar recuperación de contraseña
+ */
+export const forgotPasswordSchema = z.object({
+  email: z.string().trim().email('Correo inválido').toLowerCase(),
+});
+
+export type ForgotPasswordFormData = z.infer<typeof forgotPasswordSchema>;
+
+/**
+ * Esquema para restablecer contraseña
+ */
+export const resetPasswordSchema = z.object({
+  new_password: z
+    .string()
+    .min(8, 'Mínimo 8 caracteres')
+    .regex(passwordRegex, 'Debe incluir mayúsculas, minúsculas y números'),
+  confirm_password: z.string().min(8, 'Confirma tu contraseña'),
+}).refine((data) => data.new_password === data.confirm_password, {
+  message: 'Las contraseñas no coinciden',
+  path: ['confirm_password'],
+});
+
+export type ResetPasswordFormData = z.infer<typeof resetPasswordSchema>;

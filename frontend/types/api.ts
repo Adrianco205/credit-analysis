@@ -59,6 +59,24 @@ export interface UpdatePasswordRequest {
   new_password: string;
 }
 
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ForgotPasswordResponse {
+  message: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  new_password: string;
+  confirm_password: string;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+}
+
 // Analysis & Documents Types
 
 export interface DocumentUploadResponse {
@@ -108,6 +126,58 @@ export interface CreateAnalysisResponse {
   id_mismatch?: boolean;
   invalid_document_type?: boolean;
   tipo_documento_detectado?: string;
+}
+
+export interface UpdateManualFieldsRequest {
+  numero_credito?: string;
+  sistema_amortizacion?: string;
+  valor_prestado_inicial?: number;
+  fecha_desembolso?: string;
+  cuotas_pactadas?: number;
+  cuotas_pagadas?: number;
+  cuotas_pendientes?: number;
+  tasa_interes_pactada_ea?: number;
+  tasa_interes_cobrada_ea?: number;
+  valor_cuota_con_seguros?: number;
+  beneficio_frech_mensual?: number;
+  saldo_capital_pesos?: number;
+  saldo_capital_uvr?: number;
+  valor_uvr_fecha_extracto?: number;
+  seguro_vida?: number;
+  seguro_incendio?: number;
+  seguro_terremoto?: number;
+  capital_pagado_periodo?: number;
+  intereses_corrientes_periodo?: number;
+  intereses_mora?: number;
+  otros_cargos?: number;
+}
+
+export interface ProjectionRequestOption {
+  numero_opcion: number;
+  abono_adicional_mensual: number;
+  nombre_opcion?: string;
+}
+
+export interface ProjectionResponse {
+  id: string;
+  numero_opcion: number;
+  nombre_opcion?: string | null;
+  abono_adicional_mensual: number;
+  cuotas_nuevas?: number | null;
+  tiempo_restante_anios?: number | null;
+  tiempo_restante_meses?: number | null;
+  cuotas_reducidas?: number | null;
+  tiempo_ahorrado_anios?: number | null;
+  tiempo_ahorrado_meses?: number | null;
+  nuevo_valor_cuota?: number | null;
+  total_por_pagar_aprox?: number | null;
+  valor_ahorrado_intereses?: number | null;
+  veces_pagado?: number | null;
+  honorarios_calculados?: number | null;
+  honorarios_con_iva?: number | null;
+  ingreso_minimo_requerido?: number | null;
+  origen: string;
+  es_opcion_seleccionada: boolean;
 }
 
 export interface DatosBasicosResumen {
@@ -166,7 +236,12 @@ export interface AnalysisSummary {
   datos_basicos: DatosBasicosResumen;
   limites_banco: LimitesBancoResumen;
   ajuste_inflacion?: AjusteInflacionResumen | null;
-  costos_extra?: CostosExtraResumen;
+  costos_extra: CostosExtraResumen;
+
+  tasa_cobrada_con_frech?: number | null;
+  seguros_actuales_mensual?: number | null;
+  ingresos_mensuales?: number | null;
+  capacidad_pago_max?: number | null;
   
   // Flags de auditoría
   is_total_paid_estimated?: boolean;
@@ -257,11 +332,102 @@ export interface AdminAnalysisDetailResponse {
   usuario_cedula?: string | null;
   usuario_email?: string | null;
   usuario_telefono?: string | null;
+  nombre_titular_extracto?: string | null;
   numero_credito?: string | null;
+  banco_nombre?: string | null;
   sistema_amortizacion?: string | null;
   plan_credito?: string | null;
+  tasa_interes_cobrada_ea?: number | null;
+  valor_cuota_con_seguros?: number | null;
+  cuotas_pendientes?: number | null;
+  cuotas_pagadas?: number | null;
   fecha_extracto?: string | null;
   saldo_capital_pesos?: number | null;
+  ingresos_mensuales?: number | null;
+  capacidad_pago_max?: number | null;
+  opciones_abono_preferidas?: number[] | null;
+  created_at?: string | null;
+}
+
+export interface ProjectionTimeResponse {
+  anios: number;
+  meses: number;
+  total_meses?: number;
+  descripcion: string;
+}
+
+export interface ProposalCurrentLimitsResponse {
+  saldo_credito: number;
+  cuotas_pendientes: number;
+  tiempo_pendiente: ProjectionTimeResponse;
+  abono_adicional_cuota: number;
+  valor_cuota: number;
+  total_por_pagar_aprox: number;
+  veces_pagado: number;
+}
+
+export interface ProposalOptionResponse {
+  id?: string | null;
+  numero_opcion: number;
+  nombre_opcion?: string | null;
+  abono_adicional_mensual: number;
+  cuotas_nuevas: number;
+  tiempo_restante: ProjectionTimeResponse;
+  nuevo_valor_cuota: number;
+  total_por_pagar_aprox: number;
+  cuotas_reducidas: number;
+  tiempo_ahorrado: ProjectionTimeResponse;
+  valor_ahorrado_intereses: number;
+  veces_pagado: number;
+  honorarios_calculados: number;
+  honorarios_con_iva: number;
+  ingreso_minimo_requerido: number;
+  origen: string;
+  es_opcion_seleccionada: boolean;
+}
+
+export interface PropuestaCompletaResponse {
+  analisis_id: string;
+  numero_credito?: string | null;
+  nombre_cliente?: string | null;
+  banco_nombre?: string | null;
+  fecha_generacion: string;
+  limites_actuales: ProposalCurrentLimitsResponse;
+  opciones: ProposalOptionResponse[];
+  tasa_cobrada_con_frech?: number | null;
+  seguros_actuales?: number | null;
+  vigencia_dias: number;
+  fecha_vencimiento?: string | null;
+  agente_financiero?: string | null;
+}
+
+export interface AdminProjectionOptionRequest {
+  numero_opcion: number;
+  abono_adicional_mensual: number;
+  nombre_opcion: string;
+}
+
+export interface AdminProjectionResponse {
+  id: string;
+  analisis_id: string;
+  numero_opcion: number;
+  nombre_opcion?: string | null;
+  abono_adicional_mensual: number;
+  cuotas_nuevas?: number | null;
+  tiempo_restante_anios?: number | null;
+  tiempo_restante_meses?: number | null;
+  cuotas_reducidas?: number | null;
+  tiempo_ahorrado_anios?: number | null;
+  tiempo_ahorrado_meses?: number | null;
+  nuevo_valor_cuota?: number | null;
+  total_por_pagar_aprox?: number | null;
+  valor_ahorrado_intereses?: number | null;
+  veces_pagado?: number | null;
+  honorarios_calculados?: number | null;
+  honorarios_con_iva?: number | null;
+  ingreso_minimo_requerido?: number | null;
+  origen: string;
+  es_opcion_seleccionada: boolean;
   created_at?: string | null;
 }
 
@@ -276,4 +442,84 @@ export interface AdminAnalysesParams {
   uploaded_to?: string;
   sort_by?: 'uploaded_at' | 'customer_name' | 'bank_name' | 'credit_number';
   sort_dir?: 'asc' | 'desc';
+}
+
+export interface UVRResponse {
+  fecha: string;
+  valor: number;
+  fuente: string;
+  definicion?: string | null;
+  warning?: string | null;
+}
+
+export interface IPCResponse {
+  fecha: string;
+  valor: number;
+  variacion_mensual?: number | null;
+  variacion_anual: number;
+  fuente: string;
+  tipo_serie?: string | null;
+  definicion?: string | null;
+  warning?: string | null;
+}
+
+export interface DTFResponse {
+  fecha: string;
+  valor: number;
+  fuente: string;
+  definicion?: string | null;
+  warning?: string | null;
+}
+
+export interface IndicadoresConsolidadosResponse {
+  fecha: string;
+  uvr?: number | null;
+  dtf?: number | null;
+  ibr_overnight?: number | null;
+  ipc_anual?: number | null;
+  fuente?: string;
+  fecha_actualizacion?: string;
+  warning?: string | null;
+}
+
+export interface HistoricoUVRItem {
+  fecha: string;
+  valor: number;
+  fuente: string;
+  warning?: string | null;
+}
+
+export interface HistoricoUVRResponse {
+  fecha_inicio: string;
+  fecha_fin: string;
+  total_registros: number;
+  datos: HistoricoUVRItem[];
+}
+
+export interface ConversionUVRRequest {
+  monto: number;
+  valor_uvr?: number;
+  direccion: 'uvr_a_pesos' | 'pesos_a_uvr';
+}
+
+export interface ConversionUVRResponse {
+  monto_original: number;
+  monto_convertido: number;
+  valor_uvr_usado: number;
+  direccion: 'uvr_a_pesos' | 'pesos_a_uvr';
+}
+
+export interface ProyeccionUVRRequest {
+  meses: number;
+  uvr_inicial?: number;
+  inflacion_anual: number;
+}
+
+export interface ProyeccionUVRResponse {
+  uvr_inicial: number;
+  uvr_proyectado: number;
+  meses: number;
+  inflacion_anual: number;
+  incremento_absoluto: number;
+  incremento_porcentual: number;
 }

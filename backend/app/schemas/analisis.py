@@ -59,8 +59,8 @@ class DatosExtractoManualInput(BaseModel):
     cuotas_pactadas: int | None = Field(None, gt=0, le=600)
     cuotas_pagadas: int | None = Field(None, ge=0)
     
-    tasa_interes_pactada_ea: Decimal | None = Field(None, ge=0, le=1, description="Tasa como decimal: 9.53% = 0.0953")
-    tasa_interes_cobrada_ea: Decimal | None = Field(None, ge=0, le=1)
+    tasa_interes_pactada_ea: Decimal | None = Field(None, ge=0, le=100, description="Tasa EA en decimal o porcentaje: 0.0953 o 9.53")
+    tasa_interes_cobrada_ea: Decimal | None = Field(None, ge=0, le=100)
     
     valor_cuota_con_seguros: Decimal | None = Field(None, gt=0)
     beneficio_frech_mensual: Decimal | None = Field(None, ge=0)
@@ -74,6 +74,10 @@ class DatosExtractoManualInput(BaseModel):
     seguro_vida: Decimal | None = Field(None, ge=0)
     seguro_incendio: Decimal | None = Field(None, ge=0)
     seguro_terremoto: Decimal | None = Field(None, ge=0)
+    capital_pagado_periodo: Decimal | None = Field(None, ge=0)
+    intereses_corrientes_periodo: Decimal | None = Field(None, ge=0)
+    intereses_mora: Decimal | None = Field(None, ge=0)
+    otros_cargos: Decimal | None = Field(None, ge=0)
 
 
 class AnalisisCreateInput(BaseModel):
@@ -189,6 +193,10 @@ class ResumenCreditoResponse(BaseModel):
     # Tasas (información adicional)
     tasa_cobrada_con_frech: Decimal | None  # Ej: 4.71% EA
     seguros_actuales_mensual: Decimal | None
+
+    # Datos socioeconómicos del cliente (visibles para resumen admin/usuario)
+    ingresos_mensuales: Decimal | None = None
+    capacidad_pago_max: Decimal | None = None
     
     # Flags de auditoría
     is_total_paid_estimated: bool = True  # True = estimación, False = historial real

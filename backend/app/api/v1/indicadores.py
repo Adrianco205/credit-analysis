@@ -2,14 +2,10 @@
 API de Indicadores Financieros de Colombia
 ==========================================
 
-Endpoints para consultar UVR, IPC, DTF e IBR desde fuentes oficiales:
-- Socrata (datos.gov.co) - Fuente principal
-- Banco de la República - Fallback
-- Estimaciones matemáticas - Último recurso
-
-Los datos se cachean por 12 horas para optimizar rendimiento.
+Endpoints para consultar UVR, IPC, DTF e IBR desde fuentes oficiales del
+Banco de la República, con caché por indicador y fallback controlado.
 """
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Query
@@ -18,6 +14,7 @@ from pydantic import BaseModel, Field
 from app.services.indicadores_service import (
     IndicadoresFinancierosService,
     FuenteDatos,
+    IndicadorNoDisponibleError,
     obtener_servicio_indicadores,
 )
 
@@ -32,14 +29,18 @@ class UVRResponse(BaseModel):
     """Respuesta con valor de la UVR"""
     fecha: date
     valor: Decimal = Field(..., description="Valor de la UVR en pesos colombianos")
-    fuente: str = Field(..., description="Fuente de los datos (SOCRATA, BANREP_API, CACHE, MANUAL)")
+    fuente: str = Field(..., description="Fuente de los datos (BANREP_API, CACHE, CACHE_STALE)")
+    fecha_actualizacion: datetime = Field(..., description="Fecha/hora de actualización del dato")
+    definicion: Optional[str] = Field(None, description="Definición del indicador")
+    warning: Optional[str] = Field(None, description="Advertencia controlada cuando se responde con caché vencida")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "fecha": "2026-01-29",
                 "valor": "385.4521",
-                "fuente": "SOCRATA"
+                "fuente": "BANREP_API",
+                "fecha_actualizacion": "2026-02-15T10:30:00"
             }
         }
 
@@ -48,9 +49,13 @@ class IPCResponse(BaseModel):
     """Respuesta con IPC"""
     fecha: date = Field(..., description="Último día del mes")
     valor: Decimal = Field(..., description="Índice de Precios al Consumidor")
-    variacion_mensual: Decimal = Field(..., description="Variación porcentual vs mes anterior")
+    variacion_mensual: Optional[Decimal] = Field(None, description="Variación porcentual mensual (si la serie lo permite)")
     variacion_anual: Decimal = Field(..., description="Inflación anual (%)")
     fuente: str
+    fecha_actualizacion: datetime = Field(..., description="Fecha/hora de actualización del dato")
+    tipo_serie: Optional[str] = Field(None, description="Tipo de serie IPC (ej. INDICE_IPC, VARIACION_ANUAL_PORCENTUAL)")
+    definicion: Optional[str] = Field(None, description="Definición oficial de la serie")
+    warning: Optional[str] = Field(None, description="Advertencia controlada cuando se responde con caché vencida")
     
     class Config:
         json_schema_extra = {
@@ -59,7 +64,8 @@ class IPCResponse(BaseModel):
                 "valor": "158.50",
                 "variacion_mensual": "0.45",
                 "variacion_anual": "5.80",
-                "fuente": "SOCRATA"
+                "fuente": "BANREP_API",
+                "fecha_actualizacion": "2026-02-15T10:30:00"
             }
         }
 
@@ -69,13 +75,17 @@ class DTFResponse(BaseModel):
     fecha: date
     valor: Decimal = Field(..., description="Tasa DTF E.A. (%)")
     fuente: str
+    fecha_actualizacion: datetime = Field(..., description="Fecha/hora de actualización del dato")
+    definicion: Optional[str] = Field(None, description="Definición del indicador")
+    warning: Optional[str] = Field(None, description="Advertencia controlada cuando se responde con caché vencida")
     
     class Config:
         json_schema_extra = {
             "example": {
                 "fecha": "2026-01-24",
                 "valor": "10.50",
-                "fuente": "SOCRATA"
+                "fuente": "BANREP_API",
+                "fecha_actualizacion": "2026-02-15T10:30:00"
             }
         }
 
@@ -87,6 +97,9 @@ class IBRResponse(BaseModel):
     un_mes: Optional[Decimal] = Field(None, description="IBR 1 mes (%)")
     tres_meses: Optional[Decimal] = Field(None, description="IBR 3 meses (%)")
     fuente: str
+    fecha_actualizacion: datetime = Field(..., description="Fecha/hora de actualización del dato")
+    definicion: Optional[str] = Field(None, description="Definición del indicador")
+    warning: Optional[str] = Field(None, description="Advertencia controlada cuando se responde con caché vencida")
 
 
 class IndicadoresConsolidadosResponse(BaseModel):
@@ -96,6 +109,9 @@ class IndicadoresConsolidadosResponse(BaseModel):
     dtf: Optional[Decimal] = Field(None, description="DTF E.A. (%)")
     ibr_overnight: Optional[Decimal] = Field(None, description="IBR Overnight (%)")
     ipc_anual: Optional[Decimal] = Field(None, description="Inflación anual (%)")
+    fuente: str = Field(..., description="Fuente de consolidación")
+    fecha_actualizacion: datetime = Field(..., description="Fecha/hora de actualización del consolidado")
+    warning: Optional[str] = Field(None, description="Advertencia consolidada (si algún indicador vino de caché vencida)")
     
     class Config:
         json_schema_extra = {
@@ -104,7 +120,9 @@ class IndicadoresConsolidadosResponse(BaseModel):
                 "uvr": "385.4521",
                 "dtf": "10.50",
                 "ibr_overnight": "9.75",
-                "ipc_anual": "5.80"
+                "ipc_anual": "5.80",
+                "fuente": "BANREP_API",
+                "fecha_actualizacion": "2026-02-15T10:30:00"
             }
         }
 
@@ -146,6 +164,8 @@ class HistoricoUVRItem(BaseModel):
     fecha: date
     valor: Decimal
     fuente: str
+    fecha_actualizacion: datetime
+    warning: Optional[str] = None
 
 
 class HistoricoUVRResponse(BaseModel):
@@ -185,9 +205,9 @@ async def get_uvr(
     en sistema UVR.
     
     **Fuentes de datos (en orden de prioridad):**
-    1. Socrata (datos.gov.co)
-    2. API del Banco de la República
-    3. Estimación matemática basada en inflación histórica
+    1. API oficial del Banco de la República
+    2. Caché local
+    3. Caché vencida (fallback controlado)
     """
     service = _get_service()
     
@@ -200,8 +220,13 @@ async def get_uvr(
         return UVRResponse(
             fecha=uvr.fecha,
             valor=uvr.valor,
-            fuente=uvr.fuente.value
+            fuente=uvr.fuente.value,
+            fecha_actualizacion=uvr.fecha_actualizacion,
+            definicion=uvr.definicion,
+            warning=uvr.warning,
         )
+    except IndicadorNoDisponibleError as e:
+        raise HTTPException(status_code=500, detail=f"Proveedor oficial temporalmente no disponible y sin caché utilizable: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error consultando UVR: {str(e)}")
 
@@ -235,8 +260,14 @@ async def get_ipc(
             valor=ipc.valor,
             variacion_mensual=ipc.variacion_mensual,
             variacion_anual=ipc.variacion_anual,
-            fuente=ipc.fuente.value
+            fuente=ipc.fuente.value,
+            fecha_actualizacion=ipc.fecha_actualizacion,
+            tipo_serie=ipc.tipo_serie,
+            definicion=ipc.definicion,
+            warning=ipc.warning,
         )
+    except IndicadorNoDisponibleError as e:
+        raise HTTPException(status_code=500, detail=f"Proveedor oficial temporalmente no disponible y sin caché utilizable: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error consultando IPC: {str(e)}")
 
@@ -267,8 +298,13 @@ async def get_dtf(
         return DTFResponse(
             fecha=dtf.fecha,
             valor=dtf.valor,
-            fuente=dtf.fuente.value
+            fuente=dtf.fuente.value,
+            fecha_actualizacion=dtf.fecha_actualizacion,
+            definicion=dtf.definicion,
+            warning=dtf.warning,
         )
+    except IndicadorNoDisponibleError as e:
+        raise HTTPException(status_code=500, detail=f"Proveedor oficial temporalmente no disponible y sin caché utilizable: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error consultando DTF: {str(e)}")
 
@@ -301,8 +337,13 @@ async def get_ibr(
             overnight=ibr.overnight,
             un_mes=ibr.un_mes,
             tres_meses=ibr.tres_meses,
-            fuente=ibr.fuente.value
+            fuente=ibr.fuente.value,
+            fecha_actualizacion=ibr.fecha_actualizacion,
+            definicion=ibr.definicion,
+            warning=ibr.warning,
         )
+    except IndicadorNoDisponibleError as e:
+        raise HTTPException(status_code=500, detail=f"Proveedor oficial temporalmente no disponible y sin caché utilizable: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error consultando IBR: {str(e)}")
 
@@ -330,8 +371,13 @@ async def get_indicadores_consolidados():
             uvr=indicadores.uvr,
             dtf=indicadores.dtf,
             ibr_overnight=indicadores.ibr_overnight,
-            ipc_anual=indicadores.ipc_anual
+            ipc_anual=indicadores.ipc_anual,
+            fuente=indicadores.fuente.value,
+            fecha_actualizacion=indicadores.fecha_actualizacion,
+            warning=indicadores.warning,
         )
+    except IndicadorNoDisponibleError as e:
+        raise HTTPException(status_code=500, detail=f"Proveedor oficial temporalmente no disponible y sin caché utilizable: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error consultando indicadores: {str(e)}")
 
@@ -378,7 +424,9 @@ async def get_historico_uvr(
             HistoricoUVRItem(
                 fecha=uvr.fecha,
                 valor=uvr.valor,
-                fuente=uvr.fuente.value
+                fuente=uvr.fuente.value,
+                fecha_actualizacion=uvr.fecha_actualizacion,
+                warning=uvr.warning,
             )
             for uvr in historico
         ]
@@ -389,6 +437,8 @@ async def get_historico_uvr(
             total_registros=len(datos),
             datos=datos
         )
+    except IndicadorNoDisponibleError as e:
+        raise HTTPException(status_code=500, detail=f"Proveedor oficial temporalmente no disponible y sin caché utilizable: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error consultando histórico: {str(e)}")
 

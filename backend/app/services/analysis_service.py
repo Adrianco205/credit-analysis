@@ -700,10 +700,18 @@ class AnalysisService:
             numero_opcion=0,
             nombre_opcion="Actual"
         )
+
+        if datos.valor_prestado_inicial > 0:
+            veces_pagado_actual = (proyeccion_actual.total_por_pagar / datos.valor_prestado_inicial).quantize(
+                Decimal("0.01")
+            )
+        else:
+            veces_pagado_actual = Decimal("0")
         
         return {
             "cuotas_actuales": analisis.cuotas_pendientes,
             "total_actual": proyeccion_actual.total_por_pagar,
+            "veces_pagado_actual": veces_pagado_actual,
             "datos": datos
         }
     

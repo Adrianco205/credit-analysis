@@ -19,7 +19,7 @@ from typing import Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_db, require_role
@@ -87,8 +87,8 @@ class UpdateManualFieldsRequest(BaseModel):
     cuotas_pactadas: int | None = Field(None, gt=0)
     cuotas_pagadas: int | None = Field(None, ge=0)
     cuotas_pendientes: int | None = Field(None, gt=0)
-    tasa_interes_pactada_ea: Decimal | None = Field(None, ge=0, le=1)
-    tasa_interes_cobrada_ea: Decimal | None = Field(None, ge=0, le=1)
+    tasa_interes_pactada_ea: Decimal | None = Field(None, ge=0, le=100)
+    tasa_interes_cobrada_ea: Decimal | None = Field(None, ge=0, le=100)
     valor_cuota_con_seguros: Decimal | None = Field(None, gt=0)
     beneficio_frech_mensual: Decimal | None = Field(None, ge=0)
     saldo_capital_pesos: Decimal | None = Field(None, gt=0)
@@ -97,6 +97,18 @@ class UpdateManualFieldsRequest(BaseModel):
     seguro_vida: Decimal | None = Field(None, ge=0)
     seguro_incendio: Decimal | None = Field(None, ge=0)
     seguro_terremoto: Decimal | None = Field(None, ge=0)
+    capital_pagado_periodo: Decimal | None = Field(None, ge=0)
+    intereses_corrientes_periodo: Decimal | None = Field(None, ge=0)
+    intereses_mora: Decimal | None = Field(None, ge=0)
+    otros_cargos: Decimal | None = Field(None, ge=0)
+
+    @model_validator(mode="after")
+    def normalize_interest_rates(self):
+        for field in ("tasa_interes_pactada_ea", "tasa_interes_cobrada_ea"):
+            value = getattr(self, field)
+            if value is not None and value > 1:
+                setattr(self, field, value / Decimal("100"))
+        return self
 
 
 class OpcionAbonoRequest(BaseModel):
@@ -490,6 +502,8 @@ def get_analysis_summary(
         costos_extra=costos_extra,
         tasa_cobrada_con_frech=analisis.tasa_interes_subsidiada_ea,
         seguros_actuales_mensual=analisis.seguros_total_mensual,
+        ingresos_mensuales=analisis.ingresos_mensuales,
+        capacidad_pago_max=analisis.capacidad_pago_max,
         is_total_paid_estimated=analisis.is_total_paid_estimated
     )
 
@@ -543,7 +557,7 @@ def update_manual_fields(
 def generate_projections(
     analysis_id: UUID,
     request: GenerateProjectionsRequest,
-    current_user: Usuario = Depends(require_role("ADMIN")),
+    current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -582,7 +596,7 @@ def generate_projections(
 @router.get("/{analysis_id}/projections", response_model=list[ProjectionResponse])
 def get_projections(
     analysis_id: UUID,
-    current_user: Usuario = Depends(require_role("ADMIN")),
+    current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Obtener proyecciones generadas para un análisis."""
@@ -602,7 +616,7 @@ def get_projections(
 def select_option(
     analysis_id: UUID,
     request: SelectOptionRequest,
-    current_user: Usuario = Depends(require_role("ADMIN")),
+    current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Seleccionar una opción de ahorro."""
@@ -629,7 +643,7 @@ def select_option(
 def select_option_get(
     analysis_id: UUID,
     numero_opcion: int = Query(..., ge=1),
-    current_user: Usuario = Depends(require_role("ADMIN")),
+    current_user: Usuario = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Seleccionar una opción de ahorro (vía GET)."""
