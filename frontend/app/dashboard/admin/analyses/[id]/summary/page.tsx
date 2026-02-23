@@ -29,6 +29,18 @@ export default function AdminAnalysisSummaryPage() {
       const summary = await apiClient.getAdminAnalysisSummary(analysisId);
       setSummaryData(summary);
     } catch (err: any) {
+      if (err?.status_code === 404) {
+        try {
+          const detail = await apiClient.getAdminAnalysisDetail(analysisId);
+          if (detail?.id && detail.id !== analysisId) {
+            const summary = await apiClient.getAdminAnalysisSummary(detail.id);
+            setSummaryData(summary);
+            return;
+          }
+        } catch {
+          // Se mantiene el error original
+        }
+      }
       setError(err?.message || 'No se pudo cargar el resumen del análisis');
     } finally {
       setLoading(false);

@@ -17,6 +17,7 @@ import type {
   ExtractDataResponse,
   CreateAnalysisRequest,
   CreateAnalysisResponse,
+  AdminClientAnalysisUploadRequest,
   AnalysisSummary,
   ProjectionRequestOption,
   ProjectionResponse,
@@ -227,6 +228,42 @@ class ApiClient {
 
   public async createAnalysis(data: CreateAnalysisRequest): Promise<CreateAnalysisResponse> {
     const response = await this.client.post<CreateAnalysisResponse>('/analyses', data);
+    return response.data;
+  }
+
+  public async createAdminClientAnalysis(data: AdminClientAnalysisUploadRequest): Promise<CreateAnalysisResponse> {
+    const formData = new FormData();
+    formData.append('customer_full_name', data.customer_full_name);
+    formData.append('customer_id_number', data.customer_id_number);
+    formData.append('customer_email', data.customer_email);
+    formData.append('customer_phone', data.customer_phone);
+    formData.append('ingresos_mensuales', String(data.ingresos_mensuales));
+    if (data.capacidad_pago_max !== undefined) {
+      formData.append('capacidad_pago_max', String(data.capacidad_pago_max));
+    }
+    if (data.tipo_contrato_laboral) {
+      formData.append('tipo_contrato_laboral', data.tipo_contrato_laboral);
+    }
+    if (data.banco_id !== undefined) {
+      formData.append('banco_id', String(data.banco_id));
+    }
+    if (data.opcion_abono_1 !== undefined) {
+      formData.append('opcion_abono_1', String(data.opcion_abono_1));
+    }
+    if (data.opcion_abono_2 !== undefined) {
+      formData.append('opcion_abono_2', String(data.opcion_abono_2));
+    }
+    if (data.opcion_abono_3 !== undefined) {
+      formData.append('opcion_abono_3', String(data.opcion_abono_3));
+    }
+    if (data.password) {
+      formData.append('password', data.password);
+    }
+    formData.append('file', data.file);
+
+    const response = await this.client.post<CreateAnalysisResponse>('/admin/clients/upload-analysis', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   }
 

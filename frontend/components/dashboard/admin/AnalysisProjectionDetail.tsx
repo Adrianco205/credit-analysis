@@ -525,9 +525,9 @@ function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaComp
 
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="HONORARIOS 3% o TARIFA MÍNIMA (Pago a éxito)"
+        label="HONORARIOS 3% o TARIFA MÍNIMA"
         options={opciones}
-        getOptionValue={() => 'HONORARIOS 3% o TARIFA MÍNIMA (Pago a éxito)'}
+        getOptionValue={() => 'HONORARIOS 3% o TARIFA MÍNIMA'}
         valueTone="fees"
         labelTone="info"
         isBlockStart

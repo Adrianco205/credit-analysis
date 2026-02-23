@@ -18,7 +18,7 @@ from typing import Optional
 from uuid import UUID
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, Form, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import select, func
@@ -33,7 +33,9 @@ from app.repositories.analyses_repo import AnalysesRepo
 from app.repositories.documents_repo import DocumentsRepo
 from app.repositories.propuestas_repo import PropuestasRepo
 from app.repositories.admin_repo import AdminAnalysesRepo
+from app.repositories.users_repo import UsersRepo
 from app.schemas.admin_analysis import AdminAnalysesListResponse, AdminAnalysesParams
+from app.schemas.documentos import PDFValidationResponse, PDFUploadStatus
 from app.schemas.analisis import (
     AjusteInflacionResumen,
     CostosExtraResumen,
@@ -44,10 +46,12 @@ from app.schemas.analisis import (
 )
 from app.services.analysis_service import (
     AnalysisService,
+    DatosUsuarioInput,
     OpcionAbonoInput,
     get_analysis_service
 )
 from app.services.admin_analysis_service import AdminAnalysisService
+from app.services.pdf_service import PDFStatus, PdfService
 from app.services.pdf_service import get_storage_service
 from app.services.proposal_pdf_service import (
     PropuestaPDFGenerator,
@@ -290,6 +294,238 @@ class PaginatedResponse(BaseModel):
     total: int
     page: int
     pages: int
+
+
+class AdminCreateClientAnalysisResponse(BaseModel):
+    success: bool
+    analisis_id: UUID | None = None
+    status: str | None = None
+    message: str | None = None
+    requires_manual_input: bool = False
+    campos_faltantes: list[str] | None = None
+    campos_extraidos: list[str] | None = None
+    name_mismatch: bool = False
+    id_mismatch: bool = False
+    invalid_document_type: bool = False
+    tipo_documento_detectado: str | None = None
+
+
+def _split_full_name(full_name: str) -> tuple[str, str | None, str | None]:
+    parts = [part for part in full_name.strip().split() if part]
+    if not parts:
+        return "", None, None
+    if len(parts) == 1:
+        return parts[0], None, None
+    if len(parts) == 2:
+        return parts[0], parts[1], None
+    if len(parts) == 3:
+        return " ".join(parts[:2]), parts[2], None
+    return " ".join(parts[:-2]), parts[-2], parts[-1]
+
+
+@router.post("/clients/upload-analysis", response_model=AdminCreateClientAnalysisResponse, status_code=status.HTTP_201_CREATED)
+async def upload_client_analysis_for_admin(
+    customer_full_name: str = Form(..., min_length=3, max_length=200),
+    customer_id_number: str = Form(..., min_length=5, max_length=30),
+    customer_email: str = Form(..., min_length=5, max_length=255),
+    customer_phone: str = Form(..., min_length=7, max_length=30),
+    ingresos_mensuales: Decimal = Form(..., gt=0),
+    capacidad_pago_max: Decimal | None = Form(None, gt=0),
+    tipo_contrato_laboral: str | None = Form(None, max_length=80),
+    banco_id: int | None = Form(None),
+    opcion_abono_1: Decimal | None = Form(None, gt=0),
+    opcion_abono_2: Decimal | None = Form(None, gt=0),
+    opcion_abono_3: Decimal | None = Form(None, gt=0),
+    file: UploadFile = File(..., description="Archivo PDF del análisis del cliente"),
+    password: str | None = Form(None, description="Contraseña del PDF, si aplica"),
+    admin: Usuario = Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    _ = admin
+
+    normalized_name = customer_full_name.strip()
+    normalized_id = customer_id_number.strip()
+    normalized_email = customer_email.strip().lower()
+    normalized_phone = customer_phone.strip()
+
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="El nombre del cliente es obligatorio")
+    if not normalized_id:
+        raise HTTPException(status_code=400, detail="La cédula del cliente es obligatoria")
+    if not normalized_email:
+        raise HTTPException(status_code=400, detail="El correo del cliente es obligatorio")
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail="El teléfono del cliente es obligatorio")
+
+    users_repo = UsersRepo(db)
+    user_by_id = users_repo.get_by_identificacion(normalized_id)
+    user_by_email = users_repo.get_by_email(normalized_email)
+
+    if user_by_id and user_by_email and user_by_id.id != user_by_email.id:
+        raise HTTPException(
+            status_code=409,
+            detail="La cédula y el correo pertenecen a clientes diferentes",
+        )
+
+    customer_user = user_by_id or user_by_email
+
+    nombres, primer_apellido, segundo_apellido = _split_full_name(normalized_name)
+
+    if customer_user:
+        customer_user.nombres = nombres
+        customer_user.primer_apellido = primer_apellido
+        customer_user.segundo_apellido = segundo_apellido
+        customer_user.identificacion = normalized_id
+        customer_user.email = normalized_email
+        customer_user.telefono = normalized_phone
+        customer_user.status = "ACTIVE"
+        customer_user.email_verificado = True
+        db.add(customer_user)
+        db.commit()
+        db.refresh(customer_user)
+    else:
+        customer_user = Usuario(
+            nombres=nombres,
+            primer_apellido=primer_apellido,
+            segundo_apellido=segundo_apellido,
+            tipo_identificacion="CC",
+            identificacion=normalized_id,
+            email=normalized_email,
+            telefono=normalized_phone,
+            status="ACTIVE",
+            email_verificado=True,
+            password_hash=None,
+        )
+        customer_user = users_repo.create_user(customer_user)
+
+    users_repo.ensure_role_assignment(customer_user.id, "CLIENT")
+
+    if file.content_type and file.content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El archivo debe ser un PDF. Tipo recibido: {file.content_type}",
+        )
+
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo está vacío")
+
+    pdf_service = PdfService()
+    storage_service = get_storage_service()
+    documents_repo = DocumentsRepo(db)
+
+    file_stream = io.BytesIO(content)
+    validation_result = pdf_service.validate_pdf(file_stream, check_keywords=False)
+
+    validation_response = PDFValidationResponse(
+        is_valid=validation_result.is_valid,
+        status=PDFUploadStatus(validation_result.status.value),
+        message=validation_result.message,
+        requires_password=validation_result.status == PDFStatus.ENCRYPTED,
+        page_count=validation_result.page_count,
+        file_size_bytes=validation_result.file_size_bytes,
+        has_credit_keywords=validation_result.has_credit_keywords,
+        keyword_confidence=validation_result.keyword_confidence,
+    )
+
+    if validation_result.status == PDFStatus.ENCRYPTED and not password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "PDF_PASSWORD_REQUIRED",
+                "message": "El PDF está protegido con contraseña. Por favor proporciona la contraseña.",
+                "requires_password": True,
+            },
+        )
+
+    if not validation_result.is_valid and validation_result.status != PDFStatus.ENCRYPTED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=validation_result.message)
+
+    content_to_save = content
+    was_encrypted = False
+
+    if validation_result.status == PDFStatus.ENCRYPTED and password:
+        file_stream.seek(0)
+        decrypt_result = pdf_service.decrypt_pdf(file_stream, password)
+        if not decrypt_result.success:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "PDF_INVALID_PASSWORD",
+                    "message": decrypt_result.message,
+                    "requires_password": True,
+                },
+            )
+
+        content_to_save = decrypt_result.decrypted_content
+        was_encrypted = True
+        validation_response.status = PDFUploadStatus.DECRYPTED
+        validation_response.message = "PDF desencriptado y guardado sin contraseña"
+        validation_response.page_count = decrypt_result.page_count
+        validation_response.requires_password = False
+
+    save_result = storage_service.save_pdf(
+        content=content_to_save,
+        user_id=str(customer_user.id),
+        original_filename=file.filename or "extracto.pdf",
+    )
+
+    if not save_result.success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al guardar el archivo: {save_result.message}",
+        )
+
+    documento = documents_repo.create(
+        usuario_id=customer_user.id,
+        original_filename=file.filename or "extracto.pdf",
+        file_size=save_result.file_size_bytes,
+        s3_key=save_result.file_path,
+        checksum=save_result.checksum,
+        pdf_encrypted=was_encrypted,
+        status="UPLOADED",
+        banco_id=banco_id,
+    )
+
+    service = get_analysis_service(db)
+    opciones_abono_preferidas = [
+        option for option in [opcion_abono_1, opcion_abono_2, opcion_abono_3] if option is not None
+    ] or None
+
+    result = await service.create_analysis_from_document(
+        documento_id=documento.id,
+        usuario=customer_user,
+        datos_usuario=DatosUsuarioInput(
+            ingresos_mensuales=ingresos_mensuales,
+            capacidad_pago_max=capacidad_pago_max,
+            tipo_contrato_laboral=tipo_contrato_laboral,
+            opciones_abono_preferidas=opciones_abono_preferidas,
+        ),
+        skip_name_validation=True,
+        skip_id_validation=True,
+        allow_non_credit_document=True,
+        banco_id=banco_id,
+    )
+
+    if not result.success:
+        raise HTTPException(
+            status_code=422,
+            detail=result.error_message or "No se pudo crear el análisis para el cliente",
+        )
+
+    return AdminCreateClientAnalysisResponse(
+        success=True,
+        analisis_id=result.analisis.id if result.analisis else None,
+        status=result.analisis.status if result.analisis else None,
+        message="Análisis del cliente creado exitosamente",
+        requires_manual_input=result.requires_manual_input,
+        campos_faltantes=result.campos_faltantes,
+        campos_extraidos=result.campos_extraidos,
+        name_mismatch=result.name_mismatch,
+        id_mismatch=result.id_mismatch,
+        invalid_document_type=result.invalid_document_type,
+        tipo_documento_detectado=result.tipo_documento_detectado,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

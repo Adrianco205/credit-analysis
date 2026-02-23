@@ -310,6 +310,10 @@ async def create_analysis(
             raise HTTPException(status_code=404, detail=result.error_message)
         if result.error_code == "ANALYSIS_EXISTS":
             raise HTTPException(status_code=409, detail=result.error_message)
+        if result.error_code == "IDENTITY_MISMATCH":
+            raise HTTPException(status_code=403, detail=result.error_message)
+        if result.error_code == "OCR_IDENTITY_NOT_READABLE":
+            raise HTTPException(status_code=422, detail=result.error_message)
         # MEJORA 1: Error específico para tipo de documento inválido
         if result.error_code == "INVALID_DOCUMENT_TYPE":
             raise HTTPException(
@@ -420,19 +424,26 @@ def get_analysis_summary(
     # Cuota Completa sin FRECH = cuota_plena + seguros = ~$510,023
     # ═══════════════════════════════════════════════════════════════════════════════
     
-    # Cuota que paga el usuario = valor_cuota_con_seguros (INCLUYE seguros)
-    # Este es el "Valor a Pagar" del extracto: $326,168
-    cuota_actual = analisis.valor_cuota_con_seguros or Decimal("0")
-    
-    # Si no tenemos valor_cuota_con_seguros, calcularlo: cuota_sin_seguros + seguros
-    if cuota_actual == 0 and analisis.valor_cuota_con_subsidio:
-        cuota_actual = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
-    
     beneficio_frech = analisis.beneficio_frech_mensual or Decimal("0")
-    
-    # Cuota Completa sin FRECH = lo que pagaría sin subsidio = cuota_actual + beneficio_frech
-    # Esto representa: (cuota_subsidiada + seguros) + beneficio_frech = $326,168 + $183,855 = $510,023
-    cuota_completa = cuota_actual + beneficio_frech
+
+    # Regla FRECH corregida:
+    # - valor_cuota_con_subsidio = pago mínimo cliente (cuota final que paga el usuario)
+    # - valor_cuota_con_seguros = valor cuota total/base antes del subsidio
+    cuota_actual = analisis.valor_cuota_con_subsidio or Decimal("0")
+    cuota_total_base = analisis.valor_cuota_con_seguros or Decimal("0")
+
+    # Fallback: cuando no viene explícito pago mínimo cliente, derivarlo restando FRECH
+    if cuota_actual == 0 and cuota_total_base > 0 and beneficio_frech > 0:
+        cuota_actual = cuota_total_base - beneficio_frech
+        if cuota_actual < 0:
+            cuota_actual = Decimal("0")
+
+    # Último fallback: usar cuota base tal cual
+    if cuota_actual == 0 and cuota_total_base > 0:
+        cuota_actual = cuota_total_base
+
+    # Cuota completa sin FRECH = valor base antes de subsidio
+    cuota_completa = cuota_total_base if cuota_total_base > 0 else (cuota_actual + beneficio_frech)
     
     datos_basicos = DatosBasicosResumen(
         valor_prestado=analisis.valor_prestado_inicial or Decimal("0"),
@@ -456,11 +467,37 @@ def get_analysis_summary(
     
     # Bloque 3: Ajuste por Inflación - PARA TODOS los sistemas (no solo UVR)
     ajuste_inflacion = None
-    if analisis.ajuste_inflacion_pesos is not None:
+    ajuste_pesos = analisis.ajuste_inflacion_pesos
+    porcentaje_ajuste = analisis.porcentaje_ajuste_inflacion
+    metodo_ajuste = analisis.inflation_method
+
+    sistema_amortizacion = (analisis.sistema_amortizacion or "").upper()
+    plan_credito = (analisis.plan_credito or "").upper()
+    is_baja_uvr = "BAJA UVR" in sistema_amortizacion or "BAJA UVR" in plan_credito
+
+    raw_data = analisis.datos_raw_gemini if isinstance(analisis.datos_raw_gemini, dict) else {}
+    raw_variacion_uvr = raw_data.get("variacion_uvr_pesos")
+
+    variacion_uvr_decimal: Decimal | None = None
+    if raw_variacion_uvr is not None:
+        try:
+            variacion_uvr_decimal = Decimal(str(raw_variacion_uvr))
+        except Exception:
+            variacion_uvr_decimal = None
+
+    if is_baja_uvr and variacion_uvr_decimal is not None:
+        ajuste_pesos = variacion_uvr_decimal
+        if analisis.valor_prestado_inicial and analisis.valor_prestado_inicial > 0:
+            porcentaje_ajuste = (ajuste_pesos / analisis.valor_prestado_inicial).quantize(Decimal("0.0001"))
+        else:
+            porcentaje_ajuste = Decimal("0")
+        metodo_ajuste = "pdf_variacion_uvr"
+
+    if ajuste_pesos is not None:
         ajuste_inflacion = AjusteInflacionResumen(
-            ajuste_pesos=analisis.ajuste_inflacion_pesos or Decimal("0"),
-            porcentaje_ajuste=analisis.porcentaje_ajuste_inflacion or Decimal("0"),
-            metodo=analisis.inflation_method
+            ajuste_pesos=ajuste_pesos or Decimal("0"),
+            porcentaje_ajuste=porcentaje_ajuste or Decimal("0"),
+            metodo=metodo_ajuste
         )
     
     # Bloque 4: Costos Extra (con desglose auditable)

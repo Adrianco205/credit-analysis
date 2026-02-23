@@ -1554,7 +1554,7 @@ class GeminiService:
         # TODO: Inicializar cliente de Gemini cuando se agregue la librería
         # import google.generativeai as genai
         # genai.configure(api_key=self.api_key)
-        # self.model = genai.GenerativeModel('gemini-1.5-pro')
+        # self.model = genai.GenerativeModel('gemini-3-flash-preview')
     
     async def extract_credit_analysis(
         self, 

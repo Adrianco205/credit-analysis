@@ -255,6 +255,98 @@ async def decrypt_pdf_with_password(
     )
 
 
+@router.post("/extract")
+async def extract_uploaded_pdf(
+    file: UploadFile = File(..., description="Archivo PDF del extracto bancario"),
+    password: Optional[str] = Form(None, description="Contraseña del PDF (si está protegido)"),
+    current_user: Usuario = Depends(get_current_user),
+):
+    """
+    Extrae datos de un PDF recién subido en un solo paso.
+
+    Flujo:
+    1. Procesa el PDF con `process_pdf_upload` (validación + desencriptación)
+    2. Recupera PDF ya procesado desde LocalStorageService
+    3. Sube archivo válido a Gemini File API y ejecuta extracción
+    """
+    from app.services.gemini_service import ExtractionStatus, get_gemini_service
+
+    if file.content_type and file.content_type not in {"application/pdf", "application/octet-stream"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El archivo debe ser un PDF. Tipo recibido: {file.content_type}",
+        )
+
+    file_content = await file.read()
+    if len(file_content) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo está vacío",
+        )
+
+    gemini_service = get_gemini_service()
+    storage_service = get_storage_service()
+
+    if not gemini_service.is_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de extracción no disponible. Verifica la configuración de GEMINI_API_KEY.",
+        )
+
+    result = await gemini_service.extract_credit_data_from_upload(
+        file_content=file_content,
+        original_filename=file.filename or "extracto.pdf",
+        user_id=str(current_user.id),
+        password=password,
+        storage_service=storage_service,
+    )
+
+    if result.requires_password:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "error": "PDF_PASSWORD_REQUIRED",
+                "message": result.message,
+                "requires_password": True,
+            },
+        )
+
+    if not result.success and result.extraction is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "error": "PDF_PROCESSING_FAILED",
+                "message": result.message,
+                "validation_status": result.validation_status,
+            },
+        )
+
+    extraction = result.extraction
+
+    if extraction.status == ExtractionStatus.API_ERROR:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "GEMINI_API_ERROR",
+                "message": extraction.message,
+            },
+        )
+
+    return {
+        "success": extraction.status != ExtractionStatus.NOT_CREDIT_DOCUMENT,
+        "status": extraction.status.value,
+        "message": extraction.message,
+        "confidence": extraction.confidence,
+        "banco_detectado": extraction.banco_detectado,
+        "campos_encontrados": extraction.campos_encontrados,
+        "campos_faltantes": extraction.campos_faltantes,
+        "es_extracto_hipotecario": extraction.es_extracto_hipotecario,
+        "saved_file_path": result.saved_file_path,
+        "checksum": result.checksum,
+        "data": extraction.data,
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS DE LECTURA
 # ═══════════════════════════════════════════════════════════════════════════════

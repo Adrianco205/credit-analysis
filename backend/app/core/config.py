@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     
     # Google Gemini (para extracción de PDFs)
     GEMINI_API_KEY: Optional[str] = None
-    GEMINI_MODEL: str = "gemini-3-pro-preview"
+    GEMINI_MODEL: str = "gemini-3-flash-preview"
 
     # Feature flags
     ENABLE_TEST_ENDPOINTS: bool = False

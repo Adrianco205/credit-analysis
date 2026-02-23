@@ -60,7 +60,7 @@ export default function AdminAnalysisDetailPage() {
         <Link href="/dashboard/admin/analyses">
           <Button variant="ghost" leftIcon={<ArrowLeft size={16} />}>Volver al historial</Button>
         </Link>
-        <Link href={`/dashboard/admin/analyses/${detail.id}/summary`}>
+        <Link href={`/dashboard/admin/analyses/${analysisId}/summary`}>
           <Button variant="secondary">Ver resumen</Button>
         </Link>
       </div>

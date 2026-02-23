@@ -92,6 +92,19 @@ export default function AdminIndicadoresFinancierosPage() {
   const hasLoadedIndicadoresRef = useRef(false);
   const isLoadingIndicadoresRef = useRef(false);
 
+  // Refs to hold current state values for use inside stable callbacks
+  const uvrRef = useRef(uvr);
+  const ipcRef = useRef(ipc);
+  const dtfRef = useRef(dtf);
+  const consolidadosRef = useRef(consolidados);
+  const historicoRef = useRef(historico);
+
+  useEffect(() => { uvrRef.current = uvr; }, [uvr]);
+  useEffect(() => { ipcRef.current = ipc; }, [ipc]);
+  useEffect(() => { dtfRef.current = dtf; }, [dtf]);
+  useEffect(() => { consolidadosRef.current = consolidados; }, [consolidados]);
+  useEffect(() => { historicoRef.current = historico; }, [historico]);
+
   const withTimeout = useCallback(<T,>(promise: Promise<T>, timeoutMs = 12000): Promise<T> => {
     return Promise.race([
       promise,
@@ -123,7 +136,7 @@ export default function AdminIndicadoresFinancierosPage() {
 
     isLoadingIndicadoresRef.current = true;
     const hasAnyData = Boolean(
-      uvr || ipc || dtf || consolidados || (historico && historico.datos && historico.datos.length > 0)
+      uvrRef.current || ipcRef.current || dtfRef.current || consolidadosRef.current || (historicoRef.current && historicoRef.current.datos && historicoRef.current.datos.length > 0)
     );
     if (!hasAnyData) {
       setLoading(true);
@@ -151,7 +164,7 @@ export default function AdminIndicadoresFinancierosPage() {
         setIpc(ipcResult.value);
       }
 
-      let nextDtf: DTFResponse | null = dtf;
+      let nextDtf: DTFResponse | null = dtfRef.current;
 
       if (consolidadoResult.status === 'fulfilled') {
         const consolidadoData = consolidadoResult.value;
@@ -192,11 +205,11 @@ export default function AdminIndicadoresFinancierosPage() {
 
         indicadoresMemoryCache = {
           timestamp: Date.now(),
-          uvr: uvrResult.status === 'fulfilled' ? uvrResult.value : uvr,
-          ipc: ipcResult.status === 'fulfilled' ? ipcResult.value : ipc,
+          uvr: uvrResult.status === 'fulfilled' ? uvrResult.value : uvrRef.current,
+          ipc: ipcResult.status === 'fulfilled' ? ipcResult.value : ipcRef.current,
           dtf: nextDtf,
-          consolidados: consolidadoResult.status === 'fulfilled' ? consolidadoResult.value : consolidados,
-          historico: historicoResult.status === 'fulfilled' ? historicoResult.value : historico,
+          consolidados: consolidadoResult.status === 'fulfilled' ? consolidadoResult.value : consolidadosRef.current,
+          historico: historicoResult.status === 'fulfilled' ? historicoResult.value : historicoRef.current,
         };
       }
     } finally {
@@ -204,7 +217,7 @@ export default function AdminIndicadoresFinancierosPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [consolidados, dtf, historico, ipc, uvr, withTimeout]);
+  }, [withTimeout]);
 
   useEffect(() => {
     const validateRole = async () => {
@@ -229,7 +242,8 @@ export default function AdminIndicadoresFinancierosPage() {
     };
 
     validateRole();
-  }, [router, loadIndicadores]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router]);
 
   const chartData = useMemo(() => {
     const raw = historico?.datos || [];

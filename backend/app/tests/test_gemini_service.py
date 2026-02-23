@@ -30,8 +30,10 @@ from app.services.gemini_service import (
     ExtractionStatus,
     GeminiService,
     NameComparisonResult,
+    UploadExtractionResult,
     map_extraction_to_analysis,
 )
+from app.services.pdf_service import PDFSaveResult, PDFStatus, PDFValidationResult
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -148,7 +150,8 @@ class TestDataNormalization:
         data = {
             "valor_prestado_inicial": 150000000,
             "saldo_capital_pesos": "142000000",
-            "beneficio_frech_mensual": 200000.50
+            "beneficio_frech_mensual": 200000.50,
+            "variacion_uvr_pesos": "53946.42"
         }
         
         normalized = gemini_service._normalize_extracted_data(data)
@@ -156,6 +159,7 @@ class TestDataNormalization:
         assert normalized["valor_prestado_inicial"] == Decimal("150000000")
         assert normalized["saldo_capital_pesos"] == Decimal("142000000")
         assert normalized["beneficio_frech_mensual"] == Decimal("200000.50")
+        assert normalized["variacion_uvr_pesos"] == Decimal("53946.42")
     
     def test_normalize_percentage_to_decimal(self, gemini_service):
         """Convierte tasas de porcentaje (ej: 9.53) a decimal (0.0953)."""
@@ -474,3 +478,76 @@ class TestAsyncExtraction:
             
             assert result.match is True
             assert result.similarity == 0.95
+
+
+class TestUploadExtractionFlow:
+    """Tests del flujo integrado upload + process_pdf_upload + Gemini."""
+
+    @pytest.mark.asyncio
+    async def test_extract_from_upload_requires_password(self):
+        service = GeminiService(api_key=None)
+
+        encrypted_validation = PDFValidationResult(
+            is_valid=True,
+            status=PDFStatus.ENCRYPTED,
+            message="El PDF requiere contraseña para abrirlo",
+            is_encrypted=True,
+        )
+
+        with patch("app.services.pdf_service.process_pdf_upload", return_value=(encrypted_validation, None)):
+            result = await service.extract_credit_data_from_upload(
+                file_content=b"%PDF-1.7 encrypted",
+                original_filename="extracto.pdf",
+                user_id="user-1",
+                password=None,
+            )
+
+        assert isinstance(result, UploadExtractionResult)
+        assert result.success is False
+        assert result.requires_password is True
+        assert result.validation_status == PDFStatus.ENCRYPTED.value
+
+    @pytest.mark.asyncio
+    async def test_extract_from_upload_uses_processed_pdf_bytes(self):
+        service = GeminiService(api_key=None)
+
+        validation = PDFValidationResult(
+            is_valid=True,
+            status=PDFStatus.DECRYPTED,
+            message="PDF desencriptado y guardado sin contraseña",
+            is_encrypted=False,
+        )
+        save_result = PDFSaveResult(
+            success=True,
+            message="ok",
+            file_path="pdfs/user-1/extracto.pdf",
+            file_size_bytes=100,
+            checksum="abc123",
+        )
+
+        storage_mock = MagicMock()
+        storage_mock.get_pdf.return_value = b"%PDF-1.7 decrypted"
+
+        extraction = ExtractionResult(
+            status=ExtractionStatus.SUCCESS,
+            confidence=0.9,
+            message="Extracción completa exitosa",
+            data={"nombre_titular": "TEST"},
+        )
+        service.extract_credit_data = AsyncMock(return_value=extraction)
+
+        with patch("app.services.pdf_service.process_pdf_upload", return_value=(validation, save_result)):
+            result = await service.extract_credit_data_from_upload(
+                file_content=b"%PDF-1.7 encrypted",
+                original_filename="extracto.pdf",
+                user_id="user-1",
+                password="1234",
+                storage_service=storage_mock,
+            )
+
+        assert result.success is True
+        assert result.saved_file_path == "pdfs/user-1/extracto.pdf"
+        assert result.checksum == "abc123"
+        assert result.extraction is extraction
+        storage_mock.get_pdf.assert_called_once_with("pdfs/user-1/extracto.pdf")
+        service.extract_credit_data.assert_awaited_once()

@@ -413,6 +413,328 @@ class TestAnalysisServiceLogic:
         
         assert nombre == "María López"
 
+    def test_extract_identity_from_pdf_text_fallback(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        sample_text = """
+        BANCO CAJA SOCIAL
+        NOMBRE DEL TITULAR: CARLOS ANDRES RAMIREZ LOPEZ
+        C.C.: 1.234.567.890
+        """
+
+        with patch("app.services.analysis_service.PdfService.extract_text_basic", return_value=sample_text):
+            detected_name, detected_id = AnalysisService._extract_identity_from_pdf_text(service, b"%PDF-1.4 fake")
+
+        assert detected_name == "CARLOS ANDRES RAMIREZ LOPEZ"
+        assert detected_id == "1234567890"
+
+    def test_extract_identity_does_not_take_credit_number_as_cc(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        sample_text = """
+        ADDESON ALBERT ZUIGA VEGA
+        NÚMERO DE CRÉDITO 00558564407
+        FECHA LÍMITE DE PAGO
+        """
+
+        with patch("app.services.analysis_service.PdfService.extract_text_basic", return_value=sample_text):
+            detected_name, detected_id = AnalysisService._extract_identity_from_pdf_text(service, b"%PDF-1.4 fake")
+
+        assert detected_name is None
+        assert detected_id is None
+
+    def test_enrich_identity_from_fallback_populates_missing_fields(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        extraction = ExtractionResult(
+            status=ExtractionStatus.PARTIAL,
+            confidence=0.6,
+            data={"nombre_titular": None, "identificacion_titular": None},
+            campos_encontrados=[],
+            campos_faltantes=["nombre_titular", "identificacion_titular"],
+            es_extracto_hipotecario=True,
+        )
+
+        with patch.object(
+            AnalysisService,
+            "_extract_identity_from_pdf_text",
+            return_value=("JUAN DAVID PEREZ", "1020304050"),
+        ):
+            AnalysisService._enrich_identity_from_fallback(service, b"%PDF-1.4 fake", extraction)
+
+        assert extraction.data["nombre_titular"] == "JUAN DAVID PEREZ"
+        assert extraction.data["identificacion_titular"] == "1020304050"
+        assert "nombre_titular" in extraction.campos_encontrados
+        assert "identificacion_titular" in extraction.campos_encontrados
+
+    @pytest.mark.asyncio
+    async def test_create_analysis_blocks_identity_mismatch_with_registered_cc_suggestion(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        documento_id = uuid.uuid4()
+        usuario_id = uuid.uuid4()
+
+        service.documents_repo = MagicMock()
+        service.documents_repo.get_by_id_and_user.return_value = MagicMock(
+            id=documento_id,
+            s3_key="pdfs/test/doc.pdf"
+        )
+
+        service.analyses_repo = MagicMock()
+        service.analyses_repo.get_by_documento.return_value = None
+
+        service.storage = MagicMock()
+        service.storage.get_pdf.return_value = b"fake-pdf"
+
+        service.gemini = MagicMock()
+        service.gemini.extract_credit_data = AsyncMock(return_value=ExtractionResult(
+            status=ExtractionStatus.SUCCESS,
+            confidence=0.9,
+            data={
+                "nombre_titular": "CARLOS ANDRES OTRA PERSONA",
+                "identificacion_titular": "987654321",
+                "tipo_identificacion_titular": "CC",
+                "saldo_capital_pesos": Decimal("100000000"),
+                "valor_cuota_con_seguros": Decimal("1200000"),
+                "cuotas_pendientes": 100,
+                "tasa_interes_cobrada_ea": Decimal("0.1"),
+            },
+            campos_encontrados=["nombre_titular", "identificacion_titular"],
+            campos_faltantes=[],
+            es_extracto_hipotecario=True,
+        ))
+        service.gemini.compare_names = AsyncMock(return_value=MagicMock(match=False))
+
+        db_execute_result = MagicMock()
+        db_execute_result.scalar_one_or_none.return_value = MagicMock(id=uuid.uuid4())
+        service.db = MagicMock()
+        service.db.execute.return_value = db_execute_result
+
+        usuario = MagicMock()
+        usuario.id = usuario_id
+        usuario.nombres = "Juan"
+        usuario.primer_apellido = "Pérez"
+        usuario.segundo_apellido = "Gómez"
+        usuario.identificacion = "123456789"
+
+        datos_usuario = DatosUsuarioInput(
+            ingresos_mensuales=Decimal("5000000"),
+            capacidad_pago_max=Decimal("2000000"),
+            tipo_contrato_laboral="Indefinido",
+        )
+
+        result = await AnalysisService.create_analysis_from_document(
+            service,
+            documento_id=documento_id,
+            usuario=usuario,
+            datos_usuario=datos_usuario,
+        )
+
+        assert result.success is False
+        assert result.error_code == "IDENTITY_MISMATCH"
+        assert "Nombre: CARLOS ANDRES OTRA PERSONA" in (result.error_message or "")
+        assert "CC: 987654321" in (result.error_message or "")
+        assert "Inicia sesión con la cuenta asociada a la CC 987654321" in (result.error_message or "")
+
+    @pytest.mark.asyncio
+    async def test_create_analysis_blocks_by_name_and_sets_cc_na_when_not_explicit(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        documento_id = uuid.uuid4()
+        usuario_id = uuid.uuid4()
+
+        service.documents_repo = MagicMock()
+        service.documents_repo.get_by_id_and_user.return_value = MagicMock(
+            id=documento_id,
+            s3_key="pdfs/test/doc.pdf"
+        )
+        service.documents_repo.delete = MagicMock(return_value=True)
+
+        service.analyses_repo = MagicMock()
+        service.analyses_repo.get_by_documento.return_value = None
+
+        service.storage = MagicMock()
+        service.storage.get_pdf.return_value = b"fake-pdf"
+        service.storage.delete_pdf = MagicMock(return_value=True)
+
+        service.gemini = MagicMock()
+        service.gemini.extract_credit_data = AsyncMock(return_value=ExtractionResult(
+            status=ExtractionStatus.SUCCESS,
+            confidence=0.9,
+            data={
+                "nombre_titular": "OTRA PERSONA",
+                "identificacion_titular": "00558564407",
+                "numero_credito": "00558564407",
+                "saldo_capital_pesos": Decimal("100000000"),
+                "valor_cuota_con_seguros": Decimal("1200000"),
+                "cuotas_pendientes": 100,
+                "tasa_interes_cobrada_ea": Decimal("0.1"),
+            },
+            campos_encontrados=["nombre_titular", "identificacion_titular", "numero_credito"],
+            campos_faltantes=[],
+            es_extracto_hipotecario=True,
+        ))
+        service.gemini.compare_names = AsyncMock(return_value=MagicMock(match=False))
+
+        db_execute_result = MagicMock()
+        db_execute_result.scalar_one_or_none.return_value = None
+        service.db = MagicMock()
+        service.db.execute.return_value = db_execute_result
+
+        usuario = MagicMock()
+        usuario.id = usuario_id
+        usuario.nombres = "Juan"
+        usuario.primer_apellido = "Pérez"
+        usuario.segundo_apellido = "Gómez"
+        usuario.identificacion = "123456789"
+
+        datos_usuario = DatosUsuarioInput(
+            ingresos_mensuales=Decimal("5000000"),
+            capacidad_pago_max=Decimal("2000000"),
+            tipo_contrato_laboral="Indefinido",
+        )
+
+        result = await AnalysisService.create_analysis_from_document(
+            service,
+            documento_id=documento_id,
+            usuario=usuario,
+            datos_usuario=datos_usuario,
+        )
+
+        assert result.success is False
+        assert result.error_code == "IDENTITY_MISMATCH"
+        assert "CC: N/A" in (result.error_message or "")
+
+    @pytest.mark.asyncio
+    async def test_create_analysis_blocks_when_ocr_identity_not_readable(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        documento_id = uuid.uuid4()
+        usuario_id = uuid.uuid4()
+
+        service.documents_repo = MagicMock()
+        service.documents_repo.get_by_id_and_user.return_value = MagicMock(
+            id=documento_id,
+            s3_key="pdfs/test/doc.pdf"
+        )
+
+        service.analyses_repo = MagicMock()
+        service.analyses_repo.get_by_documento.return_value = None
+
+        service.storage = MagicMock()
+        service.storage.get_pdf.return_value = b"fake-pdf"
+
+        service.gemini = MagicMock()
+        service.gemini.extract_credit_data = AsyncMock(return_value=ExtractionResult(
+            status=ExtractionStatus.SUCCESS,
+            confidence=0.7,
+            data={
+                "nombre_titular": None,
+                "identificacion_titular": None,
+            },
+            campos_encontrados=[],
+            campos_faltantes=["nombre_titular", "identificacion_titular"],
+            es_extracto_hipotecario=True,
+        ))
+        service.gemini.compare_names = AsyncMock()
+
+        service.db = MagicMock()
+
+        usuario = MagicMock()
+        usuario.id = usuario_id
+        usuario.nombres = "Juan"
+        usuario.primer_apellido = "Pérez"
+        usuario.segundo_apellido = "Gómez"
+        usuario.identificacion = "123456789"
+
+        datos_usuario = DatosUsuarioInput(
+            ingresos_mensuales=Decimal("5000000"),
+            capacidad_pago_max=Decimal("2000000"),
+            tipo_contrato_laboral="Indefinido",
+        )
+
+        result = await AnalysisService.create_analysis_from_document(
+            service,
+            documento_id=documento_id,
+            usuario=usuario,
+            datos_usuario=datos_usuario,
+        )
+
+        assert result.success is False
+        assert result.error_code == "OCR_IDENTITY_NOT_READABLE"
+        assert "mejor calidad" in (result.error_message or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_create_analysis_allows_when_cc_missing_but_name_matches(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        documento_id = uuid.uuid4()
+        usuario_id = uuid.uuid4()
+        analisis_id = uuid.uuid4()
+
+        service.documents_repo = MagicMock()
+        service.documents_repo.get_by_id_and_user.return_value = MagicMock(
+            id=documento_id,
+            s3_key="pdfs/test/doc.pdf"
+        )
+
+        service.analyses_repo = MagicMock()
+        service.analyses_repo.get_by_documento.return_value = None
+        service.analyses_repo.create.return_value = MagicMock(id=analisis_id, status="EXTRACTED")
+        service.analyses_repo.calculate_derived_fields = MagicMock()
+
+        service.storage = MagicMock()
+        service.storage.get_pdf.return_value = b"%PDF-1.4 fake-pdf"
+        service.storage.delete_pdf = MagicMock(return_value=True)
+
+        service.gemini = MagicMock()
+        service.gemini.extract_credit_data = AsyncMock(return_value=ExtractionResult(
+            status=ExtractionStatus.SUCCESS,
+            confidence=0.92,
+            data={
+                "nombre_titular": "JUAN CARLOS PEREZ",
+                "identificacion_titular": None,
+                "saldo_capital_pesos": Decimal("100000000"),
+                "valor_cuota_con_seguros": Decimal("1200000"),
+                "cuotas_pendientes": 100,
+                "tasa_interes_cobrada_ea": Decimal("0.1"),
+                "valor_prestado_inicial": Decimal("150000000"),
+            },
+            campos_encontrados=["nombre_titular"],
+            campos_faltantes=[],
+            es_extracto_hipotecario=True,
+        ))
+        service.gemini.compare_names = AsyncMock(return_value=MagicMock(match=True))
+
+        service.db = MagicMock()
+        service.db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        service.db.commit = MagicMock()
+        service.db.rollback = MagicMock()
+
+        usuario = MagicMock()
+        usuario.id = usuario_id
+        usuario.nombres = "Juan Carlos"
+        usuario.primer_apellido = "Perez"
+        usuario.segundo_apellido = "Lopez"
+        usuario.identificacion = "123456789"
+
+        datos_usuario = DatosUsuarioInput(
+            ingresos_mensuales=Decimal("5000000"),
+            capacidad_pago_max=Decimal("2000000"),
+            tipo_contrato_laboral="Indefinido",
+        )
+
+        result = await AnalysisService.create_analysis_from_document(
+            service,
+            documento_id=documento_id,
+            usuario=usuario,
+            datos_usuario=datos_usuario,
+        )
+
+        assert result.success is True
+        assert result.error_code is None
+        assert result.id_mismatch is False
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TESTS DE RESULT DATACLASSES

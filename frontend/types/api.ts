@@ -128,6 +128,22 @@ export interface CreateAnalysisResponse {
   tipo_documento_detectado?: string;
 }
 
+export interface AdminClientAnalysisUploadRequest {
+  customer_full_name: string;
+  customer_id_number: string;
+  customer_email: string;
+  customer_phone: string;
+  ingresos_mensuales: number;
+  capacidad_pago_max?: number;
+  tipo_contrato_laboral?: string;
+  banco_id?: number;
+  opcion_abono_1?: number;
+  opcion_abono_2?: number;
+  opcion_abono_3?: number;
+  file: File;
+  password?: string;
+}
+
 export interface UpdateManualFieldsRequest {
   numero_credito?: string;
   sistema_amortizacion?: string;

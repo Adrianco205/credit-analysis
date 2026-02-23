@@ -11,12 +11,15 @@ Este servicio coordina todo el proceso:
 """
 import logging
 import uuid
+import io
+import re
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select, func
 
 from app.models.analisis import AnalisisHipotecario
 from app.models.documento import DocumentoS3
@@ -34,6 +37,7 @@ from app.services.gemini_service import (
     map_extraction_to_analysis
 )
 from app.services.pdf_service import LocalStorageService, get_storage_service
+from app.services.pdf_service import PdfService
 from app.services.calc_service import (
     CalculadoraFinanciera, 
     crear_calculadora,
@@ -62,6 +66,27 @@ class AnalysisCreationResult:
     id_mismatch: bool = False  # Nueva: cédula no coincide
     invalid_document_type: bool = False  # Nueva: documento no es hipotecario
     tipo_documento_detectado: str | None = None  # Qué tipo de documento es si no es hipotecario
+
+
+def _normalize_identity(value: str | None) -> str:
+    if not value:
+        return ""
+    return (
+        str(value)
+        .replace(".", "")
+        .replace("-", "")
+        .replace(" ", "")
+        .strip()
+    )
+
+
+def _normalize_document_id_for_display(value: str | None) -> str:
+    normalized = _normalize_identity(value)
+    if not normalized:
+        return "N/A"
+    if len(normalized) < 6 or len(normalized) > 12:
+        return "N/A"
+    return normalized
 
 
 @dataclass
@@ -139,6 +164,104 @@ class AnalysisService:
             else:
                 result[key] = value
         return result
+
+    def _cleanup_document_on_identity_failure(self, documento: DocumentoS3) -> None:
+        """Elimina archivo físico y registro de documento cuando falla validación de identidad."""
+        try:
+            if documento.s3_key:
+                self.storage.delete_pdf(documento.s3_key)
+        except Exception as error:
+            logger.warning(f"No se pudo eliminar archivo del documento {documento.id}: {error}")
+
+        try:
+            self.documents_repo.delete(documento.id)
+        except Exception as error:
+            logger.warning(f"No se pudo eliminar registro de documento {documento.id}: {error}")
+
+    def _extract_identity_from_pdf_text(self, pdf_content: bytes) -> tuple[str | None, str | None]:
+        """Extrae nombre y CC con heurísticas desde texto plano del PDF."""
+        try:
+            raw_text = PdfService.extract_text_basic(io.BytesIO(pdf_content))
+        except Exception:
+            return None, None
+
+        if not raw_text:
+            return None, None
+
+        text = raw_text.replace("\r", "\n")
+        compact_text = re.sub(r"\s+", " ", text)
+
+        identity_keywords = [
+            "CC",
+            "C.C",
+            "CEDULA",
+            "CÉDULA",
+            "IDENTIFICACION",
+            "IDENTIFICACIÓN",
+            "NIT",
+        ]
+        credit_keywords = ["CREDITO", "CRÉDITO", "NUMERO DE CREDITO", "NÚMERO DE CRÉDITO"]
+
+        detected_id = None
+        for raw_line in text.split("\n"):
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            line_upper = line.upper()
+            if any(keyword in line_upper for keyword in credit_keywords):
+                continue
+
+            if not any(keyword in line_upper for keyword in identity_keywords):
+                continue
+
+            matches = re.findall(r"([0-9][0-9\.\-\s]{5,})", line)
+            for match in matches:
+                candidate = _normalize_identity(match)
+                if 6 <= len(candidate) <= 12:
+                    detected_id = candidate
+                    break
+
+            if detected_id:
+                break
+
+        name_patterns = [
+            r"(?:NOMBRE(?:\s+DEL\s+(?:CLIENTE|TITULAR))?|TITULAR|DEUDOR)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{5,})",
+            r"(?:SEÑOR(?:A)?|SR\.?|SRA\.?)\s*[:\-]?\s*([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ\s]{5,})",
+        ]
+
+        detected_name = None
+        for pattern in name_patterns:
+            match = re.search(pattern, compact_text.upper(), re.IGNORECASE)
+            if not match:
+                continue
+            candidate = re.sub(r"\s+", " ", match.group(1)).strip(" -:;")
+            words = [w for w in candidate.split(" ") if len(w) > 1]
+            if len(words) >= 2:
+                detected_name = " ".join(words)
+                break
+
+        return detected_name, detected_id
+
+    def _enrich_identity_from_fallback(self, pdf_content: bytes, extraction_result: ExtractionResult) -> None:
+        """Completa nombre/CC faltantes con heurísticas locales de OCR/texto."""
+        current_name = str(extraction_result.data.get("nombre_titular") or "").strip()
+        current_id = str(extraction_result.data.get("identificacion_titular") or "").strip()
+
+        if current_name and current_id:
+            return
+
+        fallback_name, fallback_id = self._extract_identity_from_pdf_text(pdf_content)
+
+        if not current_name and fallback_name:
+            extraction_result.data["nombre_titular"] = fallback_name
+            if "nombre_titular" not in extraction_result.campos_encontrados:
+                extraction_result.campos_encontrados.append("nombre_titular")
+
+        if not current_id and fallback_id:
+            extraction_result.data["identificacion_titular"] = fallback_id
+            if "identificacion_titular" not in extraction_result.campos_encontrados:
+                extraction_result.campos_encontrados.append("identificacion_titular")
     
     # ═══════════════════════════════════════════════════════════════════════════════
     # FLUJO PRINCIPAL: CREAR ANÁLISIS DESDE DOCUMENTO
@@ -150,6 +273,8 @@ class AnalysisService:
         usuario: Usuario,
         datos_usuario: DatosUsuarioInput,
         skip_name_validation: bool = False,
+        skip_id_validation: bool = False,
+        allow_non_credit_document: bool = False,
         banco_id: int | None = None  # ID del banco seleccionado por el usuario
     ) -> AnalysisCreationResult:
         """
@@ -168,6 +293,8 @@ class AnalysisService:
             usuario: Usuario autenticado
             datos_usuario: Datos socioeconómicos del usuario
             skip_name_validation: Omitir validación de nombre (para testing)
+            skip_id_validation: Omitir validación de cédula/identificación
+            allow_non_credit_document: Permitir documentos no hipotecarios y continuar en estado manual
             banco_id: ID del banco seleccionado por el usuario (prioridad sobre detección automática)
             
         Returns:
@@ -208,20 +335,38 @@ class AnalysisService:
             
             # 3. Extraer datos con Gemini
             extraction_result = await self.gemini.extract_credit_data(pdf_content)
+            self._enrich_identity_from_fallback(pdf_content, extraction_result)
             
             # ════════════════════════════════════════════════════════════════
             # MEJORA 1: VALIDACIÓN DE TIPO DE DOCUMENTO
             # ════════════════════════════════════════════════════════════════
             if extraction_result.status == ExtractionStatus.NOT_CREDIT_DOCUMENT:
+                if allow_non_credit_document:
+                    logger.warning(
+                        "Documento no hipotecario permitido por configuración. "
+                        f"Documento={documento_id} Usuario={usuario.id}"
+                    )
+                else:
+                    # Extraer el tipo de documento detectado del raw response
+                    tipo_detectado = extraction_result.data.get("tipo_documento_detectado", "Documento no reconocido")
+                    return AnalysisCreationResult(
+                        success=False,
+                        error_code="INVALID_DOCUMENT_TYPE",
+                        error_message=f"El documento subido no es un extracto de crédito hipotecario. Se detectó: {tipo_detectado}",
+                        invalid_document_type=True,
+                        tipo_documento_detectado=tipo_detectado
+                    )
+
+            tipo_detectado = extraction_result.data.get("tipo_documento_detectado")
+
+            if extraction_result.status == ExtractionStatus.NOT_CREDIT_DOCUMENT and allow_non_credit_document:
                 # Extraer el tipo de documento detectado del raw response
-                tipo_detectado = extraction_result.data.get("tipo_documento_detectado", "Documento no reconocido")
-                return AnalysisCreationResult(
-                    success=False,
-                    error_code="INVALID_DOCUMENT_TYPE",
-                    error_message=f"El documento subido no es un extracto de crédito hipotecario. Se detectó: {tipo_detectado}",
-                    invalid_document_type=True,
-                    tipo_documento_detectado=tipo_detectado
-                )
+                extraction_result.campos_faltantes = extraction_result.campos_faltantes or [
+                    "saldo_capital_pesos",
+                    "valor_cuota_con_seguros",
+                    "cuotas_pendientes",
+                    "tasa_interes_cobrada_ea",
+                ]
             
             if extraction_result.status == ExtractionStatus.API_ERROR:
                 return AnalysisCreationResult(
@@ -229,12 +374,29 @@ class AnalysisService:
                     error_code="EXTRACTION_ERROR",
                     error_message=f"Error en extracción: {extraction_result.message}"
                 )
+
+            nombre_pdf_detectado = str(extraction_result.data.get("nombre_titular") or "").strip()
+            identificacion_pdf = extraction_result.data.get("identificacion_titular")
+            identificacion_pdf_detectada = str(identificacion_pdf or "").strip()
+            tipo_identificacion_pdf = str(extraction_result.data.get("tipo_identificacion_titular") or "").upper().strip()
+            numero_credito_detectado = _normalize_identity(str(extraction_result.data.get("numero_credito") or ""))
+
+            if not skip_name_validation and not nombre_pdf_detectado:
+                self._cleanup_document_on_identity_failure(documento)
+                return AnalysisCreationResult(
+                    success=False,
+                    error_code="OCR_IDENTITY_NOT_READABLE",
+                    error_message=(
+                        "No fue posible leer claramente el nombre en el documento. "
+                        "Por favor carga un archivo de mejor calidad para continuar."
+                    ),
+                )
             
             # 4. Validar nombre (si no se omite)
             name_match = True
-            if not skip_name_validation and extraction_result.data.get("nombre_titular"):
+            if not skip_name_validation and nombre_pdf_detectado:
                 nombre_usuario = self._build_user_full_name(usuario)
-                nombre_pdf = extraction_result.data.get("nombre_titular", "")
+                nombre_pdf = nombre_pdf_detectado
                 
                 comparison = await self.gemini.compare_names(nombre_pdf, nombre_usuario)
                 name_match = comparison.match
@@ -248,11 +410,15 @@ class AnalysisService:
             # MEJORA 4: VALIDACIÓN DE CÉDULA/IDENTIFICACIÓN
             # ════════════════════════════════════════════════════════════════
             id_match = True
-            identificacion_pdf = extraction_result.data.get("identificacion_titular")
-            if identificacion_pdf and usuario.identificacion:
+            detected_id_normalized = _normalize_identity(identificacion_pdf_detectada)
+            id_is_explicit = bool(tipo_identificacion_pdf in {"CC", "CE", "NIT", "TI", "PAS", "PA"})
+            if detected_id_normalized and numero_credito_detectado and detected_id_normalized == numero_credito_detectado:
+                id_is_explicit = False
+
+            if not skip_id_validation and identificacion_pdf and usuario.identificacion:
                 # Normalizar: quitar espacios, puntos, guiones
-                id_pdf_normalized = str(identificacion_pdf).replace(".", "").replace("-", "").replace(" ", "").strip()
-                id_user_normalized = str(usuario.identificacion).replace(".", "").replace("-", "").replace(" ", "").strip()
+                id_pdf_normalized = detected_id_normalized
+                id_user_normalized = _normalize_identity(str(usuario.identificacion))
                 
                 id_match = id_pdf_normalized == id_user_normalized
                 
@@ -261,6 +427,45 @@ class AnalysisService:
                         f"Cédula no coincide. PDF: {identificacion_pdf} ({id_pdf_normalized}), "
                         f"Usuario: {usuario.identificacion} ({id_user_normalized})"
                     )
+
+            if not skip_name_validation and not name_match:
+                self._cleanup_document_on_identity_failure(documento)
+                suggestion = ""
+                id_for_display = "N/A"
+                if id_is_explicit and detected_id_normalized:
+                    id_for_display = _normalize_document_id_for_display(identificacion_pdf_detectada)
+
+                if id_is_explicit and detected_id_normalized:
+                    usuario_por_cc = self.db.execute(
+                        select(Usuario).where(
+                            func.replace(
+                                func.replace(
+                                    func.replace(func.coalesce(Usuario.identificacion, ""), ".", ""),
+                                    "-",
+                                    "",
+                                ),
+                                " ",
+                                "",
+                            )
+                            == detected_id_normalized
+                        )
+                    ).scalar_one_or_none()
+                    if usuario_por_cc and usuario_por_cc.id != usuario.id:
+                        suggestion = f" Inicia sesión con la cuenta asociada a la CC {id_for_display}."
+
+                return AnalysisCreationResult(
+                    success=False,
+                    error_code="IDENTITY_MISMATCH",
+                    error_message=(
+                        f"Los datos del documento (Nombre: {nombre_pdf_detectado or 'No detectado'}, "
+                        f"CC: {id_for_display}) no coinciden con tu cuenta. "
+                        "Para procesar este análisis, por favor inicia sesión con la cuenta correspondiente "
+                        "o crea una nueva cuenta para este titular."
+                        f"{suggestion}"
+                    ),
+                    name_mismatch=not name_match,
+                    id_mismatch=not id_match,
+                )
             
             # 5. Crear análisis
             # Serializar datos para JSONB (convertir date y Decimal a tipos serializables)
@@ -283,6 +488,7 @@ class AnalysisService:
                 "cedula_coincide": id_match,  # NUEVO
                 "identificacion_extracto": str(identificacion_pdf) if identificacion_pdf else None,  # NUEVO
                 "es_extracto_hipotecario": extraction_result.es_extracto_hipotecario,
+                "tipo_documento_detectado": tipo_detectado,
                 "datos_raw_gemini": datos_raw_serializables,
                 "campos_extraidos_ia": extraction_result.campos_encontrados,  # NUEVO: para readonly
                 "opciones_abono_preferidas": opciones_abono,  # NUEVO
@@ -310,7 +516,6 @@ class AnalysisService:
                 # Fallback: intentar detectar desde el nombre extraído del PDF
                 banco_detectado = extraction_result.data.get("banco")
                 if banco_detectado:
-                    from sqlalchemy import select, func
                     # Buscar banco por nombre (case-insensitive, partial match)
                     stmt = select(Banco).where(
                         func.lower(Banco.nombre).contains(func.lower(banco_detectado))
@@ -332,13 +537,7 @@ class AnalysisService:
             # ════════════════════════════════════════════════════════════════
             # DETERMINAR ESTADO CON NUEVA LÓGICA DE VALIDACIÓN
             # ════════════════════════════════════════════════════════════════
-            if not name_match and not id_match:
-                # Ambos no coinciden: potencial fraude crítico
-                analisis_data["status"] = "ID_MISMATCH"  # Prioritario sobre NAME_MISMATCH
-            elif not id_match:
-                # Cédula no coincide (nombre puede coincidir): alerta crítica
-                analisis_data["status"] = "ID_MISMATCH"
-            elif not name_match:
+            if not name_match:
                 # Solo nombre no coincide (cédula sí): podría ser formato de nombre diferente
                 analisis_data["status"] = "NAME_MISMATCH"
             elif requires_manual:

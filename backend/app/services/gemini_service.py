@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from enum import Enum
+from pathlib import Path
 from typing import Any, Optional
 
 from google import genai
@@ -65,6 +66,18 @@ class ExtractionResult:
     
     # Raw response para debugging
     raw_response: str | None = None
+
+
+@dataclass
+class UploadExtractionResult:
+    """Resultado del flujo completo upload -> desencriptar -> extracción."""
+    success: bool
+    message: str
+    requires_password: bool = False
+    validation_status: str | None = None
+    saved_file_path: str | None = None
+    checksum: str | None = None
+    extraction: ExtractionResult | None = None
 
 
 @dataclass 
@@ -150,11 +163,36 @@ Etiquetas comunes en PDFs colombianos:
 - "SEGURO TERREMOTO" / "SEG. TERREMOTO"
 - "CAPITAL" / "ABONO CAPITAL" / "AMORTIZACIÓN"
 
+### REGLA ESTRICTA FRECH (OBLIGATORIA)
+Cuando el extracto muestre conceptos como:
+- "Valor Cuota Total" (o "Valor cuota sin subsidio", "Valor cuota plena")
+- "Cobertura de Tasa" / "Subsidio FRECH"
+- "Pago mínimo cliente" / "Total a pagar cliente"
+
+APLICA ESTA LÓGICA SIEMPRE:
+1. `valor_cuota_con_seguros` = "Valor Cuota Total" (valor base ANTES de subsidio)
+2. `beneficio_frech_mensual` = "Cobertura de Tasa" (beneficio que SE RESTA)
+3. `valor_cuota_con_subsidio` = "Pago mínimo cliente" (valor FINAL que paga el cliente)
+
+IMPORTANTE:
+- NUNCA sumes cobertura/subsidio al valor final del cliente.
+- Si existe explícitamente "Pago mínimo cliente", úsalo tal cual como `valor_cuota_con_subsidio`.
+- Solo si NO existe "Pago mínimo cliente", calcula: `valor_cuota_con_subsidio = valor_cuota_con_seguros - beneficio_frech_mensual`.
+
 ### DATOS UVR (Esenciales para créditos UVR)
 Para créditos en UVR, estos campos son OBLIGATORIOS:
 - valor_uvr_fecha_extracto: El valor del UVR a la fecha del extracto
 - saldo_capital_uvr: Saldo en unidades UVR
 - valor_cuota_uvr: Cuota mensual en UVR
+
+### REGLA ESTRICTA PARA BAJA UVR
+Si el sistema de amortización contiene "BAJA UVR", busca obligatoriamente en movimientos/saldos el concepto:
+- "+ Variación UVR" / "Variación UVR" / "Ajuste UVR"
+
+Extrae ese valor exacto en pesos como:
+- `variacion_uvr_pesos`
+
+No lo recalcules ni lo derives de otros campos si está explícito en el documento.
 
 ## CAMPOS A EXTRAER (extrae TODOS los que encuentres)
 
@@ -197,6 +235,7 @@ Para créditos en UVR, estos campos son OBLIGATORIOS:
 - saldo_capital_uvr: Saldo de capital en UVR
 - valor_uvr_fecha_extracto: Valor del UVR a la fecha del extracto
 - valor_cuota_uvr: Valor de la cuota en UVR
+- variacion_uvr_pesos: Valor en pesos del concepto "+ Variación UVR" (obligatorio para sistema "BAJA UVR" si aparece)
 
 ### Componentes del Período (Del pago actual/última cuota)
 - capital_pagado_periodo: Capital abonado en el período
@@ -252,6 +291,7 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura:
   "saldo_capital_uvr": 350000,
   "valor_uvr_fecha_extracto": 405.72,
   "valor_cuota_uvr": 2850,
+    "variacion_uvr_pesos": 53946.42,
   
   "capital_pagado_periodo": 450000,
   "intereses_corrientes_periodo": 950000,
@@ -414,6 +454,144 @@ class GeminiService:
             pass
         return None
 
+    @staticmethod
+    def _resolve_file_state_name(uploaded_file: Any) -> str | None:
+        """Normaliza el estado del archivo retornado por File API."""
+        state = getattr(uploaded_file, "state", None)
+        if state is None:
+            return None
+        if isinstance(state, str):
+            return state.upper()
+        state_name = getattr(state, "name", None)
+        if isinstance(state_name, str):
+            return state_name.upper()
+        return str(state).upper()
+
+    def _upload_pdf_to_file_api(self, file_path: str) -> Any:
+        """
+        Sube un PDF validado a Google File API.
+
+        Valida tamaño y MIME antes de subir para evitar INVALID_ARGUMENT.
+        """
+        absolute_path = Path(file_path)
+        if not absolute_path.exists():
+            raise ValueError(f"Archivo temporal no existe: {absolute_path}")
+
+        file_size = absolute_path.stat().st_size
+        if file_size <= 0:
+            raise ValueError("El archivo PDF temporal está vacío")
+
+        display_name = f"credit_extract_{int(time.time())}"
+
+        return self._client.files.upload(
+            file=str(absolute_path),
+            config=types.UploadFileConfig(
+                mime_type="application/pdf",
+                display_name=display_name,
+            )
+        )
+
+    @staticmethod
+    def _is_file_creation_error(exception: Exception) -> bool:
+        """Detecta errores de creación de archivo en File API de Gemini."""
+        error_text = str(exception).lower()
+        return (
+            "invalid_argument" in error_text
+            and ("failed to create file" in error_text or "create file" in error_text)
+        )
+
+    def _build_inline_pdf_part(self, pdf_content: bytes) -> types.Part:
+        """Construye un Part inline para fallback cuando File API falle."""
+        try:
+            return types.Part.from_bytes(data=pdf_content, mime_type="application/pdf")
+        except Exception:
+            return types.Part(
+                inline_data=types.Blob(
+                    data=pdf_content,
+                    mime_type="application/pdf",
+                )
+            )
+
+    async def extract_credit_data_from_upload(
+        self,
+        file_content: bytes,
+        original_filename: str,
+        user_id: str,
+        password: str | None = None,
+        storage_service: Any | None = None,
+    ) -> UploadExtractionResult:
+        """
+        Procesa PDF subido por usuario (validación/desencriptación) y extrae datos.
+
+        Usa `process_pdf_upload` para centralizar el flujo de PDF y luego extrae con Gemini
+        desde el archivo guardado por `LocalStorageService`.
+        """
+        from app.services.pdf_service import PDFStatus, get_storage_service, process_pdf_upload
+
+        if not file_content:
+            return UploadExtractionResult(
+                success=False,
+                message="El archivo está vacío",
+                validation_status=PDFStatus.EMPTY.value,
+            )
+
+        storage = storage_service or get_storage_service()
+
+        validation_result, save_result = process_pdf_upload(
+            file_content=file_content,
+            original_filename=original_filename,
+            user_id=user_id,
+            password=password,
+            storage_service=storage,
+        )
+
+        if validation_result.status == PDFStatus.ENCRYPTED and not password:
+            return UploadExtractionResult(
+                success=False,
+                message=validation_result.message,
+                requires_password=True,
+                validation_status=validation_result.status.value,
+            )
+
+        if not validation_result.is_valid:
+            return UploadExtractionResult(
+                success=False,
+                message=validation_result.message,
+                validation_status=validation_result.status.value,
+            )
+
+        if not save_result or not save_result.success or not save_result.file_path:
+            return UploadExtractionResult(
+                success=False,
+                message=save_result.message if save_result else "No se pudo guardar el PDF procesado",
+                validation_status=validation_result.status.value,
+            )
+
+        pdf_content_for_gemini = storage.get_pdf(save_result.file_path)
+        if not pdf_content_for_gemini:
+            return UploadExtractionResult(
+                success=False,
+                message="No se pudo recuperar el PDF procesado para extracción",
+                validation_status=validation_result.status.value,
+                saved_file_path=save_result.file_path,
+                checksum=save_result.checksum,
+            )
+
+        extraction = await self.extract_credit_data(
+            pdf_content=pdf_content_for_gemini,
+            additional_context={"source": "upload", "original_filename": original_filename},
+        )
+
+        return UploadExtractionResult(
+            success=extraction.status != ExtractionStatus.API_ERROR,
+            message=extraction.message,
+            requires_password=False,
+            validation_status=validation_result.status.value,
+            saved_file_path=save_result.file_path,
+            checksum=save_result.checksum,
+            extraction=extraction,
+        )
+
     async def extract_credit_data(
         self,
         pdf_content: bytes,
@@ -441,8 +619,29 @@ class GeminiService:
         
         uploaded_file = None
         temp_file_path = None
+        use_inline_fallback = False
         
         try:
+            if not pdf_content:
+                return ExtractionResult(
+                    status=ExtractionStatus.API_ERROR,
+                    message="El archivo PDF está vacío",
+                    confidence=0.0,
+                )
+
+            if not pdf_content.startswith(b"%PDF"):
+                return ExtractionResult(
+                    status=ExtractionStatus.API_ERROR,
+                    message="El contenido enviado no corresponde a un PDF válido",
+                    confidence=0.0,
+                )
+
+            logger.info(
+                "Preparando PDF para Gemini: bytes=%s, firma=%s",
+                len(pdf_content),
+                pdf_content[:8],
+            )
+
             # Crear archivo temporal para el PDF
             with tempfile.NamedTemporaryFile(
                 suffix=".pdf", 
@@ -450,41 +649,68 @@ class GeminiService:
                 prefix="credit_extract_"
             ) as temp_file:
                 temp_file.write(pdf_content)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
                 temp_file_path = temp_file.name
+
+            if not temp_file_path or not os.path.exists(temp_file_path):
+                return ExtractionResult(
+                    status=ExtractionStatus.API_ERROR,
+                    message="No se pudo materializar el archivo temporal para Gemini",
+                    confidence=0.0,
+                )
+
+            if os.path.getsize(temp_file_path) <= 0:
+                return ExtractionResult(
+                    status=ExtractionStatus.API_ERROR,
+                    message="El archivo temporal para Gemini quedó vacío",
+                    confidence=0.0,
+                )
             
             # Subir el archivo usando File API de Google
             logger.info("Subiendo PDF a Google File API...")
-            uploaded_file = self._client.files.upload(
-                file=temp_file_path,
-                config=types.UploadFileConfig(
-                    mime_type="application/pdf",
-                    display_name=f"credit_extract_{int(time.time())}"
-                )
-            )
-            
-            # Esperar a que el archivo esté procesado
-            while uploaded_file.state == "PROCESSING":
-                logger.debug("Esperando procesamiento del archivo...")
-                time.sleep(0.5)
-                uploaded_file = self._client.files.get(name=uploaded_file.name)
-            
-            if uploaded_file.state == "FAILED":
-                return ExtractionResult(
-                    status=ExtractionStatus.API_ERROR,
-                    message="Error al procesar el archivo en Google File API",
-                    confidence=0.0
-                )
-            
-            logger.info(f"PDF subido exitosamente: {uploaded_file.uri}")
-            
-            # Crear el contenido multimodal usando la referencia al archivo
-            contents = [
-                types.Part.from_uri(
-                    file_uri=uploaded_file.uri,
-                    mime_type="application/pdf"
-                ),
-                EXTRACTION_PROMPT
-            ]
+            try:
+                uploaded_file = self._upload_pdf_to_file_api(temp_file_path)
+            except Exception as upload_error:
+                if self._is_file_creation_error(upload_error):
+                    logger.warning(
+                        "File API devolvió 'Failed to create file'. Se usará fallback inline para extracción. Error: %s",
+                        upload_error,
+                    )
+                    use_inline_fallback = True
+                else:
+                    raise
+
+            if not use_inline_fallback:
+                # Esperar a que el archivo esté procesado
+                while self._resolve_file_state_name(uploaded_file) == "PROCESSING":
+                    logger.debug("Esperando procesamiento del archivo...")
+                    time.sleep(0.5)
+                    uploaded_file = self._client.files.get(name=uploaded_file.name)
+
+                if self._resolve_file_state_name(uploaded_file) == "FAILED":
+                    return ExtractionResult(
+                        status=ExtractionStatus.API_ERROR,
+                        message="Error al procesar el archivo en Google File API",
+                        confidence=0.0
+                    )
+
+                logger.info(f"PDF subido exitosamente: {uploaded_file.uri}")
+
+                # Crear el contenido multimodal usando la referencia al archivo
+                contents = [
+                    types.Part.from_uri(
+                        file_uri=uploaded_file.uri,
+                        mime_type="application/pdf"
+                    ),
+                    EXTRACTION_PROMPT
+                ]
+            else:
+                logger.info("Usando fallback inline para solicitud de extracción a Gemini")
+                contents = [
+                    self._build_inline_pdf_part(pdf_content),
+                    EXTRACTION_PROMPT,
+                ]
             
             logger.info("Enviando solicitud a Gemini para extracción...")
             
@@ -720,7 +946,9 @@ class GeminiService:
             "valor_cuota_uvr", "seguro_vida", "seguro_incendio",
             "seguro_terremoto", "intereses_corrientes_periodo", "intereses_mora",
             # Nuevos campos de componentes del período
-            "capital_pagado_periodo", "otros_cargos"
+            "capital_pagado_periodo", "otros_cargos",
+            # Ajuste UVR explícito en extractos BAJA UVR
+            "variacion_uvr_pesos"
         ]
         for field in decimal_fields:
             if field in data and data[field] is not None:

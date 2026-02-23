@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useParams } from 'next/navigation';
 import { apiClient } from '@/lib/api-client';
 import { AnalysisSummary } from '@/types/api';
 import { Button } from '@/components/ui/button';
@@ -11,30 +11,32 @@ import Link from 'next/link';
 
 export default function AnalysisSummaryPage() {
     const params = useParams();
-    const router = useRouter();
     const analysisId = params.id as string;
     
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [summaryData, setSummaryData] = useState<AnalysisSummary | null>(null);
 
+    const loadSummary = useCallback(async () => {
+        try {
+            const summary = await apiClient.getAnalysisSummary(analysisId);
+            setSummaryData(summary);
+        } catch (err: unknown) {
+            const parsedError = err && typeof err === 'object'
+                ? err as { message?: string; error?: string }
+                : null;
+            console.error('Error loading summary:', parsedError?.message || parsedError?.error);
+            setError(parsedError?.message || 'No se pudo cargar el resumen del análisis');
+        } finally {
+            setLoading(false);
+        }
+    }, [analysisId]);
+
     useEffect(() => {
         if (analysisId) {
             loadSummary();
         }
-    }, [analysisId]);
-
-    const loadSummary = async () => {
-        try {
-            const summary = await apiClient.getAnalysisSummary(analysisId);
-            setSummaryData(summary);
-        } catch (err: any) {
-            console.error('Error loading summary:', err?.message || err?.error);
-            setError(err?.message || 'No se pudo cargar el resumen del análisis');
-        } finally {
-            setLoading(false);
-        }
-    };
+    }, [analysisId, loadSummary]);
 
     if (loading) {
         return (
@@ -102,7 +104,7 @@ export default function AnalysisSummaryPage() {
                             <h3 className="font-semibold text-gray-700">DATOS BÁSICOS</h3>
                         </CardHeader>
                         <div className="p-4 pt-3 text-sm grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-                            <Row label="Valor Prestado" value={formatMoney(summaryData.datos_basicos?.valor_prestado)} />
+                            <Row label="Valor Prestado" value={formatMoneyOrND(summaryData.datos_basicos?.valor_prestado)} />
                             <Row label="Cuotas Pactadas" value={summaryData.datos_basicos?.cuotas_pactadas} />
                             <Row label="Cuotas Pagadas" value={summaryData.datos_basicos?.cuotas_pagadas} />
                             <Row label="Cuotas por Pagar" value={summaryData.datos_basicos?.cuotas_por_pagar} />
@@ -122,7 +124,7 @@ export default function AnalysisSummaryPage() {
                             <h3 className="font-semibold text-gray-700">LÍMITES CON EL BANCO HOY</h3>
                         </CardHeader>
                         <div className="p-4 pt-3 text-sm space-y-1">
-                            <Row label="Valor Prestado" value={formatMoney(summaryData.limites_banco?.valor_prestado)} />
+                            <Row label="Valor Prestado" value={formatMoneyOrND(summaryData.limites_banco?.valor_prestado)} />
                             <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg text-gray-900" />
                         </div>
                     </Card>
@@ -185,7 +187,7 @@ export default function AnalysisSummaryPage() {
     );
 }
 
-function Row({ label, value, valueClass = "text-gray-900" }: { label: string, value: any, valueClass?: string }) {
+function Row({ label, value, valueClass = "text-gray-900" }: { label: string, value: ReactNode, valueClass?: string }) {
     if (value === undefined || value === null) return null;
     return (
         <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
@@ -203,4 +205,9 @@ function formatMoney(amount?: number) {
         minimumFractionDigits: 0,
         maximumFractionDigits: 2 
     }).format(amount);
+}
+
+function formatMoneyOrND(amount?: number | null) {
+    if (amount === undefined || amount === null || Number(amount) <= 0) return 'N/D';
+    return formatMoney(amount);
 }
