@@ -39,7 +39,7 @@ class UsersRepo:
     # Función añadida para el flujo de re-intento de registro
     def update_pending_user(self, user_id: uuid.UUID, **kwargs) -> Usuario:
         user = self.get_by_id(user_id)
-        if user and user.status == "PENDING":
+        if user and user.status in {"PENDING", "INVITED"}:
             for key, value in kwargs.items():
                 setattr(user, key, value)
             self.db.commit()

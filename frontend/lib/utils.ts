@@ -1,5 +1,12 @@
 import { type ClassValue, clsx } from 'clsx';
 
+const COP_CURRENCY_FORMATTER = new Intl.NumberFormat('es-CO', {
+  style: 'currency',
+  currency: 'COP',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 /**
  * Utility para combinar clases de Tailwind CSS
  */
@@ -44,4 +51,11 @@ export function formatPhone(value: string): string {
   if (numbers.length <= 3) return numbers;
   if (numbers.length <= 6) return `${numbers.slice(0, 3)} ${numbers.slice(3)}`;
   return `${numbers.slice(0, 3)} ${numbers.slice(3, 6)} ${numbers.slice(6, 10)}`;
+}
+
+export function formatCopCurrency(value?: number | null): string {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) {
+    return '-';
+  }
+  return COP_CURRENCY_FORMATTER.format(Number(value));
 }

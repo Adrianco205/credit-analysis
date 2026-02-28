@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { ArrowLeft, CheckCircle2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
+import { formatCopCurrency } from '@/lib/utils';
 
 export default function AnalysisSummaryPage() {
     const params = useParams();
@@ -110,18 +111,18 @@ export default function AnalysisSummaryPage() {
                             <Row label="Cuotas por Pagar" value={summaryData.datos_basicos?.cuotas_por_pagar} />
                             <Row label="Cuota Actual a Cancelar Aprox." value={formatMoney(summaryData.datos_basicos?.cuota_actual_aprox)} />
                             <Row label="Beneficio FRECH (cuota)" value={formatMoney(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
-                            <Row label="Cuota Completa Aprox. (sin FRECH)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
+                            <Row label="Cuota completa aprox. (sin FRECH + seguros)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
                             <div className="col-span-full border-t my-2" />
-                            <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
-                            <Row label="Total Beneficio FRECH Recibido" value={formatMoney(summaryData.datos_basicos?.total_frech_recibido)} valueClass="text-green-600 font-semibold" />
-                            <Row label="Monto Real Pagado al Banco" value={formatMoney(summaryData.datos_basicos?.monto_real_pagado_banco)} valueClass="font-bold text-lg text-[var(--verde-bosque)] bg-yellow-100 px-2 py-1 rounded" />
+                            <Row label="Pagado por el cliente (estimado)" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
+                            <Row label="Aporte FRECH acumulado (estimado)" value={formatMoney(summaryData.datos_basicos?.total_frech_recibido)} valueClass="text-green-600 font-semibold" />
+                            <Row label="Total abonado al crédito (cliente + FRECH)" value={formatMoney(summaryData.datos_basicos?.monto_real_pagado_banco)} valueClass="font-bold text-lg text-[var(--verde-bosque)] bg-yellow-100 px-2 py-1 rounded" />
                         </div>
                     </Card>
 
                     {/* Bloque 2: LÍMITES CON EL BANCO HOY */}
                     <Card>
                         <CardHeader className="pb-2 border-b">
-                            <h3 className="font-semibold text-gray-700">LÍMITES CON EL BANCO HOY</h3>
+                            <h3 className="font-semibold text-gray-700">CORTE DEL EXTRACTO</h3>
                         </CardHeader>
                         <div className="p-4 pt-3 text-sm space-y-1">
                             <Row label="Valor Prestado" value={formatMoneyOrND(summaryData.limites_banco?.valor_prestado)} />
@@ -133,16 +134,16 @@ export default function AnalysisSummaryPage() {
                         {/* Bloque 3: AJUSTE POR INFLACIÓN */}
                         <Card>
                             <CardHeader className="pb-2 border-b">
-                                <h3 className="font-semibold text-gray-700">AJUSTE POR INFLACIÓN</h3>
+                                <h3 className="font-semibold text-gray-700">VARIACIÓN DEL SALDO VS DESEMBOLSO</h3>
                             </CardHeader>
                             <div className="p-4 pt-3 text-sm space-y-1">
                                 <Row 
-                                    label="Ajuste en Pesos" 
+                                    label="Variación en pesos (saldo - desembolso)" 
                                     value={summaryData.ajuste_inflacion ? formatMoney(summaryData.ajuste_inflacion.ajuste_pesos) : 'N/A'} 
                                     valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.ajuste_pesos) > 0 ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}
                                 />
                                 <Row 
-                                    label="% Ajustado (Incremento por Inflación)" 
+                                    label="% Variación sobre desembolso" 
                                     value={summaryData.ajuste_inflacion ? `${Number(summaryData.ajuste_inflacion.porcentaje_ajuste).toFixed(2)}%` : 'N/A'} 
                                     valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.porcentaje_ajuste) > 0 ? "text-red-600" : "text-green-600"}
                                 />
@@ -198,13 +199,7 @@ function Row({ label, value, valueClass = "text-gray-900" }: { label: string, va
 }
 
 function formatMoney(amount?: number) {
-    if (amount === undefined || amount === null) return '-';
-    return new Intl.NumberFormat('es-CO', { 
-        style: 'currency', 
-        currency: 'COP', 
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2 
-    }).format(amount);
+    return formatCopCurrency(amount);
 }
 
 function formatMoneyOrND(amount?: number | null) {

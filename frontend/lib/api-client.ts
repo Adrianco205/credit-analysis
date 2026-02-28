@@ -244,9 +244,7 @@ class ApiClient {
     if (data.tipo_contrato_laboral) {
       formData.append('tipo_contrato_laboral', data.tipo_contrato_laboral);
     }
-    if (data.banco_id !== undefined) {
-      formData.append('banco_id', String(data.banco_id));
-    }
+    formData.append('banco_id', String(data.banco_id));
     if (data.opcion_abono_1 !== undefined) {
       formData.append('opcion_abono_1', String(data.opcion_abono_1));
     }

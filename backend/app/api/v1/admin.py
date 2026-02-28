@@ -37,11 +37,6 @@ from app.repositories.users_repo import UsersRepo
 from app.schemas.admin_analysis import AdminAnalysesListResponse, AdminAnalysesParams
 from app.schemas.documentos import PDFValidationResponse, PDFUploadStatus
 from app.schemas.analisis import (
-    AjusteInflacionResumen,
-    CostosExtraResumen,
-    DatosBasicosResumen,
-    DesgloseInteresesSeguros,
-    LimitesBancoResumen,
     ResumenCreditoResponse,
 )
 from app.services.analysis_service import (
@@ -50,6 +45,7 @@ from app.services.analysis_service import (
     OpcionAbonoInput,
     get_analysis_service
 )
+from app.services.mortgage_summary_service import build_mortgage_summary_payload
 from app.services.admin_analysis_service import AdminAnalysisService
 from app.services.pdf_service import PDFStatus, PdfService
 from app.services.pdf_service import get_storage_service
@@ -332,7 +328,7 @@ async def upload_client_analysis_for_admin(
     ingresos_mensuales: Decimal = Form(..., gt=0),
     capacidad_pago_max: Decimal | None = Form(None, gt=0),
     tipo_contrato_laboral: str | None = Form(None, max_length=80),
-    banco_id: int | None = Form(None),
+    banco_id: int = Form(...),
     opcion_abono_1: Decimal | None = Form(None, gt=0),
     opcion_abono_2: Decimal | None = Form(None, gt=0),
     opcion_abono_3: Decimal | None = Form(None, gt=0),
@@ -357,6 +353,10 @@ async def upload_client_analysis_for_admin(
     if not normalized_phone:
         raise HTTPException(status_code=400, detail="El teléfono del cliente es obligatorio")
 
+    banco = db.get(Banco, banco_id)
+    if not banco or not banco.activo:
+        raise HTTPException(status_code=400, detail="El banco seleccionado no es válido")
+
     users_repo = UsersRepo(db)
     user_by_id = users_repo.get_by_identificacion(normalized_id)
     user_by_email = users_repo.get_by_email(normalized_email)
@@ -378,8 +378,10 @@ async def upload_client_analysis_for_admin(
         customer_user.identificacion = normalized_id
         customer_user.email = normalized_email
         customer_user.telefono = normalized_phone
-        customer_user.status = "ACTIVE"
-        customer_user.email_verificado = True
+        if customer_user.status != "ACTIVE":
+            customer_user.status = "INVITED"
+            customer_user.email_verificado = False
+            customer_user.password_hash = None
         db.add(customer_user)
         db.commit()
         db.refresh(customer_user)
@@ -392,8 +394,8 @@ async def upload_client_analysis_for_admin(
             identificacion=normalized_id,
             email=normalized_email,
             telefono=normalized_phone,
-            status="ACTIVE",
-            email_verificado=True,
+            status="INVITED",
+            email_verificado=False,
             password_hash=None,
         )
         customer_user = users_repo.create_user(customer_user)
@@ -659,59 +661,7 @@ def get_analysis_admin_summary(
     repo.calculate_derived_fields(analisis)
     db.commit()
 
-    cuota_actual = analisis.valor_cuota_con_seguros or Decimal("0")
-    if cuota_actual == 0 and analisis.valor_cuota_con_subsidio:
-        cuota_actual = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
-
-    beneficio_frech = analisis.beneficio_frech_mensual or Decimal("0")
-    cuota_completa = cuota_actual + beneficio_frech
-
-    datos_basicos = DatosBasicosResumen(
-        valor_prestado=analisis.valor_prestado_inicial or Decimal("0"),
-        cuotas_pactadas=analisis.cuotas_pactadas or 0,
-        cuotas_pagadas=analisis.cuotas_pagadas or 0,
-        cuotas_por_pagar=analisis.cuotas_pendientes or 0,
-        cuota_actual_aprox=cuota_actual,
-        beneficio_frech=beneficio_frech,
-        cuota_completa_aprox=cuota_completa,
-        total_pagado_fecha=analisis.total_pagado_fecha or Decimal("0"),
-        total_frech_recibido=analisis.total_frech_recibido or Decimal("0"),
-        monto_real_pagado_banco=analisis.monto_real_pagado_banco or Decimal("0"),
-    )
-
-    limites_banco = LimitesBancoResumen(
-        valor_prestado=analisis.valor_prestado_inicial or Decimal("0"),
-        saldo_actual_credito=analisis.saldo_capital_pesos or Decimal("0"),
-        abono_adicional_cuota=analisis.abono_adicional_actual,
-    )
-
-    ajuste_inflacion = None
-    if analisis.ajuste_inflacion_pesos is not None:
-        ajuste_inflacion = AjusteInflacionResumen(
-            ajuste_pesos=analisis.ajuste_inflacion_pesos or Decimal("0"),
-            porcentaje_ajuste=analisis.porcentaje_ajuste_inflacion or Decimal("0"),
-            metodo=analisis.inflation_method,
-        )
-
-    desglose = DesgloseInteresesSeguros(
-        interes_corriente=analisis.intereses_corrientes_periodo or Decimal("0"),
-        interes_mora=analisis.intereses_mora or Decimal("0"),
-        seguro_vida=analisis.seguro_vida or Decimal("0"),
-        seguro_incendio=analisis.seguro_incendio or Decimal("0"),
-        seguro_terremoto=analisis.seguro_terremoto or Decimal("0"),
-        otros_cargos=analisis.otros_cargos or Decimal("0"),
-    )
-
-    costos_extra = CostosExtraResumen(
-        total_intereses_seguros=analisis.total_intereses_seguros or Decimal("0"),
-        desglose=desglose,
-        capital_pagado_periodo=analisis.capital_pagado_periodo,
-        intereses_corrientes_periodo=analisis.intereses_corrientes_periodo,
-        intereses_mora_periodo=analisis.intereses_mora,
-        seguros_total_periodo=analisis.seguros_total_mensual,
-        otros_cargos_periodo=analisis.otros_cargos,
-        formula="sum(interes_corriente + interes_mora + seguros + otros_cargos)",
-    )
+    summary_payload = build_mortgage_summary_payload(analisis)
 
     sistema_completo = analisis.sistema_amortizacion or ""
     if analisis.plan_credito:
@@ -724,10 +674,13 @@ def get_analysis_admin_summary(
         banco_nombre=None,
         sistema_amortizacion=sistema_completo,
         fecha_extracto=analisis.fecha_extracto,
-        datos_basicos=datos_basicos,
-        limites_banco=limites_banco,
-        ajuste_inflacion=ajuste_inflacion,
-        costos_extra=costos_extra,
+        datos_basicos=summary_payload["datos_basicos"],
+        limites_banco=summary_payload["limites_banco"],
+        ajuste_inflacion=summary_payload["ajuste_inflacion"],
+        costos_extra=summary_payload["costos_extra"],
+        mortgage_summary=summary_payload["mortgage_summary"],
+        warnings=summary_payload["warnings"],
+        debug=summary_payload["debug"],
         tasa_cobrada_con_frech=analisis.tasa_interes_subsidiada_ea,
         seguros_actuales_mensual=analisis.seguros_total_mensual,
         ingresos_mensuales=analisis.ingresos_mensuales,

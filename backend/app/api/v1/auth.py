@@ -40,7 +40,7 @@ def register(
     Registra un nuevo usuario y envía código OTP por email.
     
     - Si el usuario ya existe y está ACTIVE, devuelve error 409
-    - Si existe pero está PENDING, reutiliza el registro y actualiza datos
+    - Si existe y está INVITED/PENDING, reutiliza el registro y lo pasa a flujo normal
     - El envío de email se ejecuta en background para no bloquear la respuesta
     """
     users = UsersRepo(db)
@@ -58,14 +58,20 @@ def register(
                     detail="El usuario ya se encuentra registrado y activo."
                 )
             
-            # SI ESTÁ PENDING: Lo reutilizamos. Actualizamos sus datos por si cambió algo.
+            # SI ESTÁ INVITED/PENDING: Lo reutilizamos y lo pasamos al flujo de activación normal.
             user = existing_user
             user.nombres = payload.nombres
             user.primer_apellido = payload.primer_apellido
             user.segundo_apellido = payload.segundo_apellido
+            user.tipo_identificacion = payload.tipo_identificacion
+            user.identificacion = payload.identificacion
+            user.email = str(payload.email)
             user.password_hash = hash_password(payload.password)
             user.telefono = payload.telefono
+            user.genero = payload.genero
             user.ciudad_departamento = payload.ciudad_departamento
+            user.status = "PENDING"
+            user.email_verificado = False
             db.add(user)
             db.commit()
             db.refresh(user)

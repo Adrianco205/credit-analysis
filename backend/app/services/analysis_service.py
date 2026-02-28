@@ -869,9 +869,14 @@ class AnalysisService:
     
     def _validate_analysis_for_projection(self, analisis: AnalisisHipotecario) -> bool:
         """Valida que el análisis tenga los datos mínimos para generar proyecciones."""
+        cuota_disponible = (
+            analisis.valor_cuota_con_subsidio
+            or analisis.valor_cuota_con_seguros
+            or analisis.valor_cuota_sin_seguros
+        )
         required_fields = [
             analisis.saldo_capital_pesos,
-            analisis.valor_cuota_con_seguros,
+            cuota_disponible,
             analisis.cuotas_pendientes,
             analisis.tasa_interes_cobrada_ea,
             analisis.valor_prestado_inicial
@@ -880,14 +885,50 @@ class AnalysisService:
     
     def _calculate_baseline(self, analisis: AnalisisHipotecario) -> dict:
         """Calcula el estado actual del crédito (sin abono extra)."""
+        frech = analisis.beneficio_frech_mensual or Decimal("0")
+
+        cuota_cliente = (
+            analisis.valor_cuota_con_subsidio
+            or analisis.valor_cuota_con_seguros
+            or analisis.valor_cuota_sin_seguros
+        )
+        cuota_base_source = "valor_cuota_con_subsidio"
+
+        if analisis.valor_cuota_con_subsidio is None:
+            if analisis.valor_cuota_con_seguros is not None:
+                cuota_base_source = "valor_cuota_con_seguros"
+            elif analisis.valor_cuota_sin_seguros is not None:
+                cuota_base_source = "valor_cuota_sin_seguros"
+
+        if (
+            analisis.valor_cuota_con_subsidio is None
+            and frech > 0
+            and analisis.valor_cuota_con_seguros
+        ):
+            posible_cliente = analisis.valor_cuota_con_seguros - frech
+            if Decimal("0") < posible_cliente < analisis.valor_cuota_con_seguros:
+                total_por_pagar = analisis.total_por_pagar
+                if total_por_pagar is None:
+                    cuota_cliente = posible_cliente
+                    cuota_base_source = "valor_cuota_con_seguros_menos_frech"
+                else:
+                    delta_actual = abs(total_por_pagar - analisis.valor_cuota_con_seguros)
+                    delta_posible = abs(total_por_pagar - posible_cliente)
+                    if delta_posible <= delta_actual:
+                        cuota_cliente = posible_cliente
+                        cuota_base_source = "valor_cuota_con_seguros_menos_frech"
+
+        if cuota_cliente is None:
+            raise ValueError("No hay cuota base disponible para generar proyecciones")
+
         # Crear objeto DatosCredito
         datos = DatosCredito(
             saldo_capital=analisis.saldo_capital_pesos,
-            valor_cuota_actual=analisis.valor_cuota_con_seguros,
+            valor_cuota_actual=cuota_cliente,
             cuotas_pendientes=analisis.cuotas_pendientes,
             tasa_interes_ea=analisis.tasa_interes_cobrada_ea,
             valor_prestado_inicial=analisis.valor_prestado_inicial,
-            beneficio_frech=analisis.beneficio_frech_mensual or Decimal("0"),
+            beneficio_frech=frech,
             seguros_mensual=analisis.seguros_total_mensual or Decimal("0"),
             sistema_amortizacion=analisis.sistema_amortizacion or "PESOS"
         )
@@ -900,8 +941,8 @@ class AnalysisService:
             nombre_opcion="Actual"
         )
 
-        if datos.valor_prestado_inicial > 0:
-            veces_pagado_actual = (proyeccion_actual.total_por_pagar / datos.valor_prestado_inicial).quantize(
+        if datos.saldo_capital > 0:
+            veces_pagado_actual = (proyeccion_actual.total_por_pagar / datos.saldo_capital).quantize(
                 Decimal("0.01")
             )
         else:
@@ -911,6 +952,7 @@ class AnalysisService:
             "cuotas_actuales": analisis.cuotas_pendientes,
             "total_actual": proyeccion_actual.total_por_pagar,
             "veces_pagado_actual": veces_pagado_actual,
+            "cuota_base_source": cuota_base_source,
             "datos": datos
         }
     

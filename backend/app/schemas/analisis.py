@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Literal
+from typing import Any, Literal
 from enum import Enum
 
 
@@ -171,6 +171,31 @@ class CostosExtraResumen(BaseModel):
     formula: str | None = "sum(interes_corriente + interes_mora + seguros + otros_cargos)"
 
 
+class SummaryRow(BaseModel):
+    """Fila canónica del resumen hipotecario con trazabilidad de origen."""
+    key: str
+    label: str
+    value: Decimal | int | None = None
+    currency: bool = False
+    source: Literal["extracted", "calculated", "missing"]
+    confidence: float | None = None
+    raw_text_refs: list[str] = Field(default_factory=list)
+
+
+class SummarySection(BaseModel):
+    """Sección canónica del resumen hipotecario."""
+    key: str
+    title: str
+    rows: list[SummaryRow]
+
+
+class MortgageSummary(BaseModel):
+    """Resumen hipotecario canónico estilo plantilla Imagen 1."""
+    sections: list[SummarySection]
+    warnings: list[str] = Field(default_factory=list)
+    debug: dict[str, Any] = Field(default_factory=dict)
+
+
 class ResumenCreditoResponse(BaseModel):
     """
     Respuesta completa del resumen del crédito.
@@ -189,6 +214,11 @@ class ResumenCreditoResponse(BaseModel):
     limites_banco: LimitesBancoResumen
     ajuste_inflacion: AjusteInflacionResumen | None  # None si no hay datos
     costos_extra: CostosExtraResumen
+
+    # Resumen canónico con trazabilidad y warnings
+    mortgage_summary: MortgageSummary | None = None
+    warnings: list[str] = Field(default_factory=list)
+    debug: dict[str, Any] = Field(default_factory=dict)
     
     # Tasas (información adicional)
     tasa_cobrada_con_frech: Decimal | None  # Ej: 4.71% EA

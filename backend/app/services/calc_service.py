@@ -420,10 +420,13 @@ class CalculadoraFinanciera:
         # Nueva cuota total (cuota base + abono extra)
         nueva_cuota = datos.valor_cuota_actual + abono_extra
         
-        # Veces pagado = total pagado / valor prestado inicial
-        veces_pagado = (resultado_con_abono.total_pagado / datos.valor_prestado_inicial).quantize(
-            Decimal("0.01")
-        )
+        # No. veces pagado = total por pagar / saldo actual del crédito
+        if datos.saldo_capital > 0:
+            veces_pagado = (resultado_con_abono.total_pagado / datos.saldo_capital).quantize(
+                Decimal("0.01")
+            )
+        else:
+            veces_pagado = Decimal("0")
         
         # ═══════════════════════════════════════════════════════════════════
         # HONORARIOS (3% del ahorro o tarifa mínima)
@@ -504,16 +507,18 @@ class CalculadoraFinanciera:
         """
         cuotas_por_pagar = cuotas_pactadas - cuotas_pagadas
         
-        # Cuota completa (sin subsidio FRECH)
-        cuota_completa = datos.valor_cuota_actual + datos.beneficio_frech
+        cuota_cliente = datos.valor_cuota_actual
+
+        # Cuota completa informativa (cliente + FRECH)
+        cuota_completa = cuota_cliente + datos.beneficio_frech
         
-        # Total pagado a la fecha
-        total_pagado_fecha = datos.valor_cuota_actual * cuotas_pagadas
+        # Pagado por el cliente (estimado)
+        total_pagado_fecha = cuota_cliente * cuotas_pagadas
         
         # Total FRECH recibido
         total_frech_recibido = datos.beneficio_frech * cuotas_pagadas
         
-        # Monto real pagado al banco (incluye FRECH)
+        # Total abonado al crédito (cliente + FRECH)
         monto_real_pagado_banco = total_pagado_fecha + total_frech_recibido
         
         # Ajuste por inflación (diferencia entre saldo actual y valor prestado)
@@ -540,7 +545,7 @@ class CalculadoraFinanciera:
             cuotas_pactadas=cuotas_pactadas,
             cuotas_pagadas=cuotas_pagadas,
             cuotas_por_pagar=cuotas_por_pagar,
-            cuota_actual=datos.valor_cuota_actual,
+            cuota_actual=cuota_cliente,
             beneficio_frech=datos.beneficio_frech,
             cuota_completa=cuota_completa,
             total_pagado_fecha=total_pagado_fecha,

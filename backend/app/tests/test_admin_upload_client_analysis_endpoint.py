@@ -22,7 +22,10 @@ from app.api.v1 import admin as admin_module
 
 
 class DummySession:
-    pass
+    def get(self, model, _id):
+        if model is admin_module.Banco:
+            return SimpleNamespace(id=_id, activo=True)
+        return None
 
 
 def test_admin_upload_client_analysis_success(monkeypatch):
@@ -41,6 +44,7 @@ def test_admin_upload_client_analysis_success(monkeypatch):
         def create_user(self, user):
             if not getattr(user, "id", None):
                 user.id = uuid4()
+            captured["created_user"] = user
             return user
 
         def ensure_role_assignment(self, user_id, role_code: str):
@@ -122,6 +126,7 @@ def test_admin_upload_client_analysis_success(monkeypatch):
             "ingresos_mensuales": "5000000",
             "capacidad_pago_max": "1500000",
             "tipo_contrato_laboral": "Indefinido",
+            "banco_id": "1",
             "opcion_abono_1": "200000",
             "opcion_abono_2": "300000",
             "opcion_abono_3": "400000",
@@ -136,6 +141,11 @@ def test_admin_upload_client_analysis_success(monkeypatch):
 
     assert captured["check_keywords"] is False
     assert captured["role_assignment"][1] == "CLIENT"
+    assert captured["document_create"]["banco_id"] == 1
+    assert captured["created_user"].status == "INVITED"
+    assert captured["created_user"].email_verificado is False
+    assert captured["created_user"].password_hash is None
+    assert captured["analysis_kwargs"]["banco_id"] == 1
     assert captured["analysis_kwargs"]["skip_name_validation"] is True
     assert captured["analysis_kwargs"]["skip_id_validation"] is True
     assert captured["analysis_kwargs"]["allow_non_credit_document"] is True

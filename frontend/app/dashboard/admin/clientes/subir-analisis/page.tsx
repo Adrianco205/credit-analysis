@@ -186,6 +186,10 @@ export default function AdminClientUploadAnalysisPage() {
       toast.error('Debes ingresar una capacidad de pago válida');
       return;
     }
+    if (!bankId) {
+      toast.error('Debes seleccionar el banco del crédito');
+      return;
+    }
     if (!file) {
       toast.error('Debes seleccionar un archivo PDF');
       return;
@@ -202,7 +206,7 @@ export default function AdminClientUploadAnalysisPage() {
         ingresos_mensuales: Number(income),
         capacidad_pago_max: Number(paymentCapacity),
         tipo_contrato_laboral: contractType,
-        banco_id: bankId || undefined,
+        banco_id: bankId,
         opcion_abono_1: Number(option1 || 0) || undefined,
         opcion_abono_2: Number(option2 || 0) || undefined,
         opcion_abono_3: Number(option3 || 0) || undefined,
@@ -337,13 +341,13 @@ export default function AdminClientUploadAnalysisPage() {
             </div>
 
             <div className="w-full flex flex-col gap-1.5">
-              <label className="block text-sm font-semibold text-gray-700 ml-1">Banco del documento</label>
+              <label className="block text-sm font-semibold text-gray-700 ml-1">Banco del crédito *</label>
               <select
                 className="w-full px-4 py-3 text-sm md:text-base border border-gray-300 rounded-xl bg-white"
                 value={bankId || ''}
                 onChange={(e) => setBankId(e.target.value ? Number(e.target.value) : null)}
               >
-                <option value="">Selecciona un banco (opcional)</option>
+                <option value="">Selecciona un banco</option>
                 {banks.map((bank) => (
                   <option key={bank.id} value={bank.id}>
                     {bank.nombre}

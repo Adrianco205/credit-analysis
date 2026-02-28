@@ -39,6 +39,21 @@ def datos_extracto_bancolombia():
     )
 
 
+@pytest.fixture
+def datos_pesos_frech_pdf_mode():
+    """Caso PESOS cuota fija con FRECH para validar réplica del PDF de referencia."""
+    return DatosCredito(
+        saldo_capital=Decimal("61765856"),
+        valor_cuota_actual=Decimal("523427"),
+        cuotas_pendientes=305,
+        tasa_interes_ea=Decimal("0.0747"),
+        valor_prestado_inicial=Decimal("64733094"),
+        beneficio_frech=Decimal("201270"),
+        seguros_mensual=Decimal("46384.35"),
+        sistema_amortizacion="PESOS",
+    )
+
+
 class TestConversionTasas:
     """Tests para conversión de tasas de interés"""
     
@@ -248,6 +263,36 @@ class TestProyeccion:
             esperado = 0
         assert proyeccion.cuotas_reducidas == esperado
 
+    def test_proyeccion_pesos_frech_usa_cuota_cliente_como_base(self, calculadora, datos_pesos_frech_pdf_mode):
+        """Para replicar PDF, Valor cuota proyectada = cuota_cliente + abono."""
+        abonos = [Decimal("149658"), Decimal("173789"), Decimal("202176")]
+        cuotas_pdf = [173, 161, 149]
+
+        proyecciones = calculadora.generar_proyecciones_multiple(datos_pesos_frech_pdf_mode, abonos)
+
+        assert [p.nuevo_valor_cuota for p in proyecciones] == [
+            Decimal("673085"),
+            Decimal("697216"),
+            Decimal("725603"),
+        ]
+
+        for idx, proyeccion in enumerate(proyecciones):
+            # Debe aproximarse al rango del PDF y no al escenario inflado (~100 cuotas)
+            assert proyeccion.cuotas_nuevas >= 130
+            assert abs(proyeccion.cuotas_nuevas - cuotas_pdf[idx]) <= 35
+
+    def test_veces_pagado_usa_total_por_pagar_sobre_saldo_actual(self, calculadora, datos_pesos_frech_pdf_mode):
+        """No. veces pagado debe alinearse con indicador 2.xx del PDF."""
+        proyeccion = calculadora.calcular_proyeccion(
+            datos=datos_pesos_frech_pdf_mode,
+            abono_extra=Decimal("149658"),
+            numero_opcion=1,
+        )
+
+        esperado = (proyeccion.total_por_pagar / datos_pesos_frech_pdf_mode.saldo_capital).quantize(Decimal("0.01"))
+        assert proyeccion.veces_pagado == esperado
+        assert proyeccion.veces_pagado > Decimal("1.00")
+
 
 class TestHonorarios:
     """Tests para cálculo de honorarios"""
@@ -329,6 +374,32 @@ class TestResumenCredito:
         
         # El porcentaje debe ser ~24% según el extracto
         assert Decimal("0.20") < resumen.porcentaje_ajuste < Decimal("0.30")
+
+    def test_resumen_no_duplica_frech_en_total_abonado(self, calculadora):
+        """Pagado cliente y FRECH acumulado deben sumarse una sola vez."""
+        datos = DatosCredito(
+            saldo_capital=Decimal("61765856"),
+            valor_cuota_actual=Decimal("523427"),
+            cuotas_pendientes=305,
+            tasa_interes_ea=Decimal("0.0747"),
+            valor_prestado_inicial=Decimal("64733094"),
+            beneficio_frech=Decimal("201270"),
+            seguros_mensual=Decimal("46384.35"),
+            sistema_amortizacion="PESOS",
+        )
+
+        resumen = calculadora.calcular_resumen_credito(
+            datos,
+            cuotas_pagadas=55,
+            cuotas_pactadas=360,
+        )
+
+        pagado_cliente = Decimal("523427") * Decimal("55")
+        frech_acumulado = Decimal("201270") * Decimal("55")
+
+        assert resumen.total_pagado_fecha == pagado_cliente
+        assert resumen.total_frech_recibido == frech_acumulado
+        assert resumen.monto_real_pagado_banco == pagado_cliente + frech_acumulado
 
 
 class TestTiempoAhorro:

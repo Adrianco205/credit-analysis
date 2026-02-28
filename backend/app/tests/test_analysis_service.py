@@ -413,6 +413,29 @@ class TestAnalysisServiceLogic:
         
         assert nombre == "María López"
 
+    def test_calculate_baseline_uses_cuota_cliente_and_not_full_quota(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = None
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("523427")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+
+        assert baseline["datos"].valor_cuota_actual == Decimal("523427")
+        assert baseline["cuota_base_source"] == "valor_cuota_con_seguros_menos_frech"
+        assert baseline["veces_pagado_actual"] >= Decimal("2.00")
+
     def test_extract_identity_from_pdf_text_fallback(self):
         service = AnalysisService.__new__(AnalysisService)
 

@@ -6,9 +6,24 @@ import { useParams } from 'next/navigation';
 import { AlertTriangle, ArrowLeft, CheckCircle2 } from 'lucide-react';
 
 import { apiClient } from '@/lib/api-client';
-import { AnalysisSummary } from '@/types/api';
+import { AnalysisSummary, SummaryRow } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
+import { formatCopCurrency } from '@/lib/utils';
+
+const WARNING_MESSAGES: Record<string, string> = {
+  wrong_mapping_saldo_as_cuota: 'Se detectó un posible mapeo incorrecto: el saldo fue interpretado como cuota.',
+  blocked_quota_equals_saldo: 'La cuota se bloqueó porque coincide con el saldo actual del crédito.',
+  possible_wrong_quota_mapping: 'La cuota extraída parece anormalmente alta frente al valor prestado.',
+  value_total_inconsistency: 'Los valores de cuota total, beneficio y total a pagar no son consistentes entre sí.',
+  cuotas_por_pagar_mismatch: 'La cantidad de cuotas por pagar presenta discrepancias entre fuentes.',
+  cuotas_pagadas_source_discrepancy: 'Las cuotas pagadas extraídas no coinciden con la derivación por cuotas pendientes.',
+  cuotas_consistency_mismatch: 'No hay coherencia entre cuotas pactadas, pagadas y por pagar.',
+  low_confidence_extraction: 'Algunos campos fueron extraídos con baja confianza.',
+  no_subsidy_detected: 'No se detectó subsidio/beneficio FRECH para este extracto.',
+  intereses_seguros_period_value: 'El valor de intereses y seguros corresponde al periodo, no al acumulado histórico.',
+  saldo_mayor_que_desembolso: 'El saldo actual es mayor que el valor desembolsado inicial.',
+};
 
 export default function AdminAnalysisSummaryPage() {
   const params = useParams();
@@ -111,90 +126,119 @@ export default function AdminAnalysisSummaryPage() {
             </div>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2 border-b">
-              <h3 className="font-semibold text-gray-700">DATOS BÁSICOS</h3>
-            </CardHeader>
-            <div className="p-4 pt-3 text-sm grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-              <Row label="Valor Prestado" value={formatMoney(summaryData.datos_basicos?.valor_prestado)} />
-              <Row label="Cuotas Pactadas" value={summaryData.datos_basicos?.cuotas_pactadas} />
-              <Row label="Cuotas Pagadas" value={summaryData.datos_basicos?.cuotas_pagadas} />
-              <Row label="Cuotas por Pagar" value={summaryData.datos_basicos?.cuotas_por_pagar} />
-              <Row label="Cuota Actual a Cancelar Aprox." value={formatMoney(summaryData.datos_basicos?.cuota_actual_aprox)} />
-              <Row label="Beneficio FRECH (cuota)" value={formatMoney(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
-              <Row label="Cuota Completa Aprox. (sin FRECH)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
-              <div className="col-span-full border-t my-2" />
-              <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
-              <Row label="Total Beneficio FRECH Recibido" value={formatMoney(summaryData.datos_basicos?.total_frech_recibido)} valueClass="text-green-600 font-semibold" />
-              <Row label="Monto Real Pagado al Banco" value={formatMoney(summaryData.datos_basicos?.monto_real_pagado_banco)} valueClass="font-bold text-lg text-[var(--verde-bosque)] bg-yellow-100 px-2 py-1 rounded" />
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-2 border-b">
-              <h3 className="font-semibold text-gray-700">LÍMITES CON EL BANCO HOY</h3>
-            </CardHeader>
-            <div className="p-4 pt-3 text-sm space-y-1">
-              <Row label="Valor Prestado" value={formatMoney(summaryData.limites_banco?.valor_prestado)} />
-              <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg text-gray-900" />
-            </div>
-          </Card>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
+          {summaryData.mortgage_summary?.sections?.map((section) => (
+            <Card key={section.key}>
               <CardHeader className="pb-2 border-b">
-                <h3 className="font-semibold text-gray-700">AJUSTE POR INFLACIÓN</h3>
+                <h3 className="font-semibold text-gray-700">{section.title}</h3>
               </CardHeader>
               <div className="p-4 pt-3 text-sm space-y-1">
-                <Row
-                  label="Ajuste en Pesos"
-                  value={summaryData.ajuste_inflacion ? formatMoney(summaryData.ajuste_inflacion.ajuste_pesos) : 'N/A'}
-                  valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.ajuste_pesos) > 0 ? 'text-red-600 font-semibold' : 'text-green-600 font-semibold'}
-                />
-                <Row
-                  label="% Ajustado (Incremento por Inflación)"
-                  value={summaryData.ajuste_inflacion ? `${Number(summaryData.ajuste_inflacion.porcentaje_ajuste).toFixed(2)}%` : 'N/A'}
-                  valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.porcentaje_ajuste) > 0 ? 'text-red-600' : 'text-green-600'}
-                />
+                {section.rows.map((row) => (
+                  <Row
+                    key={row.key}
+                    label={row.label}
+                    value={formatSummaryRowValue(row)}
+                    valueClass={getSummaryRowClass(row)}
+                    missing={row.source === 'missing'}
+                    missingReason={getMissingReason(row, summaryData.warnings || [])}
+                  />
+                ))}
               </div>
             </Card>
+          ))}
 
-            <Card>
-              <CardHeader className="pb-2 border-b">
-                <h3 className="font-semibold text-gray-700">INTERESES Y SEGUROS</h3>
-              </CardHeader>
-              <div className="p-4 pt-3 text-sm space-y-1">
-                <Row
-                  label="Total Intereses y Seguros"
-                  value={formatMoney(summaryData.costos_extra?.total_intereses_seguros)}
-                  valueClass="text-red-600 font-bold text-lg"
-                />
-                <p className="text-xs text-gray-500 mt-2">Lo que NO abona a capital</p>
+          {summaryData.warnings && summaryData.warnings.length > 0 && (
+            <Card className="border-yellow-200 bg-yellow-50">
+              <div className="p-3 text-xs text-yellow-800">
+                <p className="font-semibold mb-1">Advertencias de validación</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  {summaryData.warnings.map((warning) => (
+                    <li key={warning}>{formatWarningMessage(warning)}</li>
+                  ))}
+                </ul>
               </div>
             </Card>
-          </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function Row({ label, value, valueClass = 'text-gray-900' }: { label: string; value: any; valueClass?: string }) {
-  if (value === undefined || value === null) return null;
+function Row({
+  label,
+  value,
+  valueClass = 'text-gray-900',
+  missing = false,
+  missingReason,
+}: {
+  label: string;
+  value: any;
+  valueClass?: string;
+  missing?: boolean;
+  missingReason?: string;
+}) {
+  const displayValue = value === undefined || value === null ? '—' : value;
   return (
     <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
       <span className="text-gray-700">{label}</span>
-      <span className={`font-medium ${valueClass}`}>{value}</span>
+      <span
+        className={`font-medium ${missing ? 'text-gray-400 italic' : valueClass}`}
+        title={missing ? (missingReason || 'No encontrado en el PDF') : undefined}
+      >
+        {displayValue}
+      </span>
     </div>
   );
 }
 
+function getMissingReason(row: SummaryRow, warnings: string[]) {
+  const blockedByWrongMapping = warnings.includes('wrong_mapping_saldo_as_cuota') || warnings.includes('blocked_quota_equals_saldo');
+  if (
+    blockedByWrongMapping
+    && ['cuota_actual_aprox', 'cuota_completa_aprox', 'total_pagado_fecha', 'total_frech_recibido', 'monto_real_pagado_banco'].includes(row.key)
+  ) {
+    return 'Bloqueado por validación: la cuota coincidía con el saldo del crédito (mapeo incorrecto).';
+  }
+
+  return 'No encontrado en el PDF';
+}
+
+function formatWarningMessage(warning: string) {
+  if (WARNING_MESSAGES[warning]) {
+    return WARNING_MESSAGES[warning];
+  }
+
+  if (warning.startsWith('negative_value:')) {
+    const field = warning.replace('negative_value:', '');
+    return `Se detectó un valor negativo inusual en el campo: ${field}.`;
+  }
+
+  return warning;
+}
+
+function formatSummaryRowValue(row: SummaryRow) {
+  if (row.value === null || row.value === undefined) {
+    return '—';
+  }
+
+  if (row.currency) {
+    return formatMoney(Number(row.value));
+  }
+
+  if (row.key.includes('porcentaje')) {
+    return `${Number(row.value).toFixed(2)}%`;
+  }
+
+  return row.value;
+}
+
+function getSummaryRowClass(row: SummaryRow) {
+  if (row.key.includes('beneficio')) return 'text-green-600 font-semibold';
+  if (row.key.includes('intereses')) return 'text-red-600 font-bold';
+  if (row.key.includes('monto_real')) return 'font-bold text-[var(--verde-bosque)]';
+  return 'text-gray-900';
+}
+
 function formatMoney(amount?: number | null) {
-  if (amount === undefined || amount === null) return '-';
-  return new Intl.NumberFormat('es-CO', {
-    style: 'currency',
-    currency: 'COP',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(amount);
+  return formatCopCurrency(amount);
 }

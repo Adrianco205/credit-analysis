@@ -136,7 +136,7 @@ export interface AdminClientAnalysisUploadRequest {
   ingresos_mensuales: number;
   capacidad_pago_max?: number;
   tipo_contrato_laboral?: string;
-  banco_id?: number;
+  banco_id: number;
   opcion_abono_1?: number;
   opcion_abono_2?: number;
   opcion_abono_3?: number;
@@ -241,6 +241,28 @@ export interface CostosExtraResumen {
     formula?: string | null;
 }
 
+export interface SummaryRow {
+  key: string;
+  label: string;
+  value: number | null;
+  currency: boolean;
+  source: 'extracted' | 'calculated' | 'missing';
+  confidence?: number | null;
+  raw_text_refs?: string[];
+}
+
+export interface SummarySection {
+  key: string;
+  title: string;
+  rows: SummaryRow[];
+}
+
+export interface MortgageSummary {
+  sections: SummarySection[];
+  warnings: string[];
+  debug: Record<string, unknown>;
+}
+
 export interface AnalysisSummary {
   analisis_id: string;
   numero_credito?: string;
@@ -253,6 +275,9 @@ export interface AnalysisSummary {
   limites_banco: LimitesBancoResumen;
   ajuste_inflacion?: AjusteInflacionResumen | null;
   costos_extra: CostosExtraResumen;
+  mortgage_summary?: MortgageSummary | null;
+  warnings?: string[];
+  debug?: Record<string, unknown>;
 
   tasa_cobrada_con_frech?: number | null;
   seguros_actuales_mensual?: number | null;

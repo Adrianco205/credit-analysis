@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { apiClient } from '@/lib/api-client';
-import { UserProfile, AnalysisSummary } from '@/types/api';
+import { formatCopCurrency } from '@/lib/utils';
+import { UserProfile, AnalysisSummary, SummaryRow } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader } from '@/components/ui/card';
@@ -824,72 +825,37 @@ export default function CreditAnalysisUploadPage() {
 
                  {summaryData && (
                      <div className="space-y-4">
-                         {/* Bloque 1: DATOS BÁSICOS */}
-                         <Card>
-                             <CardHeader className="pb-2 border-b">
-                                 <h3 className="font-semibold text-gray-700">DATOS BÁSICOS</h3>
-                             </CardHeader>
-                             <div className="p-4 pt-3 text-sm grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-                                <Row label="Valor Prestado" value={formatMoneyOrND(summaryData.datos_basicos?.valor_prestado)} />
-                                <Row label="Cuotas Pactadas" value={summaryData.datos_basicos?.cuotas_pactadas} />
-                                <Row label="Cuotas Pagadas" value={summaryData.datos_basicos?.cuotas_pagadas} />
-                                <Row label="Cuotas por Pagar" value={summaryData.datos_basicos?.cuotas_por_pagar} />
-                                <Row label="Cuota Actual a Cancelar Aprox." value={formatMoney(summaryData.datos_basicos?.cuota_actual_aprox)} />
-                                <Row label="Beneficio FRECH (cuota)" value={formatMoney(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
-                                <Row label="Cuota Completa Aprox. (sin FRECH)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
-                                <div className="col-span-full border-t my-2" />
-                                <Row label="Total Pagado al Día" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
-                                <Row label="Total Beneficio FRECH Recibido" value={formatMoney(summaryData.datos_basicos?.total_frech_recibido)} valueClass="text-green-600 font-semibold" />
-                                <Row label="Monto Real Pagado al Banco" value={formatMoney(summaryData.datos_basicos?.monto_real_pagado_banco)} valueClass="font-bold text-lg text-[var(--verde-bosque)] bg-yellow-100 px-2 py-1 rounded" />
-                             </div>
-                         </Card>
+                         {summaryData.mortgage_summary?.sections?.map((section) => (
+                            <Card key={section.key}>
+                                <CardHeader className="pb-2 border-b">
+                                    <h3 className="font-semibold text-gray-700">{section.title}</h3>
+                                </CardHeader>
+                                <div className="p-4 pt-3 text-sm space-y-1">
+                                    {section.rows.map((row) => (
+                                        <Row
+                                            key={row.key}
+                                            label={row.label}
+                                            value={formatSummaryRowValue(row)}
+                                            valueClass={getSummaryRowClass(row)}
+                                            missing={row.source === 'missing'}
+                                        />
+                                    ))}
+                                </div>
+                            </Card>
+                         ))}
 
-                         {/* Bloque 2: LÍMITES CON EL BANCO HOY */}
-                         <Card>
-                             <CardHeader className="pb-2 border-b">
-                                 <h3 className="font-semibold text-gray-700">LÍMITES CON EL BANCO HOY</h3>
-                             </CardHeader>
-                             <div className="p-4 pt-3 text-sm space-y-1">
-                                <Row label="Valor Prestado" value={formatMoneyOrND(summaryData.limites_banco?.valor_prestado)} />
-                                <Row label="Saldo Actual del Crédito" value={formatMoney(summaryData.limites_banco?.saldo_actual_credito)} valueClass="font-bold text-lg text-gray-900" />
-                             </div>
-                         </Card>
-
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                             {/* Bloque 3: AJUSTE POR INFLACIÓN */}
-                             <Card>
-                                 <CardHeader className="pb-2 border-b">
-                                     <h3 className="font-semibold text-gray-700">AJUSTE POR INFLACIÓN</h3>
-                                 </CardHeader>
-                                 <div className="p-4 pt-3 text-sm space-y-1">
-                                     <Row 
-                                         label="Ajuste en Pesos" 
-                                         value={summaryData.ajuste_inflacion ? formatMoney(summaryData.ajuste_inflacion.ajuste_pesos) : 'N/A'} 
-                                         valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.ajuste_pesos) > 0 ? "text-red-600 font-semibold" : "text-green-600 font-semibold"}
-                                     />
-                                     <Row 
-                                         label="% Ajustado (Incremento por Inflación)" 
-                                         value={summaryData.ajuste_inflacion ? `${Number(summaryData.ajuste_inflacion.porcentaje_ajuste).toFixed(2)}%` : 'N/A'} 
-                                         valueClass={summaryData.ajuste_inflacion && Number(summaryData.ajuste_inflacion.porcentaje_ajuste) > 0 ? "text-red-600" : "text-green-600"}
-                                     />
-                                 </div>
-                             </Card>
-
-                             {/* Bloque 4: INTERESES Y SEGUROS */}
-                             <Card>
-                                 <CardHeader className="pb-2 border-b">
-                                     <h3 className="font-semibold text-gray-700">INTERESES Y SEGUROS</h3>
-                                 </CardHeader>
-                                 <div className="p-4 pt-3 text-sm space-y-1">
-                                     <Row 
-                                         label="Total Intereses y Seguros" 
-                                         value={formatMoney(summaryData.costos_extra?.total_intereses_seguros)} 
-                                         valueClass="text-red-600 font-bold text-lg"
-                                     />
-                                     <p className="text-xs text-gray-500 mt-2">Lo que NO abona a capital</p>
-                                 </div>
-                             </Card>
-                         </div>
+                         {summaryData.warnings && summaryData.warnings.length > 0 && (
+                            <Card className="border-yellow-200 bg-yellow-50">
+                                <div className="p-3 text-xs text-yellow-800">
+                                    <p className="font-semibold mb-1">Advertencias de validación</p>
+                                    <ul className="list-disc pl-4 space-y-0.5">
+                                        {summaryData.warnings.map((warning) => (
+                                            <li key={warning}>{warning}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </Card>
+                         )}
 
                          {/* Metadata */}
                          <div className="flex flex-wrap gap-4 text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
@@ -1095,29 +1061,46 @@ function getNextUploadAvailability() {
     };
 }
 
-function Row({ label, value, valueClass = "text-gray-900" }: { label: string, value: ReactNode, valueClass?: string }) {
-    if (value === undefined || value === null) return null;
+function Row({ label, value, valueClass = "text-gray-900", missing = false }: { label: string, value: ReactNode, valueClass?: string, missing?: boolean }) {
+    const displayValue = value === undefined || value === null ? '—' : value;
     return (
         <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
             <span className="text-gray-700">{label}</span>
-            <span className={`font-medium ${valueClass}`}>{value}</span>
+            <span
+                className={`font-medium ${missing ? 'text-gray-400 italic' : valueClass}`}
+                title={missing ? 'No encontrado en el PDF' : undefined}
+            >
+                {displayValue}
+            </span>
         </div>
     );
 }
 
-function formatMoney(amount?: number) {
-    if (amount === undefined || amount === null) return '-';
-    return new Intl.NumberFormat('es-CO', { 
-        style: 'currency', 
-        currency: 'COP', 
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 2 
-    }).format(amount);
+function formatSummaryRowValue(row: SummaryRow) {
+    if (row.value === null || row.value === undefined) {
+        return '—';
+    }
+
+    if (row.currency) {
+        return formatMoney(Number(row.value));
+    }
+
+    if (row.key.includes('porcentaje')) {
+        return `${Number(row.value).toFixed(2)}%`;
+    }
+
+    return row.value;
 }
 
-function formatMoneyOrND(amount?: number | null) {
-    if (amount === undefined || amount === null || Number(amount) <= 0) return 'N/D';
-    return formatMoney(amount);
+function getSummaryRowClass(row: SummaryRow) {
+    if (row.key.includes('beneficio')) return 'text-green-600 font-semibold';
+    if (row.key.includes('intereses')) return 'text-red-600 font-bold';
+    if (row.key.includes('monto_real')) return 'font-bold text-[var(--verde-bosque)]';
+    return 'text-gray-900';
+}
+
+function formatMoney(amount?: number) {
+    return formatCopCurrency(amount);
 }
 
 function formatColombiaMobilePhone(value: string) {
