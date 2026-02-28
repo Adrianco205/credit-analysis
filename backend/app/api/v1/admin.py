@@ -149,6 +149,8 @@ class AdminAnalysisDetail(BaseModel):
     
     # Montos
     valor_prestado_inicial: Decimal | None
+    valor_cuota_con_subsidio: Decimal | None
+    valor_cuota_sin_seguros: Decimal | None
     valor_cuota_con_seguros: Decimal | None
     beneficio_frech_mensual: Decimal | None
     saldo_capital_pesos: Decimal | None
@@ -186,7 +188,10 @@ class AdminUpdateAnalysisRequest(BaseModel):
     saldo_capital_pesos: Decimal | None = Field(None, gt=0)
     cuotas_pendientes: int | None = Field(None, gt=0)
     tasa_interes_cobrada_ea: Decimal | None = Field(None, ge=0, le=100)
+    valor_prestado_inicial: Decimal | None = Field(None, gt=0)
+    valor_cuota_con_subsidio: Decimal | None = Field(None, gt=0)
     valor_cuota_con_seguros: Decimal | None = Field(None, gt=0)
+    valor_cuota_sin_seguros: Decimal | None = Field(None, gt=0)
     capital_pagado_periodo: Decimal | None = Field(None, ge=0)
     intereses_corrientes_periodo: Decimal | None = Field(None, ge=0)
     intereses_mora: Decimal | None = Field(None, ge=0)
@@ -207,6 +212,25 @@ class AdminGenerateProjectionsRequest(BaseModel):
         description="Lista de opciones: [{numero_opcion: 1, abono_adicional_mensual: 500000}]"
     )
     ingresos_override: Decimal | None = Field(None, gt=0)
+    uvr_mode: str | None = Field(
+        default="extracto",
+        description="Modo UVR para créditos UVR: 'extracto' o 'manual'"
+    )
+    uvr_manual_value: Decimal | None = Field(
+        default=None,
+        gt=0,
+        description="Valor UVR manual a usar en proyecciones cuando uvr_mode='manual'"
+    )
+
+    @model_validator(mode="after")
+    def validate_uvr_mode(self):
+        mode = (self.uvr_mode or "extracto").lower().strip()
+        if mode not in {"extracto", "manual"}:
+            raise ValueError("uvr_mode debe ser 'extracto' o 'manual'")
+        if mode == "manual" and self.uvr_manual_value is None:
+            raise ValueError("uvr_manual_value es requerido cuando uvr_mode='manual'")
+        self.uvr_mode = mode
+        return self
 
 
 class RecalculateProjectionRequest(BaseModel):
@@ -304,6 +328,12 @@ class AdminCreateClientAnalysisResponse(BaseModel):
     id_mismatch: bool = False
     invalid_document_type: bool = False
     tipo_documento_detectado: str | None = None
+
+
+def _normalize_rate_decimal(value: Decimal | None) -> Decimal | None:
+    if value is None:
+        return None
+    return value / Decimal("100") if value > 1 else value
 
 
 def _split_full_name(full_name: str) -> tuple[str, str | None, str | None]:
@@ -530,6 +560,247 @@ async def upload_client_analysis_for_admin(
     )
 
 
+@router.post("/analyses/manual-projection", response_model=AdminCreateClientAnalysisResponse, status_code=status.HTTP_201_CREATED)
+async def create_manual_projection_analysis(
+    customer_full_name: str = Form(..., min_length=3, max_length=200),
+    customer_id_number: str = Form(..., min_length=5, max_length=30),
+    customer_email: str = Form(..., min_length=5, max_length=255),
+    customer_phone: str = Form(..., min_length=7, max_length=30),
+    ingresos_mensuales: Decimal = Form(..., gt=0),
+    capacidad_pago_max: Decimal | None = Form(None, gt=0),
+    tipo_contrato_laboral: str | None = Form(None, max_length=80),
+    banco_id: int = Form(...),
+    opcion_abono_1: Decimal | None = Form(None, gt=0),
+    opcion_abono_2: Decimal | None = Form(None, gt=0),
+    opcion_abono_3: Decimal | None = Form(None, gt=0),
+    numero_credito: str = Form(..., min_length=3, max_length=50),
+    sistema_amortizacion: str = Form(..., min_length=3, max_length=20),
+    plan_credito: str | None = Form(None, max_length=100),
+    valor_prestado_inicial: Decimal = Form(..., gt=0),
+    fecha_desembolso: date | None = Form(None),
+    fecha_extracto: date = Form(...),
+    plazo_total_meses: int = Form(..., gt=0),
+    cuotas_pactadas: int = Form(..., gt=0),
+    cuotas_pagadas: int = Form(..., ge=0),
+    cuotas_pendientes: int = Form(..., ge=0),
+    tasa_interes_pactada_ea: Decimal | None = Form(None, ge=0),
+    tasa_interes_cobrada_ea: Decimal = Form(..., ge=0),
+    tasa_interes_subsidiada_ea: Decimal | None = Form(None, ge=0),
+    tasa_mora_pactada_ea: Decimal | None = Form(None, ge=0),
+    valor_cuota_sin_seguros: Decimal | None = Form(None, ge=0),
+    valor_cuota_con_seguros: Decimal = Form(..., gt=0),
+    beneficio_frech_mensual: Decimal | None = Form(None, ge=0),
+    valor_cuota_con_subsidio: Decimal | None = Form(None, ge=0),
+    saldo_capital_pesos: Decimal = Form(..., gt=0),
+    total_por_pagar: Decimal | None = Form(None, ge=0),
+    saldo_capital_uvr: Decimal | None = Form(None, ge=0),
+    valor_uvr_fecha_extracto: Decimal | None = Form(None, ge=0),
+    valor_cuota_uvr: Decimal | None = Form(None, ge=0),
+    seguro_vida: Decimal | None = Form(None, ge=0),
+    seguro_incendio: Decimal | None = Form(None, ge=0),
+    seguro_terremoto: Decimal | None = Form(None, ge=0),
+    capital_pagado_periodo: Decimal | None = Form(None, ge=0),
+    intereses_corrientes_periodo: Decimal | None = Form(None, ge=0),
+    intereses_mora: Decimal | None = Form(None, ge=0),
+    otros_cargos: Decimal | None = Form(None, ge=0),
+    file: UploadFile = File(..., description="Archivo PDF del análisis del cliente"),
+    password: str | None = Form(None, description="Contraseña del PDF, si aplica"),
+    admin: Usuario = Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    _ = admin
+
+    normalized_name = customer_full_name.strip()
+    normalized_id = customer_id_number.strip()
+    normalized_email = customer_email.strip().lower()
+    normalized_phone = customer_phone.strip()
+
+    if not normalized_name:
+        raise HTTPException(status_code=400, detail="El nombre del cliente es obligatorio")
+    if not normalized_id:
+        raise HTTPException(status_code=400, detail="La cédula del cliente es obligatoria")
+    if not normalized_email:
+        raise HTTPException(status_code=400, detail="El correo del cliente es obligatorio")
+    if not normalized_phone:
+        raise HTTPException(status_code=400, detail="El teléfono del cliente es obligatorio")
+
+    banco = db.get(Banco, banco_id)
+    if not banco or not banco.activo:
+        raise HTTPException(status_code=400, detail="El banco seleccionado no es válido")
+
+    users_repo = UsersRepo(db)
+    customer_user = users_repo.get_by_email(normalized_email)
+    if customer_user is None:
+        existing_by_id = users_repo.get_by_identificacion(normalized_id)
+        if existing_by_id:
+            customer_user = existing_by_id
+
+    if customer_user is None:
+        nombres, primer_apellido, segundo_apellido = _split_full_name(normalized_name)
+        customer_user = Usuario(
+            nombres=nombres,
+            primer_apellido=primer_apellido,
+            segundo_apellido=segundo_apellido,
+            tipo_identificacion="CC",
+            identificacion=normalized_id,
+            email=normalized_email,
+            telefono=normalized_phone,
+            status="INVITED",
+            email_verificado=False,
+        )
+        db.add(customer_user)
+        db.flush()
+    else:
+        updated = False
+        if not customer_user.identificacion:
+            customer_user.identificacion = normalized_id
+            updated = True
+        if not customer_user.telefono:
+            customer_user.telefono = normalized_phone
+            updated = True
+        if updated:
+            db.add(customer_user)
+            db.flush()
+
+    pdf_service = PdfService()
+    storage_service = get_storage_service()
+    documents_repo = DocumentsRepo(db)
+    analyses_repo = AnalysesRepo(db)
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="El archivo PDF está vacío")
+
+    validation = pdf_service.validate_and_prepare_pdf(file_bytes, password=password)
+    if validation.status == PDFStatus.PASSWORD_REQUIRED:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "El PDF está protegido con contraseña. Debes suministrarla para continuar.",
+                "requires_password": True,
+            },
+        )
+
+    if validation.status == PDFStatus.INVALID_PASSWORD:
+        raise HTTPException(status_code=400, detail="Contraseña de PDF inválida")
+
+    if validation.status != PDFStatus.OK or not validation.content_to_store:
+        raise HTTPException(
+            status_code=400,
+            detail=validation.message or "No se pudo procesar el archivo PDF",
+        )
+
+    content_to_save = validation.content_to_store
+    was_encrypted = validation.was_encrypted
+
+    save_result = storage_service.save_pdf(
+        content=content_to_save,
+        user_id=str(customer_user.id),
+        original_filename=file.filename or "extracto.pdf",
+    )
+
+    if not save_result.success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al guardar el archivo: {save_result.message}",
+        )
+
+    documento = documents_repo.create(
+        usuario_id=customer_user.id,
+        original_filename=file.filename or "extracto.pdf",
+        file_size=save_result.file_size_bytes,
+        s3_key=save_result.file_path,
+        checksum=save_result.checksum,
+        pdf_encrypted=was_encrypted,
+        status="UPLOADED",
+        banco_id=banco_id,
+    )
+
+    opciones_abono_preferidas = [
+        option for option in [opcion_abono_1, opcion_abono_2, opcion_abono_3] if option is not None
+    ] or None
+
+    seguros_total_mensual = (seguro_vida or Decimal("0")) + (seguro_incendio or Decimal("0")) + (seguro_terremoto or Decimal("0"))
+
+    analisis_data = {
+        "documento_id": documento.id,
+        "usuario_id": customer_user.id,
+        "ingresos_mensuales": ingresos_mensuales,
+        "capacidad_pago_max": capacidad_pago_max,
+        "tipo_contrato_laboral": tipo_contrato_laboral,
+        "numero_credito": numero_credito.strip(),
+        "banco_id": banco_id,
+        "sistema_amortizacion": sistema_amortizacion.strip().upper(),
+        "plan_credito": plan_credito,
+        "valor_prestado_inicial": valor_prestado_inicial,
+        "fecha_desembolso": fecha_desembolso,
+        "fecha_extracto": fecha_extracto,
+        "plazo_total_meses": plazo_total_meses,
+        "cuotas_pactadas": cuotas_pactadas,
+        "cuotas_pagadas": cuotas_pagadas,
+        "cuotas_pendientes": cuotas_pendientes,
+        "tasa_interes_pactada_ea": _normalize_rate_decimal(tasa_interes_pactada_ea),
+        "tasa_interes_cobrada_ea": _normalize_rate_decimal(tasa_interes_cobrada_ea),
+        "tasa_interes_subsidiada_ea": _normalize_rate_decimal(tasa_interes_subsidiada_ea),
+        "tasa_mora_pactada_ea": _normalize_rate_decimal(tasa_mora_pactada_ea),
+        "valor_cuota_sin_seguros": valor_cuota_sin_seguros,
+        "valor_cuota_con_seguros": valor_cuota_con_seguros,
+        "beneficio_frech_mensual": beneficio_frech_mensual,
+        "valor_cuota_con_subsidio": valor_cuota_con_subsidio,
+        "saldo_capital_pesos": saldo_capital_pesos,
+        "total_por_pagar": total_por_pagar,
+        "saldo_capital_uvr": saldo_capital_uvr,
+        "valor_uvr_fecha_extracto": valor_uvr_fecha_extracto,
+        "valor_cuota_uvr": valor_cuota_uvr,
+        "seguro_vida": seguro_vida,
+        "seguro_incendio": seguro_incendio,
+        "seguro_terremoto": seguro_terremoto,
+        "seguros_total_mensual": seguros_total_mensual,
+        "capital_pagado_periodo": capital_pagado_periodo,
+        "intereses_corrientes_periodo": intereses_corrientes_periodo,
+        "intereses_mora": intereses_mora,
+        "otros_cargos": otros_cargos,
+        "opciones_abono_preferidas": opciones_abono_preferidas,
+        "nombre_titular_extracto": normalized_name,
+        "identificacion_extracto": normalized_id,
+        "nombre_coincide": True,
+        "cedula_coincide": True,
+        "status": "EXTRACTED",
+        "campos_manuales": [
+            "numero_credito", "sistema_amortizacion", "plan_credito", "valor_prestado_inicial",
+            "fecha_desembolso", "fecha_extracto", "plazo_total_meses", "cuotas_pactadas",
+            "cuotas_pagadas", "cuotas_pendientes", "tasa_interes_pactada_ea", "tasa_interes_cobrada_ea",
+            "tasa_interes_subsidiada_ea", "tasa_mora_pactada_ea", "valor_cuota_sin_seguros",
+            "valor_cuota_con_seguros", "beneficio_frech_mensual", "valor_cuota_con_subsidio",
+            "saldo_capital_pesos", "total_por_pagar", "saldo_capital_uvr", "valor_uvr_fecha_extracto",
+            "valor_cuota_uvr", "seguro_vida", "seguro_incendio", "seguro_terremoto",
+            "capital_pagado_periodo", "intereses_corrientes_periodo", "intereses_mora", "otros_cargos"
+        ],
+        "campos_extraidos_ia": [],
+        "raw_data_json": {"manual_entry": True, "created_by": "admin"},
+        "computed_summary_json": {"manual_entry": True},
+        "datos_raw_gemini": None,
+    }
+
+    analisis = analyses_repo.create(**analisis_data)
+    analyses_repo.calculate_derived_fields(analisis)
+    db.commit()
+
+    return AdminCreateClientAnalysisResponse(
+        success=True,
+        analisis_id=analisis.id,
+        status=analisis.status,
+        message="Análisis manual creado exitosamente",
+        requires_manual_input=False,
+        campos_faltantes=None,
+        campos_extraidos=[],
+        name_mismatch=False,
+        id_mismatch=False,
+        invalid_document_type=False,
+        tipo_documento_detectado=None,
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # ENDPOINTS - ANÁLISIS
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -624,6 +895,8 @@ def get_analysis_admin(
         tasa_interes_cobrada_ea=analisis.tasa_interes_cobrada_ea,
         tasa_interes_subsidiada_ea=analisis.tasa_interes_subsidiada_ea,
         valor_prestado_inicial=analisis.valor_prestado_inicial,
+        valor_cuota_con_subsidio=analisis.valor_cuota_con_subsidio,
+        valor_cuota_sin_seguros=analisis.valor_cuota_sin_seguros,
         valor_cuota_con_seguros=analisis.valor_cuota_con_seguros,
         beneficio_frech_mensual=analisis.beneficio_frech_mensual,
         saldo_capital_pesos=analisis.saldo_capital_pesos,
@@ -738,20 +1011,35 @@ def update_analysis_admin(
     
     # Actualizar campos proporcionados
     update_data = request.model_dump(exclude_none=True)
+    campos_manuales_actualizados: list[str] = []
+
+    campos_no_manual = {"ingresos_mensuales", "capacidad_pago_max", "tipo_contrato_laboral", "opciones_abono_preferidas"}
     for field, value in update_data.items():
         if hasattr(analisis, field):
             setattr(analisis, field, value)
+            if field not in campos_no_manual:
+                campos_manuales_actualizados.append(field)
+
+    if campos_manuales_actualizados:
+        existentes = analisis.campos_manuales or []
+        analisis.campos_manuales = list(set(existentes + campos_manuales_actualizados))
     
     # Recalcular campos derivados
     repo.calculate_derived_fields(analisis)
     
     # Si estaba pendiente y ahora tiene datos completos, actualizar estado
     if analisis.status == "PENDING_MANUAL":
+        cuota_disponible = (
+            analisis.valor_cuota_con_subsidio
+            or analisis.valor_cuota_con_seguros
+            or analisis.valor_cuota_sin_seguros
+        )
         campos_requeridos = [
             analisis.saldo_capital_pesos,
-            analisis.valor_cuota_con_seguros,
+            cuota_disponible,
             analisis.cuotas_pendientes,
-            analisis.tasa_interes_cobrada_ea
+            analisis.tasa_interes_cobrada_ea,
+            analisis.valor_prestado_inicial,
         ]
         if all(f is not None for f in campos_requeridos):
             analisis.status = "EXTRACTED"
@@ -797,7 +1085,8 @@ def calculate_projections_admin(
     result = service.generate_projections(
         analisis_id=analysis_id,
         opciones=opciones,
-        usuario_id=None  # Admin puede calcular sin verificar usuario
+        usuario_id=None,  # Admin puede calcular sin verificar usuario
+        valor_uvr_para_calculo=request.uvr_manual_value if request.uvr_mode == "manual" else None,
     )
     
     if not result.success:

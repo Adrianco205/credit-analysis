@@ -74,6 +74,7 @@ class AdminAnalysisService:
                     credit_number=row.get("credit_number"),
                     document_id=document_id,
                     status=status,
+                    extracted_manually=bool(row.get("campos_manuales") and len(row.get("campos_manuales")) > 0),
                     actions=actions,
                 )
             )

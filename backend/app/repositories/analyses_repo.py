@@ -290,16 +290,26 @@ class AnalysesRepo:
         if campos_faltantes and len(campos_faltantes) > 0:
             # Campos críticos que DEBEN estar presentes
             campos_criticos = {
-                "saldo_capital_pesos", "valor_cuota_con_seguros",
-                "cuotas_pendientes", "tasa_interes_cobrada_ea"
+                "saldo_capital_pesos",
+                "cuotas_pendientes",
+                "tasa_interes_cobrada_ea",
+                "valor_prestado_inicial",
             }
             faltantes_criticos = campos_criticos & set(campos_faltantes)
-            if faltantes_criticos:
+            cuota_disponible = any(
+                extraction_data.get(campo) is not None
+                for campo in ("valor_cuota_con_subsidio", "valor_cuota_con_seguros", "valor_cuota_sin_seguros")
+            )
+            if faltantes_criticos or not cuota_disponible:
                 analisis.status = "PENDING_MANUAL"
             else:
                 analisis.status = "EXTRACTED"
         else:
-            analisis.status = "EXTRACTED"
+            cuota_disponible = any(
+                extraction_data.get(campo) is not None
+                for campo in ("valor_cuota_con_subsidio", "valor_cuota_con_seguros", "valor_cuota_sin_seguros")
+            )
+            analisis.status = "EXTRACTED" if cuota_disponible else "PENDING_MANUAL"
         
         self.db.flush()
         return analisis
@@ -325,13 +335,19 @@ class AnalysesRepo:
         
         # Verificar si ya está completo
         campos_requeridos = [
-            "saldo_capital_pesos", "valor_cuota_con_seguros",
-            "cuotas_pendientes", "tasa_interes_cobrada_ea"
+            "saldo_capital_pesos",
+            "cuotas_pendientes",
+            "tasa_interes_cobrada_ea",
+            "valor_prestado_inicial",
         ]
-        completo = all(
-            getattr(analisis, campo) is not None 
-            for campo in campos_requeridos
+        cuota_disponible = any(
+            getattr(analisis, campo) is not None
+            for campo in ("valor_cuota_con_subsidio", "valor_cuota_con_seguros", "valor_cuota_sin_seguros")
         )
+        completo = all(
+            getattr(analisis, campo) is not None
+            for campo in campos_requeridos
+        ) and cuota_disponible
         
         if completo and analisis.status == "PENDING_MANUAL":
             analisis.status = "EXTRACTED"

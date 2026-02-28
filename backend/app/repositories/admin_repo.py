@@ -39,6 +39,7 @@ class AdminAnalysesRepo:
 				AnalisisHipotecario.documento_id.label("document_id"),
 				AnalisisHipotecario.numero_credito.label("credit_number"),
 				AnalisisHipotecario.status.label("status"),
+				AnalisisHipotecario.campos_manuales.label("campos_manuales"),
 				Usuario.id.label("user_id"),
 				Usuario.nombres.label("nombres"),
 				Usuario.primer_apellido.label("primer_apellido"),

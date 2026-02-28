@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { formatNumberWithThousands } from '@/lib/utils';
 
 export default function HistorialPage() {
     const router = useRouter();
@@ -92,7 +93,7 @@ export default function HistorialPage() {
         return statusStyles[status] || 'bg-gray-100 text-gray-600';
     };
 
-    const getStatusText = (status: string) => {
+    const getStatusText = (status: string, extractedManually?: boolean) => {
         const statusTexts: Record<string, string> = {
             'COMPLETED': 'Completado',
             'PROCESSING': 'Procesando',
@@ -107,6 +108,9 @@ export default function HistorialPage() {
             'ID_MISMATCH': 'Cédula no coincide',
             'NAME_MISMATCH': 'Nombre no coincide',
         };
+        if (status === 'EXTRACTED' && extractedManually) {
+            return 'D.E. manualmente';
+        }
         return statusTexts[status] || status;
     };
 
@@ -158,7 +162,7 @@ export default function HistorialPage() {
                         </h2>
                         {total > 0 && (
                             <span className="text-sm text-gray-500">
-                                {total} análisis realizado{total !== 1 ? 's' : ''}
+                                {formatNumberWithThousands(total)} análisis realizado{total !== 1 ? 's' : ''}
                             </span>
                         )}
                     </div>
@@ -223,6 +227,9 @@ export default function HistorialPage() {
                                                     <div>
                                                         <p className="font-medium text-gray-800">{estudio.banco_nombre || 'Banco no identificado'}</p>
                                                         <p className="text-xs text-gray-500">{estudio.numero_credito || 'Sin número'}</p>
+                                                        {estudio.saldo_actual !== null && estudio.saldo_actual !== undefined && (
+                                                            <p className="text-xs text-gray-500">Saldo: {formatNumberWithThousands(estudio.saldo_actual)}</p>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </td>
@@ -235,7 +242,7 @@ export default function HistorialPage() {
                                             {/* Estado */}
                                             <td className="py-4 px-4">
                                                 <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadge(estudio.status)}`}>
-                                                    {getStatusText(estudio.status)}
+                                                    {getStatusText(estudio.status, estudio.extracted_manually)}
                                                 </span>
                                             </td>
 
@@ -243,7 +250,11 @@ export default function HistorialPage() {
                                             <td className="py-4 px-4 text-center">
                                                 <AnalysisActions
                                                     canViewSummary={Boolean(estudio.analisis_id)}
-                                                    summaryHref={`/dashboard/analysis/${estudio.analisis_id}/summary`}
+                                                    summaryHref={
+                                                        estudio.status === 'PENDING_MANUAL'
+                                                            ? `/dashboard/analysis/${estudio.analisis_id}/manual`
+                                                            : `/dashboard/analysis/${estudio.analisis_id}/summary`
+                                                    }
                                                 />
                                             </td>
                                         </tr>

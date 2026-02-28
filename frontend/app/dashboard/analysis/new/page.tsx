@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
 import { apiClient } from '@/lib/api-client';
-import { formatCopCurrency } from '@/lib/utils';
+import { cleanDigitsInput, formatCopCurrency, formatDigitsInput, formatNumberWithThousands } from '@/lib/utils';
 import { UserProfile, AnalysisSummary, SummaryRow } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -438,6 +438,13 @@ export default function CreditAnalysisUploadPage() {
 
             const createdAnalysisId = analysisRes.analisis_id;
 
+            if (analysisRes.requires_manual_input) {
+                await completeLoadingOverlay();
+                toast.warning('Faltan datos para proyectar. Completa la calculadora manual para continuar.');
+                router.push(`/dashboard/analysis/${createdAnalysisId}/manual`);
+                return;
+            }
+
             // 4. Fetch Detail Summary
             let fetchedSummary: AnalysisSummary | null = null;
             try {
@@ -587,8 +594,8 @@ export default function CreditAnalysisUploadPage() {
                                 type="text"
                                 inputMode="numeric"
                                 placeholder="Ej: 5.000.000"
-                                value={formatNumberInput(income)}
-                                onChange={(e) => setIncome(cleanNumberInput(e.target.value))}
+                                value={formatDigitsInput(income)}
+                                onChange={(e) => setIncome(cleanDigitsInput(e.target.value))}
                                 required
                             />
                             <Input 
@@ -597,8 +604,8 @@ export default function CreditAnalysisUploadPage() {
                                 inputMode="numeric"
                                 placeholder="Ej: 1.500.000"
                                 helperText="Lo máximo que puedes pagar mensual por la cuota"
-                                value={formatNumberInput(paymentCapacity)}
-                                onChange={(e) => setPaymentCapacity(cleanNumberInput(e.target.value))}
+                                value={formatDigitsInput(paymentCapacity)}
+                                onChange={(e) => setPaymentCapacity(cleanDigitsInput(e.target.value))}
                                 required
                             />
                         </div>
@@ -628,22 +635,22 @@ export default function CreditAnalysisUploadPage() {
                                     label="Opcion 1"
                                     type="text"
                                     inputMode="numeric"
-                                    value={formatNumberInput(option1)}
-                                    onChange={(e) => setOption1(cleanNumberInput(e.target.value))}
+                                    value={formatDigitsInput(option1)}
+                                    onChange={(e) => setOption1(cleanDigitsInput(e.target.value))}
                                 />
                                 <Input
                                     label="Opcion 2"
                                     type="text"
                                     inputMode="numeric"
-                                    value={formatNumberInput(option2)}
-                                    onChange={(e) => setOption2(cleanNumberInput(e.target.value))}
+                                    value={formatDigitsInput(option2)}
+                                    onChange={(e) => setOption2(cleanDigitsInput(e.target.value))}
                                 />
                                 <Input
                                     label="Opcion 3"
                                     type="text"
                                     inputMode="numeric"
-                                    value={formatNumberInput(option3)}
-                                    onChange={(e) => setOption3(cleanNumberInput(e.target.value))}
+                                    value={formatDigitsInput(option3)}
+                                    onChange={(e) => setOption3(cleanDigitsInput(e.target.value))}
                                 />
                             </div>
                         </div>
@@ -664,7 +671,7 @@ export default function CreditAnalysisUploadPage() {
                {step === 2 && (
                    <div className="flex justify-between items-center bg-gray-50 border border-gray-200 p-4 rounded-lg mb-6">
                        <div className="text-sm text-gray-600">
-                           <strong>Ingresos:</strong> ${formatNumberInput(income)} | <strong>Contrato:</strong> {contractType}
+                           <strong>Ingresos:</strong> ${formatDigitsInput(income)} | <strong>Contrato:</strong> {contractType}
                        </div>
                        <Button variant="ghost" size="sm" onClick={() => setStep(1)} disabled={uploading || processing}>
                            Editar
@@ -1032,17 +1039,6 @@ function AnalysisLoadingOverlay({ progress, statusText }: { progress: number; st
     );
 }
 
-function cleanNumberInput(value: string) {
-    return value.replace(/[^\d]/g, '');
-}
-
-function formatNumberInput(value: string) {
-    if (!value) return '';
-    const parsed = Number(value);
-    if (Number.isNaN(parsed)) return '';
-    return new Intl.NumberFormat('es-CO').format(parsed);
-}
-
 function getNextUploadAvailability() {
     const now = new Date();
     const nextMonthFirstDay = new Date(now.getFullYear(), now.getMonth() + 1, 1);
@@ -1089,7 +1085,7 @@ function formatSummaryRowValue(row: SummaryRow) {
         return `${Number(row.value).toFixed(2)}%`;
     }
 
-    return row.value;
+    return formatNumberWithThousands(Number(row.value));
 }
 
 function getSummaryRowClass(row: SummaryRow) {

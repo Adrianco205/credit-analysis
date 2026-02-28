@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { ArrowLeft, CheckCircle2, AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
-import { formatCopCurrency } from '@/lib/utils';
+import { formatCopCurrency, formatNumberWithThousands } from '@/lib/utils';
 
 export default function AnalysisSummaryPage() {
     const params = useParams();
@@ -110,7 +110,7 @@ export default function AnalysisSummaryPage() {
                             <Row label="Cuotas Pagadas" value={summaryData.datos_basicos?.cuotas_pagadas} />
                             <Row label="Cuotas por Pagar" value={summaryData.datos_basicos?.cuotas_por_pagar} />
                             <Row label="Cuota Actual a Cancelar Aprox." value={formatMoney(summaryData.datos_basicos?.cuota_actual_aprox)} />
-                            <Row label="Beneficio FRECH (cuota)" value={formatMoney(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
+                            <Row label="Beneficio FRECH (cuota)" value={formatFrechValue(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
                             <Row label="Cuota completa aprox. (sin FRECH + seguros)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
                             <div className="col-span-full border-t my-2" />
                             <Row label="Pagado por el cliente (estimado)" value={formatMoney(summaryData.datos_basicos?.total_pagado_fecha)} valueClass="font-semibold text-gray-900" />
@@ -190,10 +190,11 @@ export default function AnalysisSummaryPage() {
 
 function Row({ label, value, valueClass = "text-gray-900" }: { label: string, value: ReactNode, valueClass?: string }) {
     if (value === undefined || value === null) return null;
+    const displayValue = typeof value === 'number' ? formatNumberWithThousands(value) : value;
     return (
         <div className="flex justify-between items-center py-1 border-b border-gray-50 last:border-0">
             <span className="text-gray-700">{label}</span>
-            <span className={`font-medium ${valueClass}`}>{value}</span>
+            <span className={`font-medium ${valueClass}`}>{displayValue}</span>
         </div>
     );
 }
@@ -204,5 +205,10 @@ function formatMoney(amount?: number) {
 
 function formatMoneyOrND(amount?: number | null) {
     if (amount === undefined || amount === null || Number(amount) <= 0) return 'N/D';
+    return formatMoney(amount);
+}
+
+function formatFrechValue(amount?: number | null) {
+    if (amount === undefined || amount === null || Number(amount) <= 0) return 'No aplica';
     return formatMoney(amount);
 }

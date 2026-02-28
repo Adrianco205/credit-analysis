@@ -330,9 +330,32 @@ class BanRepFilesProvider(BaseProvider):
         indicator_key = indicator_key.lower()
 
         if indicator_key == "uvr":
+            combined_rows: Dict[date, Dict[str, Any]] = {}
+
             pdf_rows = await self._extract_uvr_from_pdf(fecha_inicio, fecha_fin)
-            if pdf_rows:
-                return pdf_rows
+            for row in pdf_rows:
+                combined_rows[row["fecha"]] = row
+
+            urls = self._urls_for_indicator(indicator_key)
+            for url in urls:
+                try:
+                    workbook = await self._load_workbook(url)
+                    rows = self.extract_records_from_workbook(indicator_key, workbook)
+                    filtered = [r for r in rows if fecha_inicio <= r["fecha"] <= fecha_fin]
+                    for row in filtered:
+                        combined_rows[row["fecha"]] = row
+                except Exception as exc:
+                    logger.warning(
+                        "uvr_workbook_source_failed url=%s error=%s",
+                        url,
+                        str(exc),
+                    )
+                    continue
+
+            if combined_rows:
+                return sorted(combined_rows.values(), key=lambda x: x["fecha"])
+
+            return []
 
         if indicator_key == "ibr":
             ibr_rows = await self._extract_ibr_from_xlsx(fecha_inicio, fecha_fin)
@@ -834,7 +857,57 @@ class IndicadoresFinancierosService:
         fecha_inicio: date,
         fecha_fin: date,
     ) -> tuple[List[Dict[str, Any]], FuenteDatos]:
+        indicator_key = indicator_key.lower()
         errors: List[str] = []
+
+        if indicator_key == "uvr":
+            combined_records: Dict[date, tuple[Dict[str, Any], FuenteDatos]] = {}
+
+            for provider in self._providers:
+                breaker_key = f"{provider.name}:{indicator_key}"
+                if _breaker.is_open(breaker_key):
+                    errors.append(f"{provider.name}=circuit_open")
+                    continue
+
+                try:
+                    records = await provider.fetch_records(indicator_key, fecha_inicio, fecha_fin)
+                    if not records:
+                        errors.append(f"{provider.name}=sin_datos")
+                        _breaker.record_failure(breaker_key)
+                        continue
+
+                    _breaker.record_success(breaker_key)
+                    source = FuenteDatos.BANREP_FILES if provider.name == "BANREP_FILES" else FuenteDatos.BANREP_API
+
+                    for row in records:
+                        row_date = row["fecha"]
+                        existing = combined_records.get(row_date)
+                        if existing is None:
+                            combined_records[row_date] = (row, source)
+                            continue
+
+                        _, existing_source = existing
+                        if existing_source == FuenteDatos.BANREP_FILES and source == FuenteDatos.BANREP_API:
+                            combined_records[row_date] = (row, source)
+                except Exception as exc:
+                    _breaker.record_failure(breaker_key)
+                    errors.append(f"{provider.name}={exc}")
+                    logger.warning(
+                        "indicadores_provider_failed indicator=%s provider=%s error=%s",
+                        indicator_key,
+                        provider.name,
+                        str(exc),
+                    )
+
+            if combined_records:
+                sorted_rows = sorted((row for row, _ in combined_records.values()), key=lambda x: x["fecha"])
+                latest_date = sorted_rows[-1]["fecha"]
+                _, latest_source = combined_records[latest_date]
+                return sorted_rows, latest_source
+
+            raise IndicadorNoDisponibleError(
+                f"Proveedor oficial temporalmente no disponible ({indicator_key}). Detalles: {' | '.join(errors)}"
+            )
 
         for provider in self._providers:
             breaker_key = f"{provider.name}:{indicator_key}"

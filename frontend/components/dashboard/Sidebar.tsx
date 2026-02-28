@@ -59,18 +59,24 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     }
   };
 
+  const showAdminFinancialIndicators = false;
+
   const links = userRole === 'ADMIN'
     ? [
         { href: '/dashboard', label: 'Inicio', icon: Home },
         { href: '/dashboard/admin/clientes/subir-analisis', label: 'Subir análisis de clientes', icon: FileText },
         { href: '/dashboard/admin/analyses', label: 'Ver historial de análisis', icon: History },
         { href: '/dashboard/admin/proyecciones', label: 'Generar proyecciones', icon: Sparkles },
-        { href: '/dashboard/admin/indicadores-financieros', label: 'Indicadores Financieros', icon: ChartColumn },
+        { href: '/dashboard/admin/proyeccion-manual', label: 'Proyección manual', icon: FileText },
+        ...(showAdminFinancialIndicators
+          ? [{ href: '/dashboard/admin/indicadores-financieros', label: 'Indicadores Financieros', icon: ChartColumn }]
+          : []),
       ]
     : [
         { href: '/dashboard', label: 'Inicio', icon: Home },
         { href: '/dashboard/analysis/new', label: 'Analizar crédito', icon: FileText },
         { href: '/dashboard/historial', label: 'Historial de Análisis', icon: History },
+        { href: '/dashboard/contrato', label: 'Tratamiento de información', icon: FileText },
       ];
 
   return (

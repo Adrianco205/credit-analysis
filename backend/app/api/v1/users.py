@@ -401,6 +401,7 @@ def get_my_estudios(
             banco_nombre=banco_nombre,
             fecha_subida=documento.created_at if documento else analisis.created_at,
             status=analisis.status,
+            extracted_manually=bool(analisis.campos_manuales and len(analisis.campos_manuales) > 0),
             saldo_actual=float(analisis.saldo_capital_pesos) if analisis.saldo_capital_pesos else None,
             numero_credito=analisis.numero_credito
         ))

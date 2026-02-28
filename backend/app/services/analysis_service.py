@@ -13,6 +13,7 @@ import logging
 import uuid
 import io
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -87,6 +88,50 @@ def _normalize_document_id_for_display(value: str | None) -> str:
     if len(normalized) < 6 or len(normalized) > 12:
         return "N/A"
     return normalized
+
+
+def _normalize_name_tokens(value: str | None) -> set[str]:
+    if not value:
+        return set()
+
+    normalized = unicodedata.normalize("NFD", str(value))
+    normalized = "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+    normalized = re.sub(r"[^A-Za-z\s]", " ", normalized.upper())
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    if not normalized:
+        return set()
+
+    connectors = {"DE", "DEL", "LA", "LAS", "LOS", "Y"}
+    return {
+        token
+        for token in normalized.split(" ")
+        if token and token not in connectors and len(token) > 1
+    }
+
+
+def _names_look_equivalent(pdf_name: str | None, user_name: str | None) -> bool:
+    pdf_tokens = _normalize_name_tokens(pdf_name)
+    user_tokens = _normalize_name_tokens(user_name)
+
+    if not pdf_tokens or not user_tokens:
+        return False
+
+    common = pdf_tokens & user_tokens
+    if not common:
+        return False
+
+    shorter_size = min(len(pdf_tokens), len(user_tokens))
+    if shorter_size == 0:
+        return False
+
+    overlap_ratio = len(common) / shorter_size
+    if overlap_ratio >= 0.75 and len(common) >= 2:
+        return True
+
+    if pdf_tokens.issubset(user_tokens) or user_tokens.issubset(pdf_tokens):
+        return len(common) >= 2
+
+    return False
 
 
 @dataclass
@@ -400,6 +445,13 @@ class AnalysisService:
                 
                 comparison = await self.gemini.compare_names(nombre_pdf, nombre_usuario)
                 name_match = comparison.match
+
+                if not name_match and _names_look_equivalent(nombre_pdf, nombre_usuario):
+                    logger.info(
+                        "Nombre validado por fallback local tras falso negativo de comparación IA. "
+                        f"PDF='{nombre_pdf}' Usuario='{nombre_usuario}'"
+                    )
+                    name_match = True
                 
                 if not name_match:
                     logger.warning(
@@ -431,10 +483,6 @@ class AnalysisService:
             if not skip_name_validation and not name_match:
                 self._cleanup_document_on_identity_failure(documento)
                 suggestion = ""
-                id_for_display = "N/A"
-                if id_is_explicit and detected_id_normalized:
-                    id_for_display = _normalize_document_id_for_display(identificacion_pdf_detectada)
-
                 if id_is_explicit and detected_id_normalized:
                     usuario_por_cc = self.db.execute(
                         select(Usuario).where(
@@ -451,14 +499,13 @@ class AnalysisService:
                         )
                     ).scalar_one_or_none()
                     if usuario_por_cc and usuario_por_cc.id != usuario.id:
-                        suggestion = f" Inicia sesión con la cuenta asociada a la CC {id_for_display}."
+                        suggestion = " Inicia sesión con la cuenta asociada a este titular."
 
                 return AnalysisCreationResult(
                     success=False,
                     error_code="IDENTITY_MISMATCH",
                     error_message=(
-                        f"Los datos del documento (Nombre: {nombre_pdf_detectado or 'No detectado'}, "
-                        f"CC: {id_for_display}) no coinciden con tu cuenta. "
+                        f"Los datos del documento (Nombre: {nombre_pdf_detectado or 'No detectado'}) no coinciden con tu cuenta. "
                         "Para procesar este análisis, por favor inicia sesión con la cuenta correspondiente "
                         "o crea una nueva cuenta para este titular."
                         f"{suggestion}"
@@ -553,11 +600,13 @@ class AnalysisService:
             
             self.db.commit()
             
+            campos_faltantes_actuales = self._get_remaining_required_fields(analisis) if requires_manual else None
+
             return AnalysisCreationResult(
                 success=True,
                 analisis=analisis,
                 requires_manual_input=requires_manual,
-                campos_faltantes=campos_faltantes if requires_manual else None,
+                campos_faltantes=campos_faltantes_actuales,
                 campos_extraidos=extraction_result.campos_encontrados,  # NUEVO
                 name_mismatch=not name_match,
                 id_mismatch=not id_match  # NUEVO
@@ -681,13 +730,29 @@ class AnalysisService:
     
     def _get_remaining_required_fields(self, analisis: AnalisisHipotecario) -> list[str]:
         """Obtiene los campos requeridos que aún faltan por llenar."""
-        campos_criticos = {
-            "saldo_capital_pesos": analisis.saldo_capital_pesos,
-            "valor_cuota_con_seguros": analisis.valor_cuota_con_seguros,
-            "cuotas_pendientes": analisis.cuotas_pendientes,
-            "tasa_interes_cobrada_ea": analisis.tasa_interes_cobrada_ea
-        }
-        return [campo for campo, valor in campos_criticos.items() if valor is None]
+        campos_faltantes: list[str] = []
+
+        if analisis.saldo_capital_pesos is None:
+            campos_faltantes.append("saldo_capital_pesos")
+
+        cuota_disponible = (
+            analisis.valor_cuota_con_subsidio
+            or analisis.valor_cuota_con_seguros
+            or analisis.valor_cuota_sin_seguros
+        )
+        if cuota_disponible is None:
+            campos_faltantes.append("valor_cuota_con_seguros")
+
+        if analisis.cuotas_pendientes is None:
+            campos_faltantes.append("cuotas_pendientes")
+
+        if analisis.tasa_interes_cobrada_ea is None:
+            campos_faltantes.append("tasa_interes_cobrada_ea")
+
+        if analisis.valor_prestado_inicial is None:
+            campos_faltantes.append("valor_prestado_inicial")
+
+        return campos_faltantes
     
     # ═══════════════════════════════════════════════════════════════════════════════
     # GENERACIÓN DE PROYECCIONES
@@ -697,7 +762,8 @@ class AnalysisService:
         self,
         analisis_id: uuid.UUID,
         opciones: list[OpcionAbonoInput],
-        usuario_id: uuid.UUID | None = None
+        usuario_id: uuid.UUID | None = None,
+        valor_uvr_para_calculo: Decimal | None = None,
     ) -> ProjectionGenerationResult:
         """
         Genera proyecciones de ahorro para un análisis.
@@ -741,7 +807,10 @@ class AnalysisService:
             self.propuestas_repo.delete_by_analisis(analisis_id)
             
             # Calcular estado actual (baseline)
-            baseline = self._calculate_baseline(analisis)
+            baseline = self._calculate_baseline(
+                analisis,
+                valor_uvr_para_calculo=valor_uvr_para_calculo,
+            )
             
             # Generar cada opción
             propuestas_creadas = []
@@ -853,10 +922,16 @@ class AnalysisService:
         # Campos críticos que DEBEN estar para poder calcular
         campos_criticos = {
             "saldo_capital_pesos",
-            "valor_cuota_con_seguros", 
             "cuotas_pendientes",
-            "tasa_interes_cobrada_ea"
+            "tasa_interes_cobrada_ea",
+            "valor_prestado_inicial",
         }
+
+        cuota_disponible = (
+            extracted_data.get("valor_cuota_con_subsidio")
+            or extracted_data.get("valor_cuota_con_seguros")
+            or extracted_data.get("valor_cuota_sin_seguros")
+        )
         
         # Verificar si algún campo crítico falta
         for campo in campos_criticos:
@@ -864,6 +939,9 @@ class AnalysisService:
                 return True
             if extracted_data.get(campo) is None:
                 return True
+
+        if cuota_disponible is None:
+            return True
         
         return False
     
@@ -883,7 +961,11 @@ class AnalysisService:
         ]
         return all(f is not None for f in required_fields)
     
-    def _calculate_baseline(self, analisis: AnalisisHipotecario) -> dict:
+    def _calculate_baseline(
+        self,
+        analisis: AnalisisHipotecario,
+        valor_uvr_para_calculo: Decimal | None = None,
+    ) -> dict:
         """Calcula el estado actual del crédito (sin abono extra)."""
         frech = analisis.beneficio_frech_mensual or Decimal("0")
 
@@ -921,6 +1003,14 @@ class AnalysisService:
         if cuota_cliente is None:
             raise ValueError("No hay cuota base disponible para generar proyecciones")
 
+        sistema_amortizacion = (analisis.sistema_amortizacion or "PESOS").upper().strip()
+        valor_uvr_actual = None
+        if sistema_amortizacion == "UVR":
+            if valor_uvr_para_calculo is not None and valor_uvr_para_calculo > 0:
+                valor_uvr_actual = valor_uvr_para_calculo
+            elif analisis.valor_uvr_fecha_extracto is not None and analisis.valor_uvr_fecha_extracto > 0:
+                valor_uvr_actual = analisis.valor_uvr_fecha_extracto
+
         # Crear objeto DatosCredito
         datos = DatosCredito(
             saldo_capital=analisis.saldo_capital_pesos,
@@ -930,7 +1020,8 @@ class AnalysisService:
             valor_prestado_inicial=analisis.valor_prestado_inicial,
             beneficio_frech=frech,
             seguros_mensual=analisis.seguros_total_mensual or Decimal("0"),
-            sistema_amortizacion=analisis.sistema_amortizacion or "PESOS"
+            sistema_amortizacion=sistema_amortizacion,
+            valor_uvr_actual=valor_uvr_actual,
         )
         
         # Calcular proyección actual (sin abono extra)

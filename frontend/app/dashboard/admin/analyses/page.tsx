@@ -21,6 +21,7 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { AnalysisActions } from '@/components/dashboard/analysis-actions';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
+import { formatNumberWithThousands } from '@/lib/utils';
 
 const PAGE_SIZES = [10, 25, 50];
 const LIVE_SEARCH_ENABLED = false;
@@ -202,7 +203,7 @@ export default function AdminAnalysesPage() {
     }
   };
 
-  const totalLabel = useMemo(() => `${total} análisis`, [total]);
+  const totalLabel = useMemo(() => `${formatNumberWithThousands(total)} análisis`, [total]);
 
   if (isRoleLoading) {
     return <LoadingState />;
@@ -395,7 +396,7 @@ export default function AdminAnalysesPage() {
                       </td>
                       <td className="py-4 px-4">
                         <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadge(item.status)}`}>
-                          {getStatusText(item.status)}
+                          {getStatusText(item.status, item.extracted_manually)}
                         </span>
                       </td>
                       <td className="py-4 px-4">
@@ -405,7 +406,11 @@ export default function AdminAnalysesPage() {
                             canViewDetail={item.actions.can_view_detail}
                             detailHref={`/dashboard/admin/analyses/${item.analysis_id}`}
                             canViewSummary={Boolean(item.analysis_id)}
-                            summaryHref={`/dashboard/admin/analyses/${item.analysis_id}/summary`}
+                            summaryHref={
+                              item.status === 'PENDING_MANUAL'
+                                ? `/dashboard/admin/analyses/${item.analysis_id}/manual`
+                                : `/dashboard/admin/analyses/${item.analysis_id}/summary`
+                            }
                             canDownloadPdf={item.actions.can_view_pdf && Boolean(item.document_id)}
                             onDownloadPdf={() => item.document_id && downloadDocument(item.document_id)}
                           />
@@ -423,7 +428,7 @@ export default function AdminAnalysesPage() {
                   <div className="flex items-center justify-between">
                     <p className="font-semibold text-gray-800">{item.customer.full_name}</p>
                     <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${getStatusBadge(item.status)}`}>
-                      {getStatusText(item.status)}
+                      {getStatusText(item.status, item.extracted_manually)}
                     </span>
                   </div>
 
@@ -453,7 +458,11 @@ export default function AdminAnalysesPage() {
                       canViewDetail={item.actions.can_view_detail}
                       detailHref={`/dashboard/admin/analyses/${item.analysis_id}`}
                       canViewSummary={Boolean(item.analysis_id)}
-                      summaryHref={`/dashboard/admin/analyses/${item.analysis_id}/summary`}
+                      summaryHref={
+                        item.status === 'PENDING_MANUAL'
+                          ? `/dashboard/admin/analyses/${item.analysis_id}/manual`
+                          : `/dashboard/admin/analyses/${item.analysis_id}/summary`
+                      }
                       canDownloadPdf={item.actions.can_view_pdf && Boolean(item.document_id)}
                       onDownloadPdf={() => item.document_id && downloadDocument(item.document_id)}
                     />
@@ -540,6 +549,9 @@ function getStatusBadge(status: string) {
   return STATUS_BADGE[status] || 'bg-gray-100 text-gray-600';
 }
 
-function getStatusText(status: string) {
+function getStatusText(status: string, extractedManually?: boolean) {
+  if (status === 'EXTRACTED' && extractedManually) {
+    return 'D.E. manualmente';
+  }
   return STATUS_TEXT[status] || status;
 }

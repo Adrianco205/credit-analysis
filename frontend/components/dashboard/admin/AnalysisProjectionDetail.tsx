@@ -16,6 +16,7 @@ import type {
 import { Card, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { cleanDigitsInput, formatDigitsInput } from '@/lib/utils';
 
 interface AnalysisProjectionDetailProps {
   analysisId: string;
@@ -30,6 +31,11 @@ const timesPaidFormatter = new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 2,
 });
 
+const uvrFormatter = new Intl.NumberFormat('es-CO', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+});
+
 function formatCop(value?: number | null) {
   if (value === undefined || value === null) return '$ 0';
   return `$ ${numberFormatter.format(Math.round(Number(value)) || 0)}`;
@@ -38,6 +44,25 @@ function formatCop(value?: number | null) {
 function formatTimesPaid(value?: number | null) {
   if (value === undefined || value === null) return '0,00';
   return timesPaidFormatter.format(Number(value) || 0);
+}
+
+function formatUvr(value?: number | null) {
+  if (value === undefined || value === null || Number(value) <= 0) return 'N/A';
+  return uvrFormatter.format(Number(value));
+}
+
+function cleanDecimalInput(value: string) {
+  const normalized = value.replace(',', '.').replace(/[^0-9.]/g, '');
+  const firstDotIndex = normalized.indexOf('.');
+  if (firstDotIndex === -1) return normalized;
+  const integerPart = normalized.slice(0, firstDotIndex + 1);
+  const decimalPart = normalized.slice(firstDotIndex + 1).replace(/\./g, '');
+  return `${integerPart}${decimalPart}`;
+}
+
+function parsePositiveDecimal(value: string) {
+  const parsed = Number(cleanDecimalInput(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 function toTimeDescription(time?: ProjectionTimeResponse | null) {
@@ -133,6 +158,8 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
 
   const [adminOptionEnabled, setAdminOptionEnabled] = useState(false);
   const [adminOptionValue, setAdminOptionValue] = useState('');
+  const [uvrMode, setUvrMode] = useState<'extracto' | 'manual'>('extracto');
+  const [uvrManualValue, setUvrManualValue] = useState('');
 
   const clientOptions = useMemo(() => {
     const raw = detail?.opciones_abono_preferidas || [];
@@ -146,9 +173,20 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
   const canCalculate = useMemo(() => {
     const baseValid = clientOptions.every((value) => value > 0);
     if (!baseValid) return false;
+    const isUvrCredit = (detail?.sistema_amortizacion || '').toLowerCase().includes('uvr');
+    if (isUvrCredit && uvrMode === 'manual' && parsePositiveDecimal(uvrManualValue) <= 0) {
+      return false;
+    }
     if (!adminOptionEnabled) return true;
-    return Number(adminOptionValue) > 0;
-  }, [clientOptions, adminOptionEnabled, adminOptionValue]);
+    return Number(cleanDigitsInput(adminOptionValue)) > 0;
+  }, [
+    clientOptions,
+    adminOptionEnabled,
+    adminOptionValue,
+    detail?.sistema_amortizacion,
+    uvrMode,
+    uvrManualValue,
+  ]);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -183,16 +221,22 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
       { numero_opcion: 3, abono_adicional_mensual: clientOptions[2], nombre_opcion: '3a Elección' },
     ];
 
-    if (adminOptionEnabled && Number(adminOptionValue) > 0) {
+    if (adminOptionEnabled && Number(cleanDigitsInput(adminOptionValue)) > 0) {
       opciones.push({
         numero_opcion: 4,
-        abono_adicional_mensual: Number(adminOptionValue),
+        abono_adicional_mensual: Number(cleanDigitsInput(adminOptionValue)),
         nombre_opcion: 'Recomendada',
       });
     }
 
     try {
-      const response = await apiClient.calculateAdminProjections(analysisId, opciones);
+      const isUvrCredit = (detail.sistema_amortizacion || '').toLowerCase().includes('uvr');
+      const response = await apiClient.calculateAdminProjections(analysisId, {
+        opciones,
+        uvr_mode: isUvrCredit ? uvrMode : undefined,
+        uvr_manual_value:
+          isUvrCredit && uvrMode === 'manual' ? parsePositiveDecimal(uvrManualValue) : undefined,
+      });
       if (Array.isArray(response)) {
         setProposal(buildLegacyProposal(detail, response));
       } else {
@@ -314,20 +358,20 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Input
               label="Opción 1 (Cliente)"
-              type="number"
-              value={clientOptions[0] || ''}
+              inputMode="numeric"
+              value={formatDigitsInput(String(clientOptions[0] || ''))}
               disabled
             />
             <Input
               label="Opción 2 (Cliente)"
-              type="number"
-              value={clientOptions[1] || ''}
+              inputMode="numeric"
+              value={formatDigitsInput(String(clientOptions[1] || ''))}
               disabled
             />
             <Input
               label="Opción 3 (Cliente)"
-              type="number"
-              value={clientOptions[2] || ''}
+              inputMode="numeric"
+              value={formatDigitsInput(String(clientOptions[2] || ''))}
               disabled
             />
           </div>
@@ -347,12 +391,58 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
             <div className="max-w-sm">
               <Input
                 label="Opción Recomendada (Admin)"
-                type="number"
-                min={1}
-                value={adminOptionValue}
-                onChange={(event) => setAdminOptionValue(event.target.value)}
+                inputMode="numeric"
+                value={formatDigitsInput(adminOptionValue)}
+                onChange={(event) => setAdminOptionValue(cleanDigitsInput(event.target.value))}
                 placeholder="Ej. 500000"
               />
+            </div>
+          )}
+
+          {(detail.sistema_amortizacion || '').toLowerCase().includes('uvr') && (
+            <div className="rounded-xl border border-[var(--gray-200)] bg-[var(--gray-50)] p-4 space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-[var(--verde-bosque)]">Valor UVR para el cálculo</p>
+                <p className="text-xs text-gray-600">
+                  UVR del extracto: {formatUvr(detail.valor_uvr_fecha_extracto)}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className="flex items-center gap-2 rounded-lg border border-[var(--gray-200)] bg-white p-3 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="uvr-mode"
+                    value="extracto"
+                    checked={uvrMode === 'extracto'}
+                    onChange={() => setUvrMode('extracto')}
+                  />
+                  Usar UVR del extracto
+                </label>
+
+                <label className="flex items-center gap-2 rounded-lg border border-[var(--gray-200)] bg-white p-3 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    name="uvr-mode"
+                    value="manual"
+                    checked={uvrMode === 'manual'}
+                    onChange={() => setUvrMode('manual')}
+                  />
+                  Ingresar UVR manual
+                </label>
+              </div>
+
+              {uvrMode === 'manual' && (
+                <div className="max-w-sm">
+                  <Input
+                    label="UVR manual"
+                    inputMode="decimal"
+                    value={uvrManualValue}
+                    onChange={(event) => setUvrManualValue(cleanDecimalInput(event.target.value))}
+                    placeholder="Ej. 382.1234"
+                  />
+                </div>
+              )}
             </div>
           )}
 

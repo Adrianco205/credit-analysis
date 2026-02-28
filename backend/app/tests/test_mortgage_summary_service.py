@@ -131,6 +131,26 @@ def test_summary_without_subsidy_falls_back_to_valor_total():
     assert "no_subsidy_detected" in summary.warnings
 
 
+def test_summary_uses_analysis_quota_when_total_a_pagar_is_zero():
+    analisis = _analysis_stub(
+        valor_prestado_inicial=Decimal("9000158974"),
+        saldo_capital_pesos=Decimal("56069733.47"),
+        total_por_pagar=Decimal("0"),
+        valor_cuota_con_seguros=Decimal("739086"),
+        beneficio_frech_mensual=Decimal("0"),
+        cuotas_pactadas=360,
+        cuotas_pendientes=237,
+    )
+
+    payload = build_mortgage_summary_payload(analisis)
+    summary = payload["mortgage_summary"]
+    rows = {row.key: row for row in summary.sections[0].rows}
+
+    assert rows["cuota_actual_aprox"].value == Decimal("739086")
+    assert rows["cuota_completa_aprox"].value == Decimal("739086")
+    assert "non_positive_total_a_pagar" in summary.warnings
+
+
 def test_summary_keeps_structure_when_values_missing_or_raw_formatted():
     analisis = _analysis_stub(
         datos_raw_gemini={
@@ -180,10 +200,10 @@ def test_summary_blocks_when_cuota_matches_saldo_value():
     rows = {row.key: row for row in summary.sections[0].rows}
 
     assert "blocked_quota_equals_saldo" in summary.warnings
-    assert rows["cuota_actual_aprox"].value is None
-    assert rows["cuota_completa_aprox"].value is None
-    assert rows["total_pagado_fecha"].value is None
-    assert rows["monto_real_pagado_banco"].value is None
+    assert rows["cuota_actual_aprox"].value == Decimal("724696.78")
+    assert rows["cuota_completa_aprox"].value == Decimal("724696.78")
+    assert rows["total_pagado_fecha"].value == Decimal("39858322.90")
+    assert rows["monto_real_pagado_banco"].value == Decimal("50928156.40")
     assert summary.debug["applied_rules"]["quota_mapping_blocked"] is True
 
 

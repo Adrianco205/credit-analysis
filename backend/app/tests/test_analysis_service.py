@@ -353,7 +353,8 @@ class TestAnalysisServiceLogic:
             "saldo_capital_pesos": Decimal("100000000"),
             "valor_cuota_con_seguros": Decimal("1200000"),
             "cuotas_pendientes": 120,
-            "tasa_interes_cobrada_ea": Decimal("0.05")
+            "tasa_interes_cobrada_ea": Decimal("0.05"),
+            "valor_prestado_inicial": Decimal("150000000"),
         }
         campos_faltantes = []
         
@@ -556,8 +557,8 @@ class TestAnalysisServiceLogic:
         assert result.success is False
         assert result.error_code == "IDENTITY_MISMATCH"
         assert "Nombre: CARLOS ANDRES OTRA PERSONA" in (result.error_message or "")
-        assert "CC: 987654321" in (result.error_message or "")
-        assert "Inicia sesión con la cuenta asociada a la CC 987654321" in (result.error_message or "")
+        assert "CC:" not in (result.error_message or "")
+        assert "Inicia sesión con la cuenta asociada a este titular" in (result.error_message or "")
 
     @pytest.mark.asyncio
     async def test_create_analysis_blocks_by_name_and_sets_cc_na_when_not_explicit(self):
@@ -626,7 +627,7 @@ class TestAnalysisServiceLogic:
 
         assert result.success is False
         assert result.error_code == "IDENTITY_MISMATCH"
-        assert "CC: N/A" in (result.error_message or "")
+        assert "CC:" not in (result.error_message or "")
 
     @pytest.mark.asyncio
     async def test_create_analysis_blocks_when_ocr_identity_not_readable(self):
@@ -757,6 +758,75 @@ class TestAnalysisServiceLogic:
         assert result.success is True
         assert result.error_code is None
         assert result.id_mismatch is False
+
+    @pytest.mark.asyncio
+    async def test_create_analysis_allows_when_local_name_fallback_detects_match(self):
+        service = AnalysisService.__new__(AnalysisService)
+
+        documento_id = uuid.uuid4()
+        usuario_id = uuid.uuid4()
+        analisis_id = uuid.uuid4()
+
+        service.documents_repo = MagicMock()
+        service.documents_repo.get_by_id_and_user.return_value = MagicMock(
+            id=documento_id,
+            s3_key="pdfs/test/doc.pdf"
+        )
+
+        service.analyses_repo = MagicMock()
+        service.analyses_repo.get_by_documento.return_value = None
+        service.analyses_repo.create.return_value = MagicMock(id=analisis_id, status="EXTRACTED")
+        service.analyses_repo.calculate_derived_fields = MagicMock()
+
+        service.storage = MagicMock()
+        service.storage.get_pdf.return_value = b"%PDF-1.4 fake-pdf"
+
+        service.gemini = MagicMock()
+        service.gemini.extract_credit_data = AsyncMock(return_value=ExtractionResult(
+            status=ExtractionStatus.SUCCESS,
+            confidence=0.9,
+            data={
+                "nombre_titular": "OSNAIDER JOSE PEREZ TORRES",
+                "identificacion_titular": None,
+                "saldo_capital_pesos": Decimal("56069733.47"),
+                "valor_cuota_con_seguros": Decimal("305034.17"),
+                "cuotas_pendientes": 325,
+                "tasa_interes_cobrada_ea": Decimal("0.1420"),
+                "valor_prestado_inicial": Decimal("9000158974"),
+            },
+            campos_encontrados=["nombre_titular", "saldo_capital_pesos", "valor_cuota_con_seguros", "cuotas_pendientes", "tasa_interes_cobrada_ea", "valor_prestado_inicial"],
+            campos_faltantes=[],
+            es_extracto_hipotecario=True,
+        ))
+        service.gemini.compare_names = AsyncMock(return_value=MagicMock(match=False))
+
+        service.db = MagicMock()
+        service.db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+        service.db.commit = MagicMock()
+        service.db.rollback = MagicMock()
+
+        usuario = MagicMock()
+        usuario.id = usuario_id
+        usuario.nombres = "OSNAIDER JOSE"
+        usuario.primer_apellido = "PEREZ"
+        usuario.segundo_apellido = "TORRES"
+        usuario.identificacion = "123456789"
+
+        datos_usuario = DatosUsuarioInput(
+            ingresos_mensuales=Decimal("5000000"),
+            capacidad_pago_max=Decimal("2000000"),
+            tipo_contrato_laboral="Indefinido",
+        )
+
+        result = await AnalysisService.create_analysis_from_document(
+            service,
+            documento_id=documento_id,
+            usuario=usuario,
+            datos_usuario=datos_usuario,
+        )
+
+        assert result.success is True
+        assert result.error_code is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

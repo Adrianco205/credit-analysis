@@ -144,6 +144,52 @@ export interface AdminClientAnalysisUploadRequest {
   password?: string;
 }
 
+export interface AdminManualProjectionRequest {
+  customer_full_name: string;
+  customer_id_number: string;
+  customer_email: string;
+  customer_phone: string;
+  ingresos_mensuales: number;
+  capacidad_pago_max?: number;
+  tipo_contrato_laboral?: string;
+  banco_id: number;
+  opcion_abono_1?: number;
+  opcion_abono_2?: number;
+  opcion_abono_3?: number;
+  numero_credito: string;
+  sistema_amortizacion: string;
+  plan_credito?: string;
+  valor_prestado_inicial: number;
+  fecha_desembolso?: string;
+  fecha_extracto: string;
+  plazo_total_meses: number;
+  cuotas_pactadas: number;
+  cuotas_pagadas: number;
+  cuotas_pendientes: number;
+  tasa_interes_pactada_ea?: number;
+  tasa_interes_cobrada_ea: number;
+  tasa_interes_subsidiada_ea?: number;
+  tasa_mora_pactada_ea?: number;
+  valor_cuota_sin_seguros?: number;
+  valor_cuota_con_seguros: number;
+  beneficio_frech_mensual?: number;
+  valor_cuota_con_subsidio?: number;
+  saldo_capital_pesos: number;
+  total_por_pagar?: number;
+  saldo_capital_uvr?: number;
+  valor_uvr_fecha_extracto?: number;
+  valor_cuota_uvr?: number;
+  seguro_vida?: number;
+  seguro_incendio?: number;
+  seguro_terremoto?: number;
+  capital_pagado_periodo?: number;
+  intereses_corrientes_periodo?: number;
+  intereses_mora?: number;
+  otros_cargos?: number;
+  file: File;
+  password?: string;
+}
+
 export interface UpdateManualFieldsRequest {
   numero_credito?: string;
   sistema_amortizacion?: string;
@@ -154,7 +200,9 @@ export interface UpdateManualFieldsRequest {
   cuotas_pendientes?: number;
   tasa_interes_pactada_ea?: number;
   tasa_interes_cobrada_ea?: number;
+  valor_cuota_con_subsidio?: number;
   valor_cuota_con_seguros?: number;
+  valor_cuota_sin_seguros?: number;
   beneficio_frech_mensual?: number;
   saldo_capital_pesos?: number;
   saldo_capital_uvr?: number;
@@ -311,8 +359,22 @@ export interface EstudioHistorialItem {
   banco_nombre: string | null;
   fecha_subida: string | null;
   status: string;
+  extracted_manually?: boolean;
   saldo_actual: number | null;
   numero_credito: string | null;
+}
+
+export interface AnalysisDetailResponse {
+  id: string;
+  status: string;
+  valor_prestado_inicial?: number | null;
+  saldo_capital_pesos?: number | null;
+  valor_cuota_con_subsidio?: number | null;
+  valor_cuota_con_seguros?: number | null;
+  valor_cuota_sin_seguros?: number | null;
+  cuotas_pendientes?: number | null;
+  tasa_interes_cobrada_ea?: number | null;
+  campos_manuales?: string[] | null;
 }
 
 export interface EstudiosHistorialResponse {
@@ -339,6 +401,7 @@ export interface AdminAnalysisItem {
   document_id: string | null;
   credit_number: string | null;
   status: string;
+  extracted_manually?: boolean;
   customer: {
     user_id: string;
     full_name: string;
@@ -379,7 +442,12 @@ export interface AdminAnalysisDetailResponse {
   sistema_amortizacion?: string | null;
   plan_credito?: string | null;
   tasa_interes_cobrada_ea?: number | null;
+  valor_prestado_inicial?: number | null;
+  valor_cuota_con_subsidio?: number | null;
+  valor_cuota_sin_seguros?: number | null;
   valor_cuota_con_seguros?: number | null;
+  saldo_capital_uvr?: number | null;
+  valor_uvr_fecha_extracto?: number | null;
   cuotas_pendientes?: number | null;
   cuotas_pagadas?: number | null;
   fecha_extracto?: string | null;
@@ -388,6 +456,22 @@ export interface AdminAnalysisDetailResponse {
   capacidad_pago_max?: number | null;
   opciones_abono_preferidas?: number[] | null;
   created_at?: string | null;
+}
+
+export interface AdminUpdateAnalysisRequest {
+  ingresos_mensuales?: number;
+  capacidad_pago_max?: number;
+  saldo_capital_pesos?: number;
+  cuotas_pendientes?: number;
+  tasa_interes_cobrada_ea?: number;
+  valor_prestado_inicial?: number;
+  valor_cuota_con_subsidio?: number;
+  valor_cuota_con_seguros?: number;
+  valor_cuota_sin_seguros?: number;
+  capital_pagado_periodo?: number;
+  intereses_corrientes_periodo?: number;
+  intereses_mora?: number;
+  otros_cargos?: number;
 }
 
 export interface ProjectionTimeResponse {
@@ -446,6 +530,13 @@ export interface AdminProjectionOptionRequest {
   numero_opcion: number;
   abono_adicional_mensual: number;
   nombre_opcion: string;
+}
+
+export interface AdminCalculateProjectionsRequest {
+  opciones: AdminProjectionOptionRequest[];
+  ingresos_override?: number;
+  uvr_mode?: 'extracto' | 'manual';
+  uvr_manual_value?: number;
 }
 
 export interface AdminProjectionResponse {

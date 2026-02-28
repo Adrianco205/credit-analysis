@@ -9,7 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { AnalysisSummary, SummaryRow } from '@/types/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
-import { formatCopCurrency } from '@/lib/utils';
+import { formatCopCurrency, formatNumberWithThousands } from '@/lib/utils';
 
 const WARNING_MESSAGES: Record<string, string> = {
   wrong_mapping_saldo_as_cuota: 'Se detectó un posible mapeo incorrecto: el saldo fue interpretado como cuota.',
@@ -221,6 +221,10 @@ function formatSummaryRowValue(row: SummaryRow) {
     return '—';
   }
 
+  if (row.key === 'beneficio_frech' && Number(row.value) <= 0) {
+    return 'No aplica';
+  }
+
   if (row.currency) {
     return formatMoney(Number(row.value));
   }
@@ -229,7 +233,7 @@ function formatSummaryRowValue(row: SummaryRow) {
     return `${Number(row.value).toFixed(2)}%`;
   }
 
-  return row.value;
+  return formatNumberWithThousands(Number(row.value));
 }
 
 function getSummaryRowClass(row: SummaryRow) {

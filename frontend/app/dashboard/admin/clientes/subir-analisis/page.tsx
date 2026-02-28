@@ -10,6 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { cleanDigitsInput, formatDigitsInput } from '@/lib/utils';
 
 export default function AdminClientUploadAnalysisPage() {
   const router = useRouter();
@@ -218,6 +219,13 @@ export default function AdminClientUploadAnalysisPage() {
         throw new Error(result.message || 'No se pudo crear el análisis');
       }
 
+      if (result.requires_manual_input) {
+        await completeLoadingOverlay();
+        toast.warning('Faltan datos para proyectar. Completa la calculadora manual del análisis.');
+        router.push(`/dashboard/admin/analyses/${result.analisis_id}/manual`);
+        return;
+      }
+
       await completeLoadingOverlay();
       toast.success('Análisis del cliente creado y guardado exitosamente');
       router.push(`/dashboard/admin/analyses/${result.analisis_id}`);
@@ -304,8 +312,8 @@ export default function AdminClientUploadAnalysisPage() {
             <Input
               label="Ingresos Mensuales (COP) *"
               inputMode="numeric"
-              value={formatNumberInput(income)}
-              onChange={(e) => setIncome(cleanNumberInput(e.target.value))}
+              value={formatDigitsInput(income)}
+              onChange={(e) => setIncome(cleanDigitsInput(e.target.value))}
               leftIcon={<DollarSign size={18} />}
               placeholder="Ej: 5.000.000"
               required
@@ -313,8 +321,8 @@ export default function AdminClientUploadAnalysisPage() {
             <Input
               label="Capacidad de Pago Máxima (COP) *"
               inputMode="numeric"
-              value={formatNumberInput(paymentCapacity)}
-              onChange={(e) => setPaymentCapacity(cleanNumberInput(e.target.value))}
+              value={formatDigitsInput(paymentCapacity)}
+              onChange={(e) => setPaymentCapacity(cleanDigitsInput(e.target.value))}
               leftIcon={<DollarSign size={18} />}
               placeholder="Ej: 1.500.000"
               required
@@ -363,20 +371,20 @@ export default function AdminClientUploadAnalysisPage() {
               <Input
                 label="Opción 1"
                 inputMode="numeric"
-                value={formatNumberInput(option1)}
-                onChange={(e) => setOption1(cleanNumberInput(e.target.value))}
+                value={formatDigitsInput(option1)}
+                onChange={(e) => setOption1(cleanDigitsInput(e.target.value))}
               />
               <Input
                 label="Opción 2"
                 inputMode="numeric"
-                value={formatNumberInput(option2)}
-                onChange={(e) => setOption2(cleanNumberInput(e.target.value))}
+                value={formatDigitsInput(option2)}
+                onChange={(e) => setOption2(cleanDigitsInput(e.target.value))}
               />
               <Input
                 label="Opción 3"
                 inputMode="numeric"
-                value={formatNumberInput(option3)}
-                onChange={(e) => setOption3(cleanNumberInput(e.target.value))}
+                value={formatDigitsInput(option3)}
+                onChange={(e) => setOption3(cleanDigitsInput(e.target.value))}
               />
             </div>
           </div>
@@ -518,13 +526,3 @@ function AdminAnalysisLoadingOverlay({ progress, statusText }: { progress: numbe
   );
 }
 
-function cleanNumberInput(value: string) {
-  return value.replace(/[^\d]/g, '');
-}
-
-function formatNumberInput(value: string) {
-  if (!value) return '';
-  const parsed = Number(value);
-  if (Number.isNaN(parsed)) return '';
-  return new Intl.NumberFormat('es-CO').format(parsed);
-}

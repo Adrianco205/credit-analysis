@@ -130,6 +130,7 @@ class EstudioHistorialItem(BaseModel):
     banco_nombre: str | None
     fecha_subida: datetime | None
     status: str
+    extracted_manually: bool = False
     # Información adicional útil
     saldo_actual: float | None
     numero_credito: str | None

@@ -321,6 +321,8 @@ export default function RegisterPage() {
                   Acepto los{' '}
                   <Link
                     href="/terminos"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-verde-bosque hover:text-verde-hoja font-medium underline"
                   >
                     términos y condiciones
@@ -328,6 +330,8 @@ export default function RegisterPage() {
                   y la{' '}
                   <Link
                     href="/politica"
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="text-verde-bosque hover:text-verde-hoja font-medium underline"
                   >
                     política de privacidad

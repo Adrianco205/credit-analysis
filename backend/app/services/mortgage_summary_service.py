@@ -186,11 +186,44 @@ class MortgageSummaryBuilder:
         cuota_actual_refs: list[str] = []
         no_subsidy_detected = False
 
-        if total_a_pagar is not None:
+        cuota_fallback_value = None
+        cuota_fallback_kind = None
+        for key, raw_value in [
+            ("valor_cuota_con_subsidio", getattr(analisis, "valor_cuota_con_subsidio", None)),
+            ("valor_cuota_con_seguros", getattr(analisis, "valor_cuota_con_seguros", None)),
+            ("valor_cuota_sin_seguros", getattr(analisis, "valor_cuota_sin_seguros", None)),
+        ]:
+            parsed_value = _to_decimal_or_none(raw_value)
+            if parsed_value is not None and parsed_value > 0:
+                cuota_fallback_value = parsed_value
+                cuota_fallback_kind = key
+                break
+
+        if total_a_pagar is not None and total_a_pagar > 0:
             cuota_actual = total_a_pagar
             cuota_actual_source = resolved["total_a_pagar"].source
             cuota_actual_conf = resolved["total_a_pagar"].confidence
             cuota_actual_refs = resolved["total_a_pagar"].refs
+        elif total_a_pagar is not None and total_a_pagar <= 0:
+            warnings.append("non_positive_total_a_pagar")
+            if cuota_fallback_value is not None:
+                cuota_actual = cuota_fallback_value
+                cuota_actual_source = f"analysis_fallback:{cuota_fallback_kind}"
+                cuota_actual_conf = 0.86
+                cuota_actual_refs = [f"fallback:{cuota_fallback_kind}"]
+            elif valor_total is not None and beneficio_frech > 0:
+                cuota_actual = max(valor_total - beneficio_frech, Decimal("0"))
+                cuota_actual_source = "calculated"
+                cuota_actual_conf = 0.82
+                cuota_actual_refs = resolved["valor_total"].refs + resolved["beneficio_frech"].refs
+            elif valor_total is not None:
+                cuota_actual = valor_total
+                cuota_actual_source = resolved["valor_total"].source
+                cuota_actual_conf = resolved["valor_total"].confidence
+                cuota_actual_refs = resolved["valor_total"].refs
+                no_subsidy_detected = True
+            else:
+                cuota_actual = None
         elif valor_total is not None and beneficio_frech > 0:
             cuota_actual = max(valor_total - beneficio_frech, Decimal("0"))
             cuota_actual_source = "calculated"
@@ -209,10 +242,16 @@ class MortgageSummaryBuilder:
         if cuota_actual is not None and saldo_actual is not None and cuota_actual == saldo_actual:
             warnings.append("wrong_mapping_saldo_as_cuota")
             warnings.append("blocked_quota_equals_saldo")
-            cuota_actual = None
-            cuota_actual_source = "missing"
-            cuota_actual_conf = None
-            cuota_actual_refs = ["rule:blocked_quota_equals_saldo"]
+            if cuota_fallback_value is not None and cuota_fallback_value != saldo_actual:
+                cuota_actual = cuota_fallback_value
+                cuota_actual_source = f"analysis_fallback:{cuota_fallback_kind}"
+                cuota_actual_conf = 0.86
+                cuota_actual_refs = [f"fallback:{cuota_fallback_kind}", "rule:blocked_quota_equals_saldo"]
+            else:
+                cuota_actual = None
+                cuota_actual_source = "missing"
+                cuota_actual_conf = None
+                cuota_actual_refs = ["rule:blocked_quota_equals_saldo"]
             quota_mapping_blocked = True
 
         if cuota_actual is not None and valor_prestado is not None and valor_prestado > 0:
@@ -228,7 +267,12 @@ class MortgageSummaryBuilder:
             if delta > Decimal("3"):
                 warnings.append("value_total_inconsistency")
 
-        cuota_completa = None if cuota_actual is None else (cuota_actual + beneficio_frech)
+        cuota_completa = None
+        if cuota_actual is not None:
+            if cuota_actual_source.endswith("valor_cuota_con_seguros") or cuota_actual_source.endswith("valor_cuota_sin_seguros"):
+                cuota_completa = cuota_actual
+            else:
+                cuota_completa = cuota_actual + beneficio_frech
 
         total_pagado_dia = None
         total_pagado_source = "missing"

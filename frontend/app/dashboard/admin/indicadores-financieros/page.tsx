@@ -18,6 +18,7 @@ import type {
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { cleanDigitsInput, formatDigitsInput, formatMonetaryInput, parseMonetaryInput } from '@/lib/utils';
 
 const pesosFormatter = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -263,7 +264,7 @@ export default function AdminIndicadoresFinancierosPage() {
     setConversion(null);
 
     try {
-      const monto = Number(uvrMonto);
+      const monto = parseMonetaryInput(uvrMonto);
       if (!monto || monto <= 0) {
         setConversionError('Ingresa una cantidad UVR válida.');
         return;
@@ -288,8 +289,8 @@ export default function AdminIndicadoresFinancierosPage() {
     setProjection(null);
 
     try {
-      const meses = Number(projectionMonths);
-      const inflacion = Number(projectionInflation);
+      const meses = Number(cleanDigitsInput(projectionMonths));
+      const inflacion = parseMonetaryInput(projectionInflation);
 
       if (!meses || meses < 1 || meses > 360) {
         setProjectionError('Meses debe estar entre 1 y 360.');
@@ -386,11 +387,9 @@ export default function AdminIndicadoresFinancierosPage() {
           <form onSubmit={handleConvert} className="space-y-4">
             <Input
               label="Cantidad UVR"
-              type="number"
-              value={uvrMonto}
+              inputMode="decimal"
+              value={formatMonetaryInput(uvrMonto)}
               onChange={(event) => setUvrMonto(event.target.value)}
-              min={0.0001}
-              step={0.0001}
             />
             <Button type="submit" isLoading={converting}>Convertir</Button>
 
@@ -415,19 +414,15 @@ export default function AdminIndicadoresFinancierosPage() {
           <form onSubmit={handleProject} className="space-y-4">
             <Input
               label="Meses a proyectar"
-              type="number"
-              value={projectionMonths}
-              onChange={(event) => setProjectionMonths(event.target.value)}
-              min={1}
-              max={360}
+              inputMode="numeric"
+              value={formatDigitsInput(projectionMonths)}
+              onChange={(event) => setProjectionMonths(cleanDigitsInput(event.target.value))}
             />
             <Input
               label="Inflación anual esperada (decimal)"
-              type="number"
-              value={projectionInflation}
+              inputMode="decimal"
+              value={formatMonetaryInput(projectionInflation)}
               onChange={(event) => setProjectionInflation(event.target.value)}
-              min={0.0001}
-              step={0.0001}
             />
             <Button type="submit" isLoading={projecting}>Proyectar</Button>
 

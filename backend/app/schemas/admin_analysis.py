@@ -30,6 +30,7 @@ class AdminAnalysisItem(BaseModel):
     credit_number: str | None = None
     document_id: UUID | None = None
     status: str
+    extracted_manually: bool = False
     actions: AdminAnalysisActions
 
 

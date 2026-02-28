@@ -18,6 +18,8 @@ import type {
   CreateAnalysisRequest,
   CreateAnalysisResponse,
   AdminClientAnalysisUploadRequest,
+  AdminManualProjectionRequest,
+  AnalysisDetailResponse,
   AnalysisSummary,
   ProjectionRequestOption,
   ProjectionResponse,
@@ -26,7 +28,9 @@ import type {
   AdminAnalysesResponse,
   AdminAnalysesParams,
   AdminAnalysisDetailResponse,
+  AdminUpdateAnalysisRequest,
   AdminProjectionOptionRequest,
+  AdminCalculateProjectionsRequest,
   AdminProjectionResponse,
   PropuestaCompletaResponse,
   UVRResponse,
@@ -265,8 +269,65 @@ class ApiClient {
     return response.data;
   }
 
+  public async createAdminManualProjection(data: AdminManualProjectionRequest): Promise<CreateAnalysisResponse> {
+    const formData = new FormData();
+    formData.append('customer_full_name', data.customer_full_name);
+    formData.append('customer_id_number', data.customer_id_number);
+    formData.append('customer_email', data.customer_email);
+    formData.append('customer_phone', data.customer_phone);
+    formData.append('ingresos_mensuales', String(data.ingresos_mensuales));
+    if (data.capacidad_pago_max !== undefined) formData.append('capacidad_pago_max', String(data.capacidad_pago_max));
+    if (data.tipo_contrato_laboral) formData.append('tipo_contrato_laboral', data.tipo_contrato_laboral);
+    formData.append('banco_id', String(data.banco_id));
+    if (data.opcion_abono_1 !== undefined) formData.append('opcion_abono_1', String(data.opcion_abono_1));
+    if (data.opcion_abono_2 !== undefined) formData.append('opcion_abono_2', String(data.opcion_abono_2));
+    if (data.opcion_abono_3 !== undefined) formData.append('opcion_abono_3', String(data.opcion_abono_3));
+    formData.append('numero_credito', data.numero_credito);
+    formData.append('sistema_amortizacion', data.sistema_amortizacion);
+    if (data.plan_credito) formData.append('plan_credito', data.plan_credito);
+    formData.append('valor_prestado_inicial', String(data.valor_prestado_inicial));
+    if (data.fecha_desembolso) formData.append('fecha_desembolso', data.fecha_desembolso);
+    formData.append('fecha_extracto', data.fecha_extracto);
+    formData.append('plazo_total_meses', String(data.plazo_total_meses));
+    formData.append('cuotas_pactadas', String(data.cuotas_pactadas));
+    formData.append('cuotas_pagadas', String(data.cuotas_pagadas));
+    formData.append('cuotas_pendientes', String(data.cuotas_pendientes));
+    if (data.tasa_interes_pactada_ea !== undefined) formData.append('tasa_interes_pactada_ea', String(data.tasa_interes_pactada_ea));
+    formData.append('tasa_interes_cobrada_ea', String(data.tasa_interes_cobrada_ea));
+    if (data.tasa_interes_subsidiada_ea !== undefined) formData.append('tasa_interes_subsidiada_ea', String(data.tasa_interes_subsidiada_ea));
+    if (data.tasa_mora_pactada_ea !== undefined) formData.append('tasa_mora_pactada_ea', String(data.tasa_mora_pactada_ea));
+    if (data.valor_cuota_sin_seguros !== undefined) formData.append('valor_cuota_sin_seguros', String(data.valor_cuota_sin_seguros));
+    formData.append('valor_cuota_con_seguros', String(data.valor_cuota_con_seguros));
+    if (data.beneficio_frech_mensual !== undefined) formData.append('beneficio_frech_mensual', String(data.beneficio_frech_mensual));
+    if (data.valor_cuota_con_subsidio !== undefined) formData.append('valor_cuota_con_subsidio', String(data.valor_cuota_con_subsidio));
+    formData.append('saldo_capital_pesos', String(data.saldo_capital_pesos));
+    if (data.total_por_pagar !== undefined) formData.append('total_por_pagar', String(data.total_por_pagar));
+    if (data.saldo_capital_uvr !== undefined) formData.append('saldo_capital_uvr', String(data.saldo_capital_uvr));
+    if (data.valor_uvr_fecha_extracto !== undefined) formData.append('valor_uvr_fecha_extracto', String(data.valor_uvr_fecha_extracto));
+    if (data.valor_cuota_uvr !== undefined) formData.append('valor_cuota_uvr', String(data.valor_cuota_uvr));
+    if (data.seguro_vida !== undefined) formData.append('seguro_vida', String(data.seguro_vida));
+    if (data.seguro_incendio !== undefined) formData.append('seguro_incendio', String(data.seguro_incendio));
+    if (data.seguro_terremoto !== undefined) formData.append('seguro_terremoto', String(data.seguro_terremoto));
+    if (data.capital_pagado_periodo !== undefined) formData.append('capital_pagado_periodo', String(data.capital_pagado_periodo));
+    if (data.intereses_corrientes_periodo !== undefined) formData.append('intereses_corrientes_periodo', String(data.intereses_corrientes_periodo));
+    if (data.intereses_mora !== undefined) formData.append('intereses_mora', String(data.intereses_mora));
+    if (data.otros_cargos !== undefined) formData.append('otros_cargos', String(data.otros_cargos));
+    if (data.password) formData.append('password', data.password);
+    formData.append('file', data.file);
+
+    const response = await this.client.post<CreateAnalysisResponse>('/admin/analyses/manual-projection', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  }
+
   public async getAnalysisSummary(analysisId: string): Promise<AnalysisSummary> {
     const response = await this.client.get<AnalysisSummary>(`/analyses/${analysisId}/summary`);
+    return response.data;
+  }
+
+  public async getAnalysisDetail(analysisId: string): Promise<AnalysisDetailResponse> {
+    const response = await this.client.get<AnalysisDetailResponse>(`/analyses/${analysisId}`);
     return response.data;
   }
 
@@ -302,13 +363,16 @@ class ApiClient {
     return response.data;
   }
 
+  public async updateAdminAnalysis(analysisId: string, data: AdminUpdateAnalysisRequest): Promise<AdminAnalysisDetailResponse> {
+    const response = await this.client.patch<AdminAnalysisDetailResponse>(`/admin/analyses/${analysisId}`, data);
+    return response.data;
+  }
+
   public async calculateAdminProjections(
     analysisId: string,
-    opciones: AdminProjectionOptionRequest[]
+    data: AdminCalculateProjectionsRequest
   ): Promise<PropuestaCompletaResponse | AdminProjectionResponse[]> {
-    const response = await this.client.post<PropuestaCompletaResponse | AdminProjectionResponse[]>(`/admin/analyses/${analysisId}/calculate`, {
-      opciones,
-    });
+    const response = await this.client.post<PropuestaCompletaResponse | AdminProjectionResponse[]>(`/admin/analyses/${analysisId}/calculate`, data);
     return response.data;
   }
 
