@@ -46,7 +46,7 @@ FASE 4: DASHBOARD ADMINISTRATIVO (ADMIN CONTROL)
 - Visualización: Filtros por Cédula, Fecha y Número de Crédito.
 - Generación de Propuesta:
   - Botón "Calcular": Ejecuta el Motor Financiero.
-  - Cálculo de Honorarios: 3% del Ahorro Total Proyectado o Tarifa Mínima.
+  - Cálculo de Honorarios: 6% del Ahorro Total Proyectado o Tarifa Mínima.
   - Ingresos Mínimos: Calcular el 30% de la nueva cuota (Ley de Vivienda).
 - Edición Manual: El Admin puede cambiar el "Ingreso Mensual" o los "Abonos" 
   para ver cómo cambian las tablas en tiempo real antes de entregar al cliente.
@@ -65,7 +65,7 @@ Tablas clave para el Core:
   * analisis_id (FK)
   * opcion_numero (1, 2, 3 o Manual)
   * meses_ahorrados, intereses_ahorrados.
-  * honorarios_calculados (3%).
+  * honorarios_calculados (6%).
   * ingresos_requeridos_demostrar.
 
 4. DETALLE DEL RESUMEN PARA EL CLIENTE (UI/UX)

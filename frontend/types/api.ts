@@ -446,12 +446,16 @@ export interface AdminAnalysisDetailResponse {
   valor_cuota_con_subsidio?: number | null;
   valor_cuota_sin_seguros?: number | null;
   valor_cuota_con_seguros?: number | null;
+  beneficio_frech_mensual?: number | null;
   saldo_capital_uvr?: number | null;
   valor_uvr_fecha_extracto?: number | null;
   cuotas_pendientes?: number | null;
   cuotas_pagadas?: number | null;
   fecha_extracto?: string | null;
   saldo_capital_pesos?: number | null;
+  total_por_pagar?: number | null;
+  total_por_pagar_proyectado?: number | null;
+  veces_pagado_actual?: number | null;
   ingresos_mensuales?: number | null;
   capacidad_pago_max?: number | null;
   opciones_abono_preferidas?: number[] | null;

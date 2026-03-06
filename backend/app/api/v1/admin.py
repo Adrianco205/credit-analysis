@@ -169,6 +169,9 @@ class AdminAnalysisDetail(BaseModel):
     opciones_abono_preferidas: list[Decimal] | None
     
     # Cálculos derivados
+    total_por_pagar: Decimal | None
+    total_por_pagar_proyectado: Decimal | None
+    veces_pagado_actual: Decimal | None
     total_pagado_fecha: Decimal | None
     total_frech_recibido: Decimal | None
     ajuste_inflacion_pesos: Decimal | None
@@ -867,6 +870,24 @@ def get_analysis_admin(
         banco = db.get(Banco, analisis.banco_id)
         if banco and banco.nombre:
             banco_nombre = banco.nombre
+
+    total_por_pagar_proyectado: Decimal | None = None
+    veces_pagado_actual: Decimal | None = None
+    try:
+        # Fuente de verdad para "Límites hoy": proyección financiera mes a mes (abono = 0).
+        service = get_analysis_service(db)
+        baseline = service._calculate_baseline(analisis)
+        total_por_pagar_proyectado = baseline.get("total_actual")
+        veces_pagado_actual = baseline.get("veces_pagado_actual")
+    except Exception as exc:
+        logger.warning("No se pudo calcular baseline proyectado para admin detail %s: %s", analysis_id, exc)
+
+    if veces_pagado_actual is None:
+        veces_pagado_actual = (
+            (analisis.total_por_pagar / analisis.saldo_capital_pesos).quantize(Decimal("0.01"))
+            if analisis.total_por_pagar is not None and analisis.saldo_capital_pesos and analisis.saldo_capital_pesos > 0
+            else None
+        )
     
     return AdminAnalysisDetail(
         id=analisis.id,
@@ -907,6 +928,9 @@ def get_analysis_admin(
         capacidad_pago_max=analisis.capacidad_pago_max,
         tipo_contrato_laboral=analisis.tipo_contrato_laboral,
         opciones_abono_preferidas=analisis.opciones_abono_preferidas,
+        total_por_pagar=analisis.total_por_pagar,
+        total_por_pagar_proyectado=total_por_pagar_proyectado,
+        veces_pagado_actual=veces_pagado_actual,
         total_pagado_fecha=analisis.total_pagado_fecha,
         total_frech_recibido=analisis.total_frech_recibido,
         ajuste_inflacion_pesos=analisis.ajuste_inflacion_pesos,

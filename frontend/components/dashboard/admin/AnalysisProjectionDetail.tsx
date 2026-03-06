@@ -97,30 +97,54 @@ function buildLegacyProposal(
   legacy: AdminProjectionResponse[]
 ): PropuestaCompletaResponse {
   const cuotasPendientes = Number(detail.cuotas_pendientes || 0);
-  const cuotaActual = Number(detail.valor_cuota_con_seguros || 0);
-  const cuotasPagadas = Number(detail.cuotas_pagadas || 0);
-  const totalPagarAprox = cuotaActual * cuotasPendientes;
-  const vecesPagado = cuotasPendientes > 0 ? cuotasPagadas / cuotasPendientes : 0;
+  const saldoCredito = Number(detail.saldo_capital_pesos || 0);
+  const frech = Number(detail.beneficio_frech_mensual || 0);
+  const cuotaConSubsidio = Number(detail.valor_cuota_con_subsidio || 0);
+  const cuotaConSeguros = Number(detail.valor_cuota_con_seguros || 0);
+  const cuotaSinSeguros = Number(detail.valor_cuota_sin_seguros || 0);
 
-  const opciones: ProposalOptionResponse[] = legacy.map((item) => ({
-    id: item.id,
-    numero_opcion: item.numero_opcion,
-    nombre_opcion: item.nombre_opcion,
-    abono_adicional_mensual: Number(item.abono_adicional_mensual || 0),
-    cuotas_nuevas: Number(item.cuotas_nuevas || 0),
-    tiempo_restante: monthsToTime((item.tiempo_restante_anios || 0) * 12 + (item.tiempo_restante_meses || 0)),
-    nuevo_valor_cuota: Number(item.nuevo_valor_cuota || 0),
-    total_por_pagar_aprox: Number(item.total_por_pagar_aprox || 0),
-    cuotas_reducidas: Number(item.cuotas_reducidas || 0),
-    tiempo_ahorrado: monthsToTime((item.tiempo_ahorrado_anios || 0) * 12 + (item.tiempo_ahorrado_meses || 0)),
-    valor_ahorrado_intereses: Number(item.valor_ahorrado_intereses || 0),
-    veces_pagado: Number(item.veces_pagado || 0),
-    honorarios_calculados: Number(item.honorarios_calculados || 0),
-    honorarios_con_iva: Number(item.honorarios_con_iva || 0),
-    ingreso_minimo_requerido: Number(item.ingreso_minimo_requerido || 0),
-    origen: item.origen,
-    es_opcion_seleccionada: item.es_opcion_seleccionada,
-  }));
+  // Prioriza la cuota que realmente paga el cliente (sin FRECH).
+  // Si no viene explícita, intenta derivarla desde cuota completa - FRECH.
+  const cuotaActual =
+    cuotaConSubsidio > 0
+      ? cuotaConSubsidio
+      : (cuotaConSeguros > frech && frech > 0
+        ? cuotaConSeguros - frech
+        : (cuotaConSeguros || cuotaSinSeguros));
+  const totalPagarBackend = Number(detail.total_por_pagar_proyectado || detail.total_por_pagar || 0);
+  const totalPagarAprox =
+    totalPagarBackend > saldoCredito
+      ? totalPagarBackend
+      : cuotaActual * cuotasPendientes;
+  const vecesPagado =
+    Number(detail.veces_pagado_actual || 0) > 0
+      ? Number(detail.veces_pagado_actual || 0)
+      : (saldoCredito > 0 ? totalPagarAprox / saldoCredito : 0);
+
+  const opciones: ProposalOptionResponse[] = legacy.map((item) => {
+    const totalPorPagarAprox = Number(item.total_por_pagar_aprox || 0);
+    const vecesPagadoOpcion = Number(item.veces_pagado || 0);
+
+    return {
+      id: item.id,
+      numero_opcion: item.numero_opcion,
+      nombre_opcion: item.nombre_opcion,
+      abono_adicional_mensual: Number(item.abono_adicional_mensual || 0),
+      cuotas_nuevas: Number(item.cuotas_nuevas || 0),
+      tiempo_restante: monthsToTime((item.tiempo_restante_anios || 0) * 12 + (item.tiempo_restante_meses || 0)),
+      nuevo_valor_cuota: Number(item.nuevo_valor_cuota || 0),
+      total_por_pagar_aprox: totalPorPagarAprox,
+      cuotas_reducidas: Number(item.cuotas_reducidas || 0),
+      tiempo_ahorrado: monthsToTime((item.tiempo_ahorrado_anios || 0) * 12 + (item.tiempo_ahorrado_meses || 0)),
+      valor_ahorrado_intereses: Number(item.valor_ahorrado_intereses || 0),
+      veces_pagado: vecesPagadoOpcion,
+      honorarios_calculados: Number(item.honorarios_calculados || 0),
+      honorarios_con_iva: Number(item.honorarios_con_iva || 0),
+      ingreso_minimo_requerido: Number(item.ingreso_minimo_requerido || 0),
+      origen: item.origen,
+      es_opcion_seleccionada: item.es_opcion_seleccionada,
+    };
+  });
 
   return {
     analisis_id: detail.id,
@@ -565,7 +589,7 @@ function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaComp
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="Valor Cuota"
+        label="Cuota actual a cancelar aprox."
         leftValue={formatCop(proposal.limites_actuales.valor_cuota)}
         options={opciones}
         getOptionValue={(opcion) => formatCop(opcion.nuevo_valor_cuota)}
@@ -615,9 +639,9 @@ function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaComp
 
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="HONORARIOS 3% o TARIFA MÍNIMA"
+        label="HONORARIOS 6% o TARIFA MÍNIMA"
         options={opciones}
-        getOptionValue={() => 'HONORARIOS 3% o TARIFA MÍNIMA'}
+        getOptionValue={() => 'HONORARIOS 6% o TARIFA MÍNIMA'}
         valueTone="fees"
         labelTone="info"
         isBlockStart

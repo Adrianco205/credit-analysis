@@ -50,6 +50,7 @@ def datos_pesos_frech_pdf_mode():
         valor_prestado_inicial=Decimal("64733094"),
         beneficio_frech=Decimal("201270"),
         seguros_mensual=Decimal("46384.35"),
+        cargos_no_amortizables_mensuales=Decimal("36216.73"),
         sistema_amortizacion="PESOS",
     )
 
@@ -277,9 +278,97 @@ class TestProyeccion:
         ]
 
         for idx, proyeccion in enumerate(proyecciones):
-            # Debe aproximarse al rango del PDF y no al escenario inflado (~100 cuotas)
-            assert proyeccion.cuotas_nuevas >= 130
-            assert abs(proyeccion.cuotas_nuevas - cuotas_pdf[idx]) <= 35
+            # Debe aproximarse al PDF banco sin optimismo artificial.
+            assert abs(proyeccion.cuotas_nuevas - cuotas_pdf[idx]) <= 15
+
+    def test_proyeccion_pesos_frech_total_proyectado_en_rango_banco(self, calculadora, datos_pesos_frech_pdf_mode):
+        """El total proyectado debe quedar cercano al rango esperado por referencia bancaria."""
+        abonos = [Decimal("149658"), Decimal("173789"), Decimal("202176")]
+        totales_pdf = [Decimal("145426490"), Decimal("138819271"), Decimal("132267143")]
+
+        proyecciones = calculadora.generar_proyecciones_multiple(datos_pesos_frech_pdf_mode, abonos)
+
+        for idx, proyeccion in enumerate(proyecciones):
+            esperado = totales_pdf[idx]
+            # Tolerancia del 12% para reflejar diferencias comerciales no visibles en extracto.
+            limite = (esperado * Decimal("0.12")).quantize(Decimal("0.01"))
+            assert abs(proyeccion.total_por_pagar - esperado) <= limite
+
+    def test_proyeccion_frech_incrementa_total_proyectado_en_opciones(self, calculadora):
+        """Con abono > 0, el total proyectado incorpora aporte FRECH en créditos subsidiados."""
+        datos_con_frech = DatosCredito(
+            saldo_capital=Decimal("61765856"),
+            valor_cuota_actual=Decimal("523427"),
+            cuotas_pendientes=305,
+            tasa_interes_ea=Decimal("0.0747"),
+            valor_prestado_inicial=Decimal("64733094"),
+            beneficio_frech=Decimal("201270"),
+            seguros_mensual=Decimal("46384.35"),
+            cargos_no_amortizables_mensuales=Decimal("36216.73"),
+            sistema_amortizacion="PESOS",
+        )
+        datos_sin_frech = DatosCredito(
+            saldo_capital=datos_con_frech.saldo_capital,
+            valor_cuota_actual=datos_con_frech.valor_cuota_actual,
+            cuotas_pendientes=datos_con_frech.cuotas_pendientes,
+            tasa_interes_ea=datos_con_frech.tasa_interes_ea,
+            valor_prestado_inicial=datos_con_frech.valor_prestado_inicial,
+            beneficio_frech=Decimal("0"),
+            seguros_mensual=datos_con_frech.seguros_mensual,
+            cargos_no_amortizables_mensuales=datos_con_frech.cargos_no_amortizables_mensuales,
+            sistema_amortizacion="PESOS",
+        )
+
+        con_frech = calculadora.calcular_proyeccion(
+            datos=datos_con_frech,
+            abono_extra=Decimal("149658"),
+            numero_opcion=1,
+        )
+        sin_frech = calculadora.calcular_proyeccion(
+            datos=datos_sin_frech,
+            abono_extra=Decimal("149658"),
+            numero_opcion=1,
+        )
+
+        assert con_frech.total_por_pagar > sin_frech.total_por_pagar
+
+    def test_proyeccion_uvr_no_infla_total_por_frech(self, calculadora):
+        """En UVR, el total proyectado debe mantenerse en flujo cliente (sin inflar por FRECH)."""
+        datos_uvr_con_frech = DatosCredito(
+            saldo_capital=Decimal("56069733.47"),
+            valor_cuota_actual=Decimal("326168.17"),
+            cuotas_pendientes=325,
+            tasa_interes_ea=Decimal("0.0471"),
+            valor_prestado_inicial=Decimal("45200180"),
+            beneficio_frech=Decimal("183855.65"),
+            seguros_mensual=Decimal("21134"),
+            sistema_amortizacion="UVR",
+            valor_uvr_actual=Decimal("376.1794"),
+        )
+        datos_uvr_sin_frech = DatosCredito(
+            saldo_capital=datos_uvr_con_frech.saldo_capital,
+            valor_cuota_actual=datos_uvr_con_frech.valor_cuota_actual,
+            cuotas_pendientes=datos_uvr_con_frech.cuotas_pendientes,
+            tasa_interes_ea=datos_uvr_con_frech.tasa_interes_ea,
+            valor_prestado_inicial=datos_uvr_con_frech.valor_prestado_inicial,
+            beneficio_frech=Decimal("0"),
+            seguros_mensual=datos_uvr_con_frech.seguros_mensual,
+            sistema_amortizacion="UVR",
+            valor_uvr_actual=datos_uvr_con_frech.valor_uvr_actual,
+        )
+
+        con_frech = calculadora.calcular_proyeccion(
+            datos=datos_uvr_con_frech,
+            abono_extra=Decimal("200000"),
+            numero_opcion=1,
+        )
+        sin_frech = calculadora.calcular_proyeccion(
+            datos=datos_uvr_sin_frech,
+            abono_extra=Decimal("200000"),
+            numero_opcion=1,
+        )
+
+        assert con_frech.total_por_pagar == sin_frech.total_por_pagar
 
     def test_veces_pagado_usa_total_por_pagar_sobre_saldo_actual(self, calculadora, datos_pesos_frech_pdf_mode):
         """No. veces pagado debe alinearse con indicador 2.xx del PDF."""
@@ -293,12 +382,47 @@ class TestProyeccion:
         assert proyeccion.veces_pagado == esperado
         assert proyeccion.veces_pagado > Decimal("1.00")
 
+    def test_total_por_pagar_sale_de_flujo_amortizado_uvr(self, calculadora, datos_extracto_bancolombia):
+        """En UVR el total proyectado debe salir del acumulado mes a mes de la amortización."""
+        abono = Decimal("200000")
+        proyeccion = calculadora.calcular_proyeccion(
+            datos=datos_extracto_bancolombia,
+            abono_extra=abono,
+            numero_opcion=1,
+        )
+
+        tasa_mensual = calculadora.tasa_ea_a_mensual(datos_extracto_bancolombia.tasa_interes_ea)
+        resultado_directo = calculadora.generar_tabla_amortizacion(
+            saldo_inicial=datos_extracto_bancolombia.saldo_capital,
+            tasa_mensual=tasa_mensual,
+            cuota_fija=datos_extracto_bancolombia.valor_cuota_actual,
+            abono_extra=abono,
+            seguros_mensual=datos_extracto_bancolombia.seguros_mensual,
+            cargos_no_amortizables_mensuales=datos_extracto_bancolombia.cargos_no_amortizables_mensuales,
+            sistema_amortizacion=datos_extracto_bancolombia.sistema_amortizacion,
+            valor_uvr_actual=datos_extracto_bancolombia.valor_uvr_actual,
+        )
+
+        assert proyeccion.total_por_pagar == resultado_directo.total_pagado
+
+    def test_ahorro_total_y_ahorro_intereses_se_mantienen_separados(self, calculadora, datos_extracto_bancolombia):
+        """Ahorro total proyectado y ahorro puro de intereses deben ser métricas distintas."""
+        proyeccion = calculadora.calcular_proyeccion(
+            datos=datos_extracto_bancolombia,
+            abono_extra=Decimal("200000"),
+            numero_opcion=1,
+        )
+
+        assert proyeccion.ahorro_total_proyectado > Decimal("0")
+        assert proyeccion.valor_ahorrado_intereses > Decimal("0")
+        assert proyeccion.ahorro_total_proyectado != proyeccion.valor_ahorrado_intereses
+
 
 class TestHonorarios:
     """Tests para cálculo de honorarios"""
     
-    def test_honorarios_3_porciento(self, calculadora):
-        """Honorarios = 3% del ahorro"""
+    def test_honorarios_6_porciento(self, calculadora):
+        """Honorarios = 6% del ahorro"""
         ahorro = Decimal("100000000")  # 100 millones
         honorarios = calculadora.calcular_honorarios(ahorro)
         
@@ -307,7 +431,7 @@ class TestHonorarios:
     
     def test_honorarios_minimo(self, calculadora):
         """Honorarios no pueden ser menor que tarifa mínima"""
-        ahorro_bajo = Decimal("1000000")  # 1 millón (3% = 30,000)
+        ahorro_bajo = Decimal("1000000")  # 1 millón (6% = 60,000)
         honorarios = calculadora.calcular_honorarios(ahorro_bajo)
         
         # Debe aplicar tarifa mínima

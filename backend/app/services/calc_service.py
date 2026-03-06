@@ -10,8 +10,8 @@ Soporta dos sistemas:
 Fórmulas clave:
 - Cuota fija (francesa): C = P * [r(1+r)^n] / [(1+r)^n - 1]
 - Tasa mensual: rm = (1 + EA)^(1/12) - 1
-- Veces pagado: total_pagado / valor_prestado_inicial
-- Honorarios: max(ahorro * 0.03, TARIFA_MINIMA)
+- Veces pagado: total_por_pagar_aprox / saldo_credito_actual
+- Honorarios: max(ahorro * 0.06, TARIFA_MINIMA)
 - Ingreso mínimo: nueva_cuota / 0.30
 """
 from dataclasses import dataclass
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # CONSTANTES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PORCENTAJE_HONORARIOS = Decimal("0.03")  # 3% del ahorro
+PORCENTAJE_HONORARIOS = Decimal("0.06")  # 6% del ahorro
 PORCENTAJE_IVA = Decimal("0.19")  # 19% IVA Colombia
 TARIFA_MINIMA_HONORARIOS = Decimal("500000")  # $500,000 COP mínimo
 PORCENTAJE_INGRESO_MINIMO = Decimal("0.30")  # 30% de la cuota (Ley 546/99)
@@ -51,6 +51,7 @@ class DatosCredito:
     # Opcionales
     beneficio_frech: Decimal = Decimal("0")
     seguros_mensual: Decimal = Decimal("0")
+    cargos_no_amortizables_mensuales: Decimal = Decimal("0")
     sistema_amortizacion: str = "PESOS"  # PESOS o UVR
     valor_uvr_actual: Optional[Decimal] = None
     saldo_uvr: Optional[Decimal] = None
@@ -74,6 +75,7 @@ class ResultadoAmortizacion:
     cuotas_totales: int
     total_pagado: Decimal
     total_intereses: Decimal
+    total_costos_no_amortizables: Decimal
     total_capital: Decimal
     tabla: List[FilaAmortizacion]
 
@@ -112,7 +114,10 @@ class ResultadoProyeccion:
     # Dinero
     nuevo_valor_cuota: Decimal
     total_por_pagar: Decimal
+    total_intereses_proyectados: Decimal
+    total_seguros_proyectados: Decimal
     valor_ahorrado_intereses: Decimal
+    ahorro_total_proyectado: Decimal
     veces_pagado: Decimal
     
     # Honorarios y requisitos
@@ -263,6 +268,7 @@ class CalculadoraFinanciera:
         cuota_fija: Decimal,
         abono_extra: Decimal = Decimal("0"),
         seguros_mensual: Decimal = Decimal("0"),
+        cargos_no_amortizables_mensuales: Decimal = Decimal("0"),
         sistema_amortizacion: str = "PESOS",
         valor_uvr_actual: Decimal | None = None,
         max_cuotas: int = 600  # Límite de seguridad (50 años)
@@ -289,8 +295,10 @@ class CalculadoraFinanciera:
         cuota_fija_unidad = cuota_fija / factor_uvr
         abono_extra_unidad = abono_extra / factor_uvr
         seguros_unidad = seguros_mensual / factor_uvr
+        cargos_no_amortizables_unidad = cargos_no_amortizables_mensuales / factor_uvr
 
         total_intereses = Decimal("0")
+        total_costos_no_amortizables = Decimal("0")
         total_capital = Decimal("0")
         total_pagado = Decimal("0")
         cuota_num = 0
@@ -303,7 +311,12 @@ class CalculadoraFinanciera:
             interes_mes = (saldo * tasa_mensual).quantize(self._precision_dinero)
             
             # Abono a capital = (cuota - seguros) - interés
-            abono_capital_base = cuota_fija_unidad - seguros_unidad - interes_mes
+            abono_capital_base = (
+                cuota_fija_unidad
+                - seguros_unidad
+                - cargos_no_amortizables_unidad
+                - interes_mes
+            )
             if abono_capital_base < 0:
                 abono_capital_base = Decimal("0")
             
@@ -312,7 +325,7 @@ class CalculadoraFinanciera:
                 abono_capital_real = saldo
                 abono_extra_real = Decimal("0")
                 cuota_sin_seguros_real = interes_mes + saldo
-                cuota_real = cuota_sin_seguros_real + seguros_unidad
+                cuota_real = cuota_sin_seguros_real + seguros_unidad + cargos_no_amortizables_unidad
             else:
                 abono_capital_real = abono_capital_base
                 abono_extra_real = abono_extra_unidad
@@ -325,6 +338,7 @@ class CalculadoraFinanciera:
             
             # Acumular totales
             total_intereses += interes_mes
+            total_costos_no_amortizables += seguros_unidad + cargos_no_amortizables_unidad
             total_capital += abono_capital_real + abono_extra_real
             total_pagado += cuota_real
             
@@ -349,12 +363,14 @@ class CalculadoraFinanciera:
 
         total_pagado_salida = (total_pagado * factor_uvr).quantize(self._precision_dinero)
         total_intereses_salida = (total_intereses * factor_uvr).quantize(self._precision_dinero)
+        total_costos_no_amortizables_salida = (total_costos_no_amortizables * factor_uvr).quantize(self._precision_dinero)
         total_capital_salida = (total_capital * factor_uvr).quantize(self._precision_dinero)
         
         return ResultadoAmortizacion(
             cuotas_totales=cuota_num,
             total_pagado=total_pagado_salida,
             total_intereses=total_intereses_salida,
+            total_costos_no_amortizables=total_costos_no_amortizables_salida,
             total_capital=total_capital_salida,
             tabla=tabla
         )
@@ -387,6 +403,7 @@ class CalculadoraFinanciera:
             cuota_fija=datos.valor_cuota_actual,
             abono_extra=Decimal("0"),
             seguros_mensual=datos.seguros_mensual,
+            cargos_no_amortizables_mensuales=datos.cargos_no_amortizables_mensuales,
             sistema_amortizacion=datos.sistema_amortizacion,
             valor_uvr_actual=datos.valor_uvr_actual
         )
@@ -400,9 +417,23 @@ class CalculadoraFinanciera:
             cuota_fija=datos.valor_cuota_actual,
             abono_extra=abono_extra,
             seguros_mensual=datos.seguros_mensual,
+            cargos_no_amortizables_mensuales=datos.cargos_no_amortizables_mensuales,
             sistema_amortizacion=datos.sistema_amortizacion,
             valor_uvr_actual=datos.valor_uvr_actual
         )
+
+        # Fuente oficial del total proyectado: flujo completo mensual amortizado.
+        total_por_pagar_proyectado = resultado_con_abono.total_pagado
+        # Para proyecciones PESOS, el total puede representarse como flujo total al banco
+        # (cliente + FRECH). En UVR se mantiene como flujo pagado por el cliente para
+        # evitar inflar el total mostrado frente a la cuota proyectada visible.
+        if (
+            abono_extra > 0
+            and datos.beneficio_frech > 0
+            and (datos.sistema_amortizacion or "PESOS").upper().strip() == "PESOS"
+        ):
+            total_por_pagar_proyectado += datos.beneficio_frech * Decimal(resultado_con_abono.cuotas_totales)
+        total_por_pagar_proyectado = total_por_pagar_proyectado.quantize(self._precision_dinero)
         
         # ═══════════════════════════════════════════════════════════════════
         # CÁLCULOS DE AHORRO
@@ -415,21 +446,24 @@ class CalculadoraFinanciera:
         tiempo_restante = TiempoAhorro.desde_meses(resultado_con_abono.cuotas_totales)
         
         # Ahorro en intereses
-        ahorro_intereses = resultado_actual.total_intereses - resultado_con_abono.total_intereses
+        ahorro_intereses = (resultado_actual.total_intereses - resultado_con_abono.total_intereses).quantize(self._precision_dinero)
+        ahorro_total_proyectado = (resultado_actual.total_pagado - resultado_con_abono.total_pagado).quantize(
+            self._precision_dinero
+        )
         
         # Nueva cuota total (cuota base + abono extra)
         nueva_cuota = datos.valor_cuota_actual + abono_extra
         
         # No. veces pagado = total por pagar / saldo actual del crédito
         if datos.saldo_capital > 0:
-            veces_pagado = (resultado_con_abono.total_pagado / datos.saldo_capital).quantize(
+            veces_pagado = (total_por_pagar_proyectado / datos.saldo_capital).quantize(
                 Decimal("0.01")
             )
         else:
             veces_pagado = Decimal("0")
         
         # ═══════════════════════════════════════════════════════════════════
-        # HONORARIOS (3% del ahorro o tarifa mínima)
+        # HONORARIOS (6% del ahorro o tarifa mínima)
         # ═══════════════════════════════════════════════════════════════════
         honorarios = self.calcular_honorarios(ahorro_intereses)
         honorarios_con_iva = self.calcular_honorarios_con_iva(honorarios)
@@ -448,8 +482,11 @@ class CalculadoraFinanciera:
             cuotas_reducidas=cuotas_reducidas,
             tiempo_ahorrado=tiempo_ahorrado,
             nuevo_valor_cuota=nueva_cuota,
-            total_por_pagar=resultado_con_abono.total_pagado,
+            total_por_pagar=total_por_pagar_proyectado,
+            total_intereses_proyectados=resultado_con_abono.total_intereses,
+            total_seguros_proyectados=resultado_con_abono.total_costos_no_amortizables,
             valor_ahorrado_intereses=ahorro_intereses,
+            ahorro_total_proyectado=ahorro_total_proyectado,
             veces_pagado=veces_pagado,
             honorarios=honorarios,
             honorarios_con_iva=honorarios_con_iva,
@@ -563,9 +600,9 @@ class CalculadoraFinanciera:
     
     def calcular_honorarios(self, ahorro_total: Decimal) -> Decimal:
         """
-        Calcula honorarios: 3% del ahorro o tarifa mínima.
+        Calcula honorarios: 6% del ahorro o tarifa mínima.
         
-        Regla: max(ahorro * 0.03, TARIFA_MINIMA)
+        Regla: max(ahorro * 0.06, TARIFA_MINIMA)
         """
         honorarios = ahorro_total * PORCENTAJE_HONORARIOS
         return max(honorarios, TARIFA_MINIMA_HONORARIOS).quantize(self._precision_dinero)
@@ -659,6 +696,6 @@ if __name__ == "__main__":
         print(f"Tiempo ahorrado: {p.tiempo_ahorrado}")
         print(f"Ahorro en intereses: ${p.valor_ahorrado_intereses:,.0f}")
         print(f"Veces pagado: {p.veces_pagado}")
-        print(f"Honorarios (3%): ${p.honorarios:,.0f}")
+        print(f"Honorarios (6%): ${p.honorarios:,.0f}")
         print(f"Honorarios + IVA: ${p.honorarios_con_iva:,.0f}")
         print(f"Ingreso mínimo requerido: ${p.ingreso_minimo_requerido:,.0f}")

@@ -1012,6 +1012,12 @@ class AnalysisService:
                 valor_uvr_actual = analisis.valor_uvr_fecha_extracto
 
         # Crear objeto DatosCredito
+        cargos_no_amortizables = self._estimar_cargos_no_amortizables_mensuales(
+            analisis=analisis,
+            cuota_cliente=cuota_cliente,
+            frech=frech,
+        )
+
         datos = DatosCredito(
             saldo_capital=analisis.saldo_capital_pesos,
             valor_cuota_actual=cuota_cliente,
@@ -1020,6 +1026,7 @@ class AnalysisService:
             valor_prestado_inicial=analisis.valor_prestado_inicial,
             beneficio_frech=frech,
             seguros_mensual=analisis.seguros_total_mensual or Decimal("0"),
+            cargos_no_amortizables_mensuales=cargos_no_amortizables,
             sistema_amortizacion=sistema_amortizacion,
             valor_uvr_actual=valor_uvr_actual,
         )
@@ -1046,6 +1053,35 @@ class AnalysisService:
             "cuota_base_source": cuota_base_source,
             "datos": datos
         }
+
+    def _estimar_cargos_no_amortizables_mensuales(
+        self,
+        analisis: AnalisisHipotecario,
+        cuota_cliente: Decimal,
+        frech: Decimal,
+    ) -> Decimal:
+        """
+        Estima cargos mensuales recurrentes que no amortizan capital.
+
+        Motivo: algunos extractos reportan seguros/cargos separados (ej. seguro voluntario)
+        y no siempre quedan consolidados en `seguros_total_mensual`.
+        """
+        seguros_base = analisis.seguros_total_mensual or Decimal("0")
+        otros_cargos = analisis.otros_cargos or Decimal("0")
+        capital_periodo = analisis.capital_pagado_periodo or Decimal("0")
+        interes_periodo = analisis.intereses_corrientes_periodo or Decimal("0")
+
+        cuota_operativa = analisis.valor_cuota_con_seguros
+        if cuota_operativa is None:
+            cuota_operativa = cuota_cliente + frech
+
+        cargos_inferidos = Decimal("0")
+        if cuota_operativa > 0 and (capital_periodo > 0 or interes_periodo > 0):
+            no_amortizable_observado = cuota_operativa - capital_periodo - interes_periodo
+            if no_amortizable_observado > seguros_base:
+                cargos_inferidos = no_amortizable_observado - seguros_base
+
+        return max(otros_cargos, cargos_inferidos).quantize(Decimal("0.01"))
     
     def _calculate_projection_for_option(
         self,

@@ -193,13 +193,13 @@ class TestCalculadoraProyecciones:
         assert resultado.valor_ahorrado_intereses == 0
     
     def test_calcular_honorarios(self):
-        """Calcula honorarios (3% del ahorro)."""
+        """Calcula honorarios (6% del ahorro)."""
         calc = crear_calculadora()
         
         ahorro = Decimal("50000000")
         honorarios = calc.calcular_honorarios(ahorro)
         
-        expected = ahorro * Decimal("0.03")
+        expected = ahorro * Decimal("0.06")
         assert honorarios == expected
     
     def test_calcular_honorarios_minimo(self):
@@ -207,7 +207,7 @@ class TestCalculadoraProyecciones:
         calc = crear_calculadora()
         
         # Ahorro muy bajo
-        ahorro = Decimal("1000000")  # 3% = $30,000, menor al mínimo
+        ahorro = Decimal("1000000")  # 6% = $60,000, menor al mínimo
         honorarios = calc.calcular_honorarios(ahorro)
         
         # Debe aplicar tarifa mínima
@@ -436,6 +436,34 @@ class TestAnalysisServiceLogic:
         assert baseline["datos"].valor_cuota_actual == Decimal("523427")
         assert baseline["cuota_base_source"] == "valor_cuota_con_seguros_menos_frech"
         assert baseline["veces_pagado_actual"] >= Decimal("2.00")
+
+    def test_calculate_baseline_infieres_cargos_recurrentes_no_amortizables(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = Decimal("523427")
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("159645259")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.capital_pagado_periodo = Decimal("70280.58")
+        analisis.intereses_corrientes_periodo = Decimal("571815.12")
+        analisis.otros_cargos = Decimal("0")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+
+        # 724697 - 70280.58 - 571815.12 = 82601.30 no amortizable total
+        total_no_amortizable = (
+            baseline["datos"].seguros_mensual + baseline["datos"].cargos_no_amortizables_mensuales
+        )
+        assert abs(total_no_amortizable - Decimal("82601.30")) <= Decimal("5.00")
 
     def test_extract_identity_from_pdf_text_fallback(self):
         service = AnalysisService.__new__(AnalysisService)

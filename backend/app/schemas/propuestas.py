@@ -14,7 +14,7 @@ from enum import Enum
 # CONSTANTES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PORCENTAJE_HONORARIOS = Decimal("0.03")  # 3% del ahorro
+PORCENTAJE_HONORARIOS = Decimal("0.06")  # 6% del ahorro
 PORCENTAJE_IVA = Decimal("0.19")  # 19% IVA Colombia
 TARIFA_MINIMA_HONORARIOS = Decimal("500000")  # $500,000 COP mínimo
 PORCENTAJE_INGRESO_MINIMO = Decimal("0.30")  # 30% de la cuota (Ley 546/99)
@@ -120,7 +120,7 @@ class ProyeccionOpcionResponse(BaseModel):
     # ═══════════════════════════════════════════════════════════════════
     # HONORARIOS Y REQUISITOS
     # ═══════════════════════════════════════════════════════════════════
-    honorarios_calculados: Decimal  # 3% del ahorro
+    honorarios_calculados: Decimal  # 6% del ahorro
     honorarios_con_iva: Decimal     # Honorarios + 19%
     ingreso_minimo_requerido: Decimal  # 30% de la nueva cuota
     

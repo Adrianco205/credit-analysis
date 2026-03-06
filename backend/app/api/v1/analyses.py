@@ -492,7 +492,7 @@ def generate_projections(
     El sistema calcula para cada opción:
     - Tiempo ahorrado
     - Intereses ahorrados
-    - Honorarios (3% del ahorro)
+    - Honorarios (6% del ahorro)
     - Ingreso mínimo requerido (30% de la nueva cuota)
     """
     service = get_analysis_service(db)
