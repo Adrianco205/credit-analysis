@@ -9,7 +9,7 @@ import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { cleanDigitsInput, formatDigitsInput, formatMonetaryInput, parseMonetaryInput } from '@/lib/utils';
+import { cleanDigitsInput, formatDigitsInput } from '@/lib/utils';
 import type { UserProfile } from '@/types/api';
 
 interface FormState {
@@ -102,13 +102,25 @@ const INITIAL_FORM: FormState = {
   password: '',
 };
 
-const MONEY_FIELDS = new Set<keyof FormState>([
+const CURRENCY_FIELDS = new Set<keyof FormState>([
   'ingresos_mensuales', 'capacidad_pago_max', 'opcion_abono_1', 'opcion_abono_2', 'opcion_abono_3',
-  'valor_prestado_inicial', 'tasa_interes_pactada_ea', 'tasa_interes_cobrada_ea', 'tasa_interes_subsidiada_ea',
-  'tasa_mora_pactada_ea', 'valor_cuota_sin_seguros', 'valor_cuota_con_seguros', 'beneficio_frech_mensual',
-  'valor_cuota_con_subsidio', 'saldo_capital_pesos', 'total_por_pagar', 'saldo_capital_uvr',
-  'valor_uvr_fecha_extracto', 'valor_cuota_uvr', 'seguro_vida', 'seguro_incendio', 'seguro_terremoto',
-  'capital_pagado_periodo', 'intereses_corrientes_periodo', 'intereses_mora', 'otros_cargos',
+  'valor_prestado_inicial', 'valor_cuota_sin_seguros', 'valor_cuota_con_seguros', 'beneficio_frech_mensual',
+  'valor_cuota_con_subsidio', 'saldo_capital_pesos', 'total_por_pagar', 'seguro_vida',
+  'seguro_incendio', 'seguro_terremoto', 'capital_pagado_periodo', 'intereses_corrientes_periodo',
+  'intereses_mora', 'otros_cargos',
+]);
+
+const RATE_FIELDS = new Set<keyof FormState>([
+  'tasa_interes_pactada_ea',
+  'tasa_interes_cobrada_ea',
+  'tasa_interes_subsidiada_ea',
+  'tasa_mora_pactada_ea',
+]);
+
+const UVR_FIELDS = new Set<keyof FormState>([
+  'saldo_capital_uvr',
+  'valor_uvr_fecha_extracto',
+  'valor_cuota_uvr',
 ]);
 
 const INTEGER_FIELDS = new Set<keyof FormState>([
@@ -118,7 +130,69 @@ const INTEGER_FIELDS = new Set<keyof FormState>([
 const DIGIT_ONLY_MONEY_FIELDS = new Set<keyof FormState>([
   'ingresos_mensuales',
   'capacidad_pago_max',
+  'opcion_abono_1',
+  'opcion_abono_2',
+  'opcion_abono_3',
 ]);
+
+function normalizeLocalizedNumericInput(value: string, maxDecimals: number, useThousands: boolean): string {
+  if (!value) return '';
+
+  const sanitized = value.replace(/\s/g, '').replace(/[^\d.,]/g, '');
+  if (!sanitized) return '';
+
+  const lastComma = sanitized.lastIndexOf(',');
+  const lastDot = sanitized.lastIndexOf('.');
+  const decimalIndex = Math.max(lastComma, lastDot);
+
+  let integerPartRaw = sanitized;
+  let decimalPartRaw = '';
+
+  if (decimalIndex >= 0) {
+    integerPartRaw = sanitized.slice(0, decimalIndex);
+    decimalPartRaw = sanitized.slice(decimalIndex + 1);
+  }
+
+  const integerDigits = cleanDigitsInput(integerPartRaw);
+  const decimalDigits = cleanDigitsInput(decimalPartRaw).slice(0, maxDecimals);
+  const integerValue = integerDigits ? Number(integerDigits) : 0;
+  const formattedInteger = useThousands
+    ? new Intl.NumberFormat('es-CO', { maximumFractionDigits: 0 }).format(integerValue)
+    : String(integerValue);
+
+  if (!integerDigits && !decimalDigits) return '';
+  return decimalDigits ? `${formattedInteger},${decimalDigits}` : formattedInteger;
+}
+
+function parseLocalizedNumber(value: string, maxDecimals: number): number | null {
+  if (!value) return null;
+
+  const sanitized = value.replace(/\s/g, '').replace(/[^\d.,]/g, '');
+  if (!sanitized) return null;
+
+  const lastComma = sanitized.lastIndexOf(',');
+  const lastDot = sanitized.lastIndexOf('.');
+  const decimalIndex = Math.max(lastComma, lastDot);
+
+  let integerPartRaw = sanitized;
+  let decimalPartRaw = '';
+
+  if (decimalIndex >= 0) {
+    integerPartRaw = sanitized.slice(0, decimalIndex);
+    decimalPartRaw = sanitized.slice(decimalIndex + 1);
+  }
+
+  const integerDigits = cleanDigitsInput(integerPartRaw);
+  const decimalDigits = cleanDigitsInput(decimalPartRaw).slice(0, maxDecimals);
+
+  if (!integerDigits && !decimalDigits) {
+    return null;
+  }
+
+  const normalized = `${integerDigits || '0'}${decimalDigits ? `.${decimalDigits}` : ''}`;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
 export default function AdminManualProjectionPage() {
   const router = useRouter();
@@ -151,6 +225,9 @@ export default function AdminManualProjectionPage() {
   }, [router]);
 
   const canSubmit = useMemo(() => {
+    const isUvr = form.sistema_amortizacion === 'UVR';
+    const hasUvrRequiredFields = !isUvr || (form.valor_uvr_fecha_extracto.trim() && form.saldo_capital_uvr.trim());
+
     return !!(
       file &&
       form.customer_full_name.trim() &&
@@ -166,7 +243,8 @@ export default function AdminManualProjectionPage() {
       form.cuotas_pendientes.trim() &&
       form.fecha_extracto.trim() &&
       form.plazo_total_meses.trim() &&
-      form.cuotas_pactadas.trim()
+      form.cuotas_pactadas.trim() &&
+      hasUvrRequiredFields
     );
   }, [file, form]);
 
@@ -179,21 +257,42 @@ export default function AdminManualProjectionPage() {
       setForm((prev) => ({ ...prev, [field]: cleanDigitsInput(value) }));
       return;
     }
-    if (MONEY_FIELDS.has(field)) {
-      setForm((prev) => ({ ...prev, [field]: formatMonetaryInput(value) }));
+    if (RATE_FIELDS.has(field)) {
+      setForm((prev) => ({ ...prev, [field]: normalizeLocalizedNumericInput(value, 4, false) }));
+      return;
+    }
+    if (UVR_FIELDS.has(field)) {
+      setForm((prev) => ({ ...prev, [field]: normalizeLocalizedNumericInput(value, 4, true) }));
+      return;
+    }
+    if (CURRENCY_FIELDS.has(field)) {
+      setForm((prev) => ({ ...prev, [field]: normalizeLocalizedNumericInput(value, 2, true) }));
       return;
     }
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const monetary = (value: string) => parseMonetaryInput(value);
+  const currency = (value: string) => parseLocalizedNumber(value, 2);
+  const rate = (value: string) => parseLocalizedNumber(value, 4);
+  const uvr = (value: string) => parseLocalizedNumber(value, 4);
+
   const integer = (value: string) => {
     const digits = cleanDigitsInput(value);
     return digits ? Number(digits) : undefined;
   };
 
-  const toOptionalNumber = (value: string) => {
-    const parsed = monetary(value);
+  const toOptionalCurrency = (value: string) => {
+    const parsed = currency(value);
+    return parsed === null ? undefined : parsed;
+  };
+
+  const toOptionalRate = (value: string) => {
+    const parsed = rate(value);
+    return parsed === null ? undefined : parsed;
+  };
+
+  const toOptionalUvr = (value: string) => {
+    const parsed = uvr(value);
     return parsed === null ? undefined : parsed;
   };
 
@@ -210,10 +309,10 @@ export default function AdminManualProjectionPage() {
     }
 
     const ingresos = toOptionalDigitsNumber(form.ingresos_mensuales);
-    const prestado = monetary(form.valor_prestado_inicial);
-    const cuota = monetary(form.valor_cuota_con_seguros);
-    const saldo = monetary(form.saldo_capital_pesos);
-    const tasa = monetary(form.tasa_interes_cobrada_ea);
+    const prestado = currency(form.valor_prestado_inicial);
+    const cuota = currency(form.valor_cuota_con_seguros);
+    const saldo = currency(form.saldo_capital_pesos);
+    const tasa = rate(form.tasa_interes_cobrada_ea);
 
     if (!ingresos || !prestado || !cuota || !saldo || !tasa) {
       toast.error('Completa los campos financieros obligatorios');
@@ -230,6 +329,39 @@ export default function AdminManualProjectionPage() {
       return;
     }
 
+    if (cuotasPagadas + cuotasPendientes > cuotasPactadas) {
+      toast.error('La suma de cuotas pagadas y pendientes no puede superar las cuotas pactadas');
+      return;
+    }
+
+    if (form.fecha_desembolso && form.fecha_extracto && form.fecha_extracto < form.fecha_desembolso) {
+      toast.error('La fecha de extracto no puede ser anterior a la fecha de desembolso');
+      return;
+    }
+
+    const ratesToValidate = [
+      { label: 'Tasa cobrada EA', value: tasa },
+      { label: 'Tasa pactada EA', value: toOptionalRate(form.tasa_interes_pactada_ea) },
+      { label: 'Tasa subsidiada EA', value: toOptionalRate(form.tasa_interes_subsidiada_ea) },
+      { label: 'Tasa mora EA', value: toOptionalRate(form.tasa_mora_pactada_ea) },
+    ];
+
+    for (const item of ratesToValidate) {
+      if (item.value !== undefined && item.value !== null && item.value > 100) {
+        toast.error(`${item.label}: el valor máximo permitido es 100`);
+        return;
+      }
+    }
+
+    const isUvr = form.sistema_amortizacion === 'UVR';
+    const valorUvrExtracto = toOptionalUvr(form.valor_uvr_fecha_extracto);
+    const saldoUvr = toOptionalUvr(form.saldo_capital_uvr);
+
+    if (isUvr && (valorUvrExtracto === undefined || saldoUvr === undefined)) {
+      toast.error('Para créditos UVR debes completar saldo capital UVR y valor UVR fecha extracto');
+      return;
+    }
+
     try {
       setSubmitting(true);
       const result = await apiClient.createAdminManualProjection({
@@ -241,9 +373,9 @@ export default function AdminManualProjectionPage() {
         capacidad_pago_max: toOptionalDigitsNumber(form.capacidad_pago_max),
         tipo_contrato_laboral: form.tipo_contrato_laboral,
         banco_id: Number(form.banco_id),
-        opcion_abono_1: toOptionalNumber(form.opcion_abono_1),
-        opcion_abono_2: toOptionalNumber(form.opcion_abono_2),
-        opcion_abono_3: toOptionalNumber(form.opcion_abono_3),
+        opcion_abono_1: toOptionalCurrency(form.opcion_abono_1),
+        opcion_abono_2: toOptionalCurrency(form.opcion_abono_2),
+        opcion_abono_3: toOptionalCurrency(form.opcion_abono_3),
         numero_credito: form.numero_credito.trim(),
         sistema_amortizacion: form.sistema_amortizacion,
         plan_credito: form.plan_credito.trim() || undefined,
@@ -254,26 +386,26 @@ export default function AdminManualProjectionPage() {
         cuotas_pactadas: cuotasPactadas,
         cuotas_pagadas: cuotasPagadas,
         cuotas_pendientes: cuotasPendientes,
-        tasa_interes_pactada_ea: toOptionalNumber(form.tasa_interes_pactada_ea),
+        tasa_interes_pactada_ea: toOptionalRate(form.tasa_interes_pactada_ea),
         tasa_interes_cobrada_ea: tasa,
-        tasa_interes_subsidiada_ea: toOptionalNumber(form.tasa_interes_subsidiada_ea),
-        tasa_mora_pactada_ea: toOptionalNumber(form.tasa_mora_pactada_ea),
-        valor_cuota_sin_seguros: toOptionalNumber(form.valor_cuota_sin_seguros),
+        tasa_interes_subsidiada_ea: toOptionalRate(form.tasa_interes_subsidiada_ea),
+        tasa_mora_pactada_ea: toOptionalRate(form.tasa_mora_pactada_ea),
+        valor_cuota_sin_seguros: toOptionalCurrency(form.valor_cuota_sin_seguros),
         valor_cuota_con_seguros: cuota,
-        beneficio_frech_mensual: toOptionalNumber(form.beneficio_frech_mensual),
-        valor_cuota_con_subsidio: toOptionalNumber(form.valor_cuota_con_subsidio),
+        beneficio_frech_mensual: toOptionalCurrency(form.beneficio_frech_mensual),
+        valor_cuota_con_subsidio: toOptionalCurrency(form.valor_cuota_con_subsidio),
         saldo_capital_pesos: saldo,
-        total_por_pagar: toOptionalNumber(form.total_por_pagar),
-        saldo_capital_uvr: toOptionalNumber(form.saldo_capital_uvr),
-        valor_uvr_fecha_extracto: toOptionalNumber(form.valor_uvr_fecha_extracto),
-        valor_cuota_uvr: toOptionalNumber(form.valor_cuota_uvr),
-        seguro_vida: toOptionalNumber(form.seguro_vida),
-        seguro_incendio: toOptionalNumber(form.seguro_incendio),
-        seguro_terremoto: toOptionalNumber(form.seguro_terremoto),
-        capital_pagado_periodo: toOptionalNumber(form.capital_pagado_periodo),
-        intereses_corrientes_periodo: toOptionalNumber(form.intereses_corrientes_periodo),
-        intereses_mora: toOptionalNumber(form.intereses_mora),
-        otros_cargos: toOptionalNumber(form.otros_cargos),
+        total_por_pagar: toOptionalCurrency(form.total_por_pagar),
+        saldo_capital_uvr: toOptionalUvr(form.saldo_capital_uvr),
+        valor_uvr_fecha_extracto: toOptionalUvr(form.valor_uvr_fecha_extracto),
+        valor_cuota_uvr: toOptionalUvr(form.valor_cuota_uvr),
+        seguro_vida: toOptionalCurrency(form.seguro_vida),
+        seguro_incendio: toOptionalCurrency(form.seguro_incendio),
+        seguro_terremoto: toOptionalCurrency(form.seguro_terremoto),
+        capital_pagado_periodo: toOptionalCurrency(form.capital_pagado_periodo),
+        intereses_corrientes_periodo: toOptionalCurrency(form.intereses_corrientes_periodo),
+        intereses_mora: toOptionalCurrency(form.intereses_mora),
+        otros_cargos: toOptionalCurrency(form.otros_cargos),
         file,
         password: form.password.trim() || undefined,
       });
@@ -363,9 +495,9 @@ export default function AdminManualProjectionPage() {
             </div>
             <Input label="Ingresos mensuales *" inputMode="numeric" value={formatDigitsInput(form.ingresos_mensuales)} onChange={(e) => updateField('ingresos_mensuales', e.target.value)} required />
             <Input label="Capacidad de pago" inputMode="numeric" value={formatDigitsInput(form.capacidad_pago_max)} onChange={(e) => updateField('capacidad_pago_max', e.target.value)} />
-            <Input label="Abono opción 1" inputMode="decimal" value={form.opcion_abono_1} onChange={(e) => updateField('opcion_abono_1', e.target.value)} />
-            <Input label="Abono opción 2" inputMode="decimal" value={form.opcion_abono_2} onChange={(e) => updateField('opcion_abono_2', e.target.value)} />
-            <Input label="Abono opción 3" inputMode="decimal" value={form.opcion_abono_3} onChange={(e) => updateField('opcion_abono_3', e.target.value)} />
+            <Input label="Abono opción 1" inputMode="numeric" value={formatDigitsInput(form.opcion_abono_1)} onChange={(e) => updateField('opcion_abono_1', e.target.value)} />
+            <Input label="Abono opción 2" inputMode="numeric" value={formatDigitsInput(form.opcion_abono_2)} onChange={(e) => updateField('opcion_abono_2', e.target.value)} />
+            <Input label="Abono opción 3" inputMode="numeric" value={formatDigitsInput(form.opcion_abono_3)} onChange={(e) => updateField('opcion_abono_3', e.target.value)} />
             <Input label="Contraseña PDF (si aplica)" type="password" value={form.password} onChange={(e) => updateField('password', e.target.value)} />
           </div>
           <div className="mt-4 rounded-xl border border-dashed border-gray-300 p-4 bg-gray-50">
@@ -402,19 +534,19 @@ export default function AdminManualProjectionPage() {
             <Input label="Cuotas pactadas *" inputMode="numeric" value={formatDigitsInput(form.cuotas_pactadas)} onChange={(e) => updateField('cuotas_pactadas', e.target.value)} required />
             <Input label="Cuotas pagadas" inputMode="numeric" value={formatDigitsInput(form.cuotas_pagadas)} onChange={(e) => updateField('cuotas_pagadas', e.target.value)} />
             <Input label="Cuotas pendientes *" inputMode="numeric" value={formatDigitsInput(form.cuotas_pendientes)} onChange={(e) => updateField('cuotas_pendientes', e.target.value)} required />
-            <Input label="Tasa pactada EA" inputMode="decimal" value={form.tasa_interes_pactada_ea} onChange={(e) => updateField('tasa_interes_pactada_ea', e.target.value)} />
-            <Input label="Tasa cobrada EA *" inputMode="decimal" value={form.tasa_interes_cobrada_ea} onChange={(e) => updateField('tasa_interes_cobrada_ea', e.target.value)} required />
-            <Input label="Tasa subsidiada EA" inputMode="decimal" value={form.tasa_interes_subsidiada_ea} onChange={(e) => updateField('tasa_interes_subsidiada_ea', e.target.value)} />
-            <Input label="Tasa mora EA" inputMode="decimal" value={form.tasa_mora_pactada_ea} onChange={(e) => updateField('tasa_mora_pactada_ea', e.target.value)} />
+            <Input label="Tasa pactada EA" inputMode="decimal" value={form.tasa_interes_pactada_ea} onChange={(e) => updateField('tasa_interes_pactada_ea', e.target.value)} helperText="Ej: 7,47 o 0,0747" />
+            <Input label="Tasa cobrada EA *" inputMode="decimal" value={form.tasa_interes_cobrada_ea} onChange={(e) => updateField('tasa_interes_cobrada_ea', e.target.value)} helperText="Ej: 7,47 o 0,0747" required />
+            <Input label="Tasa subsidiada EA" inputMode="decimal" value={form.tasa_interes_subsidiada_ea} onChange={(e) => updateField('tasa_interes_subsidiada_ea', e.target.value)} helperText="Ej: 4 o 0,04" />
+            <Input label="Tasa mora EA" inputMode="decimal" value={form.tasa_mora_pactada_ea} onChange={(e) => updateField('tasa_mora_pactada_ea', e.target.value)} helperText="Ej: 12,5" />
             <Input label="Cuota sin seguros" inputMode="decimal" value={form.valor_cuota_sin_seguros} onChange={(e) => updateField('valor_cuota_sin_seguros', e.target.value)} />
             <Input label="Cuota con seguros *" inputMode="decimal" value={form.valor_cuota_con_seguros} onChange={(e) => updateField('valor_cuota_con_seguros', e.target.value)} required />
             <Input label="Beneficio FRECH" inputMode="decimal" value={form.beneficio_frech_mensual} onChange={(e) => updateField('beneficio_frech_mensual', e.target.value)} />
             <Input label="Cuota con subsidio" inputMode="decimal" value={form.valor_cuota_con_subsidio} onChange={(e) => updateField('valor_cuota_con_subsidio', e.target.value)} />
             <Input label="Saldo capital pesos *" inputMode="decimal" value={form.saldo_capital_pesos} onChange={(e) => updateField('saldo_capital_pesos', e.target.value)} required />
             <Input label="Total por pagar" inputMode="decimal" value={form.total_por_pagar} onChange={(e) => updateField('total_por_pagar', e.target.value)} />
-            <Input label="Saldo capital UVR" inputMode="decimal" value={form.saldo_capital_uvr} onChange={(e) => updateField('saldo_capital_uvr', e.target.value)} />
-            <Input label="Valor UVR fecha" inputMode="decimal" value={form.valor_uvr_fecha_extracto} onChange={(e) => updateField('valor_uvr_fecha_extracto', e.target.value)} />
-            <Input label="Valor cuota UVR" inputMode="decimal" value={form.valor_cuota_uvr} onChange={(e) => updateField('valor_cuota_uvr', e.target.value)} />
+            <Input label="Saldo capital UVR" inputMode="decimal" value={form.saldo_capital_uvr} onChange={(e) => updateField('saldo_capital_uvr', e.target.value)} helperText="Hasta 4 decimales" />
+            <Input label="Valor UVR fecha" inputMode="decimal" value={form.valor_uvr_fecha_extracto} onChange={(e) => updateField('valor_uvr_fecha_extracto', e.target.value)} helperText="Hasta 4 decimales" />
+            <Input label="Valor cuota UVR" inputMode="decimal" value={form.valor_cuota_uvr} onChange={(e) => updateField('valor_cuota_uvr', e.target.value)} helperText="Hasta 4 decimales" />
             <Input label="Seguro vida" inputMode="decimal" value={form.seguro_vida} onChange={(e) => updateField('seguro_vida', e.target.value)} />
             <Input label="Seguro incendio" inputMode="decimal" value={form.seguro_incendio} onChange={(e) => updateField('seguro_incendio', e.target.value)} />
             <Input label="Seguro terremoto" inputMode="decimal" value={form.seguro_terremoto} onChange={(e) => updateField('seguro_terremoto', e.target.value)} />

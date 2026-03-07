@@ -12,6 +12,7 @@ import os
 import uuid
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -434,8 +435,354 @@ class TestAnalysisServiceLogic:
         baseline = AnalysisService._calculate_baseline(service, analisis)
 
         assert baseline["datos"].valor_cuota_actual == Decimal("523427")
+        assert baseline["cuota_actual_visible"] == Decimal("523427")
         assert baseline["cuota_base_source"] == "valor_cuota_con_seguros_menos_frech"
         assert baseline["veces_pagado_actual"] >= Decimal("2.00")
+
+    def test_baseline_total_simple_usa_cuota_visible(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = None
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("523427")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+
+        esperado_simple = (baseline["cuota_actual_visible"] * Decimal(analisis.cuotas_pendientes)).quantize(Decimal("0.01"))
+        assert baseline["total_actual_simple"] == esperado_simple
+        assert baseline["cuota_actual_proyeccion"] >= baseline["cuota_actual_visible"]
+        assert baseline["datos_visible"] is not baseline["datos_proyeccion"]
+
+    def test_baseline_infieres_frech_restante_desde_cuotas_pagadas(self):
+        """Sin dato explicito FRECH restante, debe inferirse con tope 84 - cuotas_pagadas."""
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = Decimal("523427")
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("159645259")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pagadas = 55
+        analisis.frech_meses_restantes = None
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+
+        assert baseline["datos_visible"].frech_meses_restantes == 29
+        assert baseline["datos_proyeccion"].frech_meses_restantes == 29
+        assert baseline["total_subsidio_frech_proyectado"] == Decimal("5836830.00")
+
+    def test_baseline_prioriza_frech_restante_explicito_sobre_inferencia(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = Decimal("523427")
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("159645259")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pagadas = 55
+        analisis.frech_meses_restantes = 12
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+
+        assert baseline["datos_visible"].frech_meses_restantes == 12
+        assert baseline["total_subsidio_frech_proyectado"] == Decimal("2415240.00")
+
+    def test_projection_option_uses_visible_cuota_base_policy_a(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+        service.uvr_engine_v2_enabled = False
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = None
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("523427")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+        opcion = OpcionAbonoInput(numero_opcion=1, abono_adicional_mensual=Decimal("149658"), nombre_opcion="1a")
+
+        resultado = AnalysisService._calculate_projection_for_option(service, analisis, opcion, baseline)
+        esperado_nueva_cuota = baseline["cuota_actual_visible"] + Decimal("149658")
+
+        assert resultado["nuevo_valor_cuota"] == esperado_nueva_cuota
+
+    def test_projection_option_uvr_uses_v2_engine_with_feature_flag(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+        service.uvr_engine_v2_enabled = True
+        service.uvr_inflacion_anual_default = Decimal("0.06")
+
+        analisis = MagicMock()
+        analisis.id = uuid.uuid4()
+        analisis.saldo_capital_pesos = Decimal("56069733.47")
+        analisis.valor_cuota_con_subsidio = Decimal("523427")
+        analisis.valor_cuota_con_seguros = Decimal("523427")
+        analisis.valor_cuota_sin_seguros = Decimal("500000")
+        analisis.total_por_pagar = Decimal("523427")
+        analisis.beneficio_frech_mensual = Decimal("183855.65")
+        analisis.cuotas_pendientes = 325
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0471")
+        analisis.valor_prestado_inicial = Decimal("45200180")
+        analisis.seguros_total_mensual = Decimal("21134")
+        analisis.sistema_amortizacion = "UVR"
+        analisis.valor_uvr_fecha_extracto = Decimal("376.1794")
+        analisis.frech_meses_restantes = 36
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+        opcion = OpcionAbonoInput(numero_opcion=1, abono_adicional_mensual=Decimal("200000"), nombre_opcion="1a")
+
+        fake_compare = SimpleNamespace(
+            escenario_con_abono=SimpleNamespace(
+                meses_totales=180,
+                total_pagado_cliente=Decimal("120000000.00"),
+            ),
+            ahorro_intereses_real=Decimal("25000000.00"),
+        )
+
+        with patch("app.services.analysis_service.compare_uvr_scenarios", return_value=fake_compare) as compare_mock:
+            resultado = AnalysisService._calculate_projection_for_option(service, analisis, opcion, baseline)
+
+        compare_mock.assert_called_once()
+        assert resultado["cuotas_nuevas"] == 180
+        assert resultado["costo_total_proyectado"] == Decimal("120000000.00")
+        esperado_ahorro = (
+            baseline["costo_total_proyectado_banco"] - resultado["costo_total_proyectado_banco"]
+        ).quantize(Decimal("0.01"))
+        assert resultado["valor_ahorrado_intereses"] == esperado_ahorro
+
+    def test_projection_option_uvr_v2_fallbacks_when_uvr_not_available(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+        service.uvr_engine_v2_enabled = True
+        service.uvr_inflacion_anual_default = Decimal("0.06")
+
+        analisis = MagicMock()
+        analisis.id = uuid.uuid4()
+        analisis.saldo_capital_pesos = Decimal("56069733.47")
+        analisis.valor_cuota_con_subsidio = Decimal("523427")
+        analisis.valor_cuota_con_seguros = Decimal("523427")
+        analisis.valor_cuota_sin_seguros = Decimal("500000")
+        analisis.total_por_pagar = Decimal("523427")
+        analisis.beneficio_frech_mensual = Decimal("183855.65")
+        analisis.cuotas_pendientes = 325
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0471")
+        analisis.valor_prestado_inicial = Decimal("45200180")
+        analisis.seguros_total_mensual = Decimal("21134")
+        analisis.sistema_amortizacion = "UVR"
+        analisis.valor_uvr_fecha_extracto = None
+        analisis.frech_meses_restantes = None
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+        opcion = OpcionAbonoInput(numero_opcion=1, abono_adicional_mensual=Decimal("200000"), nombre_opcion="1a")
+
+        with patch("app.services.analysis_service.compare_uvr_scenarios") as compare_mock:
+            resultado = AnalysisService._calculate_projection_for_option(service, analisis, opcion, baseline)
+
+        compare_mock.assert_not_called()
+        assert resultado["nuevo_valor_cuota"] == baseline["cuota_actual_visible"] + Decimal("200000")
+
+    def test_projection_options_three_choices_start_from_visible_quota(self):
+        """Las 3 opciones deben partir de cuota visible, no de cuota calibrada interna."""
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = None
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("523427")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+        cuota_visible = baseline["cuota_actual_visible"]
+
+        opciones = [
+            OpcionAbonoInput(numero_opcion=1, abono_adicional_mensual=Decimal("149658"), nombre_opcion="1a"),
+            OpcionAbonoInput(numero_opcion=2, abono_adicional_mensual=Decimal("173789"), nombre_opcion="2a"),
+            OpcionAbonoInput(numero_opcion=3, abono_adicional_mensual=Decimal("202176"), nombre_opcion="3a"),
+        ]
+
+        resultados = [
+            AnalysisService._calculate_projection_for_option(service, analisis, opcion, baseline)
+            for opcion in opciones
+        ]
+
+        assert resultados[0]["nuevo_valor_cuota"] == cuota_visible + Decimal("149658")
+        assert resultados[1]["nuevo_valor_cuota"] == cuota_visible + Decimal("173789")
+        assert resultados[2]["nuevo_valor_cuota"] == cuota_visible + Decimal("202176")
+
+    def test_baseline_calibrado_no_contamina_total_simple_ni_opciones(self):
+        """Cuando hay calibración interna, UI y opciones deben permanecer sobre datos visibles."""
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = None
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("523427")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+        esperado_simple = (baseline["cuota_actual_visible"] * Decimal(analisis.cuotas_pendientes)).quantize(Decimal("0.01"))
+
+        opcion = OpcionAbonoInput(numero_opcion=1, abono_adicional_mensual=Decimal("149658"), nombre_opcion="1a")
+        resultado = AnalysisService._calculate_projection_for_option(service, analisis, opcion, baseline)
+
+        assert baseline["total_actual_simple"] == esperado_simple
+        assert baseline["datos_visible"].valor_cuota_actual == baseline["cuota_actual_visible"]
+        assert baseline["datos_proyeccion"].valor_cuota_actual == baseline["cuota_actual_proyeccion"]
+        assert resultado["nuevo_valor_cuota"] == baseline["cuota_actual_visible"] + Decimal("149658")
+
+    def test_veces_pagado_es_consistente_en_baseline_y_opcion(self):
+        """No. Veces Pagado usa costo_total_proyectado_banco de forma uniforme."""
+        service = AnalysisService.__new__(AnalysisService)
+        service.calc = crear_calculadora()
+        service.uvr_engine_v2_enabled = False
+
+        analisis = MagicMock()
+        analisis.saldo_capital_pesos = Decimal("61765856")
+        analisis.valor_cuota_con_subsidio = Decimal("523427")
+        analisis.valor_cuota_con_seguros = Decimal("724697")
+        analisis.valor_cuota_sin_seguros = Decimal("488889.82")
+        analisis.total_por_pagar = Decimal("159645259")
+        analisis.beneficio_frech_mensual = Decimal("201270")
+        analisis.cuotas_pagadas = 55
+        analisis.frech_meses_restantes = None
+        analisis.cuotas_pendientes = 305
+        analisis.tasa_interes_cobrada_ea = Decimal("0.0747")
+        analisis.valor_prestado_inicial = Decimal("64733094")
+        analisis.seguros_total_mensual = Decimal("46384.35")
+        analisis.sistema_amortizacion = "PESOS"
+
+        baseline = AnalysisService._calculate_baseline(service, analisis)
+        opcion = OpcionAbonoInput(numero_opcion=1, abono_adicional_mensual=Decimal("149658"), nombre_opcion="1a")
+        resultado = AnalysisService._calculate_projection_for_option(service, analisis, opcion, baseline)
+
+        esperado_baseline = (
+            baseline["costo_total_proyectado_banco"] / analisis.saldo_capital_pesos
+        ).quantize(Decimal("0.01"))
+        esperado_opcion = (
+            resultado["costo_total_proyectado_banco"] / analisis.saldo_capital_pesos
+        ).quantize(Decimal("0.01"))
+
+        assert baseline["veces_pagado_actual"] == esperado_baseline
+        assert resultado["veces_pagado"] == esperado_opcion
+
+    def test_generate_projections_persiste_campos_financieros_nuevos(self):
+        """La persistencia de propuestas debe incluir simple/proyectado/banco/subsidio FRECH."""
+        service = AnalysisService.__new__(AnalysisService)
+
+        analisis_id = uuid.uuid4()
+        usuario_id = uuid.uuid4()
+        analisis = MagicMock()
+        analisis.id = analisis_id
+        analisis.status = "VALIDATED"
+
+        service.analyses_repo = MagicMock()
+        service.analyses_repo.get_by_id_and_user.return_value = analisis
+        service.analyses_repo.save = MagicMock()
+
+        service.propuestas_repo = MagicMock()
+        service.propuestas_repo.delete_by_analisis = MagicMock()
+
+        persisted_payloads = []
+
+        def _create_capture(**kwargs):
+            persisted_payloads.append(kwargs)
+            return SimpleNamespace(**kwargs)
+
+        service.propuestas_repo.create.side_effect = _create_capture
+
+        service.db = MagicMock()
+        service.db.commit = MagicMock()
+        service.db.rollback = MagicMock()
+
+        service._validate_analysis_for_projection = MagicMock(return_value=True)
+        service._calculate_baseline = MagicMock(return_value={"datos_visible": MagicMock(), "datos": MagicMock()})
+        service._calculate_projection_for_option = MagicMock(return_value={
+            "cuotas_nuevas": 173,
+            "tiempo_restante_anios": 14,
+            "tiempo_restante_meses": 5,
+            "cuotas_reducidas": 132,
+            "tiempo_ahorrado_anios": 11,
+            "tiempo_ahorrado_meses": 0,
+            "nuevo_valor_cuota": Decimal("673085"),
+            "total_por_pagar_aprox": Decimal("116444705.00"),
+            "total_por_pagar_simple": Decimal("116444705.00"),
+            "costo_total_proyectado": Decimal("116128948.66"),
+            "costo_total_proyectado_banco": Decimal("133031628.66"),
+            "total_subsidio_frech_proyectado": Decimal("16902680.00"),
+            "valor_ahorrado_intereses": Decimal("33903586.28"),
+            "veces_pagado": Decimal("1.88"),
+            "honorarios_calculados": Decimal("2034215.18"),
+            "honorarios_con_iva": Decimal("2420716.06"),
+            "ingreso_minimo_requerido": Decimal("2243616.67"),
+        })
+
+        opciones = [
+            OpcionAbonoInput(numero_opcion=1, abono_adicional_mensual=Decimal("149658"), nombre_opcion="1a Eleccion"),
+        ]
+
+        result = AnalysisService.generate_projections(
+            service,
+            analisis_id=analisis_id,
+            opciones=opciones,
+            usuario_id=usuario_id,
+        )
+
+        assert result.success is True
+        assert len(persisted_payloads) == 1
+        payload = persisted_payloads[0]
+        assert payload["total_por_pagar_aprox"] == Decimal("116444705.00")
+        assert payload["costo_total_proyectado"] == Decimal("116128948.66")
+        assert payload["costo_total_proyectado_banco"] == Decimal("133031628.66")
+        assert payload["total_subsidio_frech_proyectado"] == Decimal("16902680.00")
 
     def test_calculate_baseline_infieres_cargos_recurrentes_no_amortizables(self):
         service = AnalysisService.__new__(AnalysisService)

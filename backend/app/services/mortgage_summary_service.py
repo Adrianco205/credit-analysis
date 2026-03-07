@@ -268,11 +268,23 @@ class MortgageSummaryBuilder:
                 warnings.append("value_total_inconsistency")
 
         cuota_completa = None
+        cuota_incluye_frech = (
+            cuota_actual_source.endswith("valor_cuota_con_seguros")
+            or cuota_actual_source.endswith("valor_cuota_sin_seguros")
+        )
         if cuota_actual is not None:
-            if cuota_actual_source.endswith("valor_cuota_con_seguros") or cuota_actual_source.endswith("valor_cuota_sin_seguros"):
+            if cuota_incluye_frech:
                 cuota_completa = cuota_actual
             else:
                 cuota_completa = cuota_actual + beneficio_frech
+
+        # Cuota que realmente paga el cliente (sin subsidio FRECH)
+        cuota_pago_cliente: Decimal | None = None
+        if cuota_actual is not None:
+            if cuota_incluye_frech and beneficio_frech > 0:
+                cuota_pago_cliente = max(cuota_actual - beneficio_frech, Decimal("0"))
+            else:
+                cuota_pago_cliente = cuota_actual
 
         total_pagado_dia = None
         total_pagado_source = "missing"
@@ -281,15 +293,15 @@ class MortgageSummaryBuilder:
         monto_real_pagado = None
 
         pagos_reales_acumulados = self._resolve_real_paid_from_movements(raw_data)
-        if cuota_actual is not None and cuotas_pagadas is not None:
+        if cuota_pago_cliente is not None and cuotas_pagadas is not None:
             if pagos_reales_acumulados is not None:
                 total_pagado_dia = pagos_reales_acumulados
                 total_pagado_source = "extracted"
                 total_pagado_refs = ["raw:movimientos.total_pagado"]
             else:
-                total_pagado_dia = cuota_actual * Decimal(cuotas_pagadas)
+                total_pagado_dia = cuota_pago_cliente * Decimal(cuotas_pagadas)
                 total_pagado_source = "calculated"
-                total_pagado_refs = ["rule:cuota_actual*cuotas_pagadas"]
+                total_pagado_refs = ["rule:cuota_pago_cliente*cuotas_pagadas"]
                 warnings.append("estimated_total_paid")
 
             total_beneficio_frech = beneficio_frech * Decimal(cuotas_pagadas)
@@ -372,7 +384,7 @@ class MortgageSummaryBuilder:
                     ),
                     self._row(
                         "cuota_actual_aprox",
-                        "Cuota actual a cancelar aprox.",
+                        "Cuota a cancelar.",
                         cuota_actual,
                         True,
                         ResolvedValue(cuota_actual, cuota_actual_source, cuota_actual_conf, cuota_actual_refs),

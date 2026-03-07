@@ -55,7 +55,10 @@ class PropuestaAhorro(Base):
     # RESULTADOS CALCULADOS - DINERO
     # ═══════════════════════════════════════════════════════════════════
     nuevo_valor_cuota: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Cuota actual + abono
-    total_por_pagar_aprox: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # $106,086,696
+    total_por_pagar_aprox: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Estimado simple: cuota x cuotas
+    costo_total_proyectado: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Proyección real mes a mes (cliente)
+    costo_total_proyectado_banco: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Cliente + FRECH proyectado
+    total_subsidio_frech_proyectado: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     valor_ahorrado_intereses: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # $142,349,052
     
     # Veces que se paga el valor prestado inicial

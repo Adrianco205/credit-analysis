@@ -107,7 +107,11 @@ class ProyeccionOpcionResponse(BaseModel):
     
     # Dinero
     nuevo_valor_cuota: Decimal  # Cuota actual + Abono adicional
-    total_por_pagar_aprox: Decimal
+    total_por_pagar_aprox: Decimal  # Estimado simple: cuota x cuotas
+    total_por_pagar_simple: Decimal | None = None  # Alias de compatibilidad
+    costo_total_proyectado: Decimal | None = None  # Suma real mes a mes (cliente)
+    costo_total_proyectado_banco: Decimal | None = None  # Cliente + FRECH proyectado
+    total_subsidio_frech_proyectado: Decimal | None = None
     
     # Ahorro
     cuotas_reducidas: int
@@ -138,7 +142,11 @@ class LimitesActualesResponse(BaseModel):
     tiempo_pendiente: TiempoAhorrado
     abono_adicional_cuota: Decimal  # Actualmente $0
     valor_cuota: Decimal
-    total_por_pagar_aprox: Decimal
+    total_por_pagar_aprox: Decimal  # Estimado simple: cuota x cuotas pendientes
+    total_por_pagar_simple: Decimal | None = None  # Alias de compatibilidad
+    costo_total_proyectado: Decimal | None = None
+    costo_total_proyectado_banco: Decimal | None = None
+    total_subsidio_frech_proyectado: Decimal | None = None
     veces_pagado: Decimal
 
 

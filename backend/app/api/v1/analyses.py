@@ -246,6 +246,10 @@ class ProjectionResponse(BaseModel):
     # Dinero
     nuevo_valor_cuota: Decimal | None
     total_por_pagar_aprox: Decimal | None
+    total_por_pagar_simple: Decimal | None = None
+    costo_total_proyectado: Decimal | None = None
+    costo_total_proyectado_banco: Decimal | None = None
+    total_subsidio_frech_proyectado: Decimal | None = None
     valor_ahorrado_intereses: Decimal | None
     veces_pagado: Decimal | None
     
@@ -259,6 +263,32 @@ class ProjectionResponse(BaseModel):
     es_opcion_seleccionada: bool
     
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="after")
+    def normalize_totals_semantics(self):
+        if self.total_por_pagar_simple is None and self.nuevo_valor_cuota and self.cuotas_nuevas:
+            self.total_por_pagar_simple = (self.nuevo_valor_cuota * Decimal(self.cuotas_nuevas)).quantize(Decimal("0.01"))
+
+        # Compatibilidad legacy temporal:
+        # en registros historicos, total_por_pagar_aprox almaceno costo proyectado real.
+        # Esta ruta se puede retirar cuando no existan filas con:
+        # costo_total_proyectado IS NULL AND total_por_pagar_aprox IS NOT NULL.
+        if self.costo_total_proyectado is None and self.total_por_pagar_aprox is not None:
+            if self.total_por_pagar_simple is None or self.total_por_pagar_aprox != self.total_por_pagar_simple:
+                self.costo_total_proyectado = self.total_por_pagar_aprox
+                if self.total_por_pagar_simple is not None:
+                    self.total_por_pagar_aprox = self.total_por_pagar_simple
+
+        if self.costo_total_proyectado is None:
+            self.costo_total_proyectado = self.total_por_pagar_aprox
+
+        if self.total_por_pagar_aprox is None:
+            self.total_por_pagar_aprox = self.total_por_pagar_simple
+
+        if self.costo_total_proyectado_banco is None:
+            self.costo_total_proyectado_banco = self.costo_total_proyectado
+
+        return self
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -674,16 +704,29 @@ def download_proposal_pdf(
     cuota_mensual = analisis.valor_cuota_con_seguros or analisis.valor_cuota_sin_seguros or Decimal("0")
     tasa_interes = analisis.tasa_interes_cobrada_ea or analisis.tasa_interes_pactada_ea or Decimal("0")
 
+    baseline = None
+    try:
+        service = get_analysis_service(db)
+        baseline = service._calculate_baseline(analisis)
+    except Exception as exc:
+        logger.warning("No se pudo calcular baseline para PDF cliente %s: %s", analysis_id, exc)
+
+    cuota_visible = baseline.get("cuota_actual_visible") if baseline else None
+    costo_total_proyectado_banco_actual = baseline.get("costo_total_proyectado_banco") if baseline else None
+    veces_pagado_actual = baseline.get("veces_pagado_actual") if baseline else None
+
     datos_credito = DatosCredito(
         numero_credito=analisis.numero_credito or "No especificado",
         banco=banco_nombre,
         saldo_capital=analisis.saldo_capital_pesos or Decimal("0"),
         tasa_interes_ea=tasa_interes,
-        cuota_mensual=cuota_mensual,
+        cuota_mensual=cuota_visible or cuota_mensual,
         cuotas_pendientes=analisis.cuotas_pendientes or 0,
         cuotas_pagadas=analisis.cuotas_pagadas or 0,
         fecha_desembolso=analisis.fecha_desembolso,
         sistema_amortizacion=analisis.sistema_amortizacion or "PESOS",
+        costo_total_proyectado_banco_actual=costo_total_proyectado_banco_actual,
+        veces_pagado_actual=veces_pagado_actual,
     )
     
     # Construir opciones de ahorro
@@ -704,6 +747,9 @@ def download_proposal_pdf(
             honorarios_con_iva=p.honorarios_con_iva or Decimal("0"),
             ingreso_minimo_requerido=p.ingreso_minimo_requerido or Decimal("0"),
             nueva_cuota=nueva_cuota,
+            costo_total_proyectado_banco=p.costo_total_proyectado_banco or p.costo_total_proyectado,
+            veces_pagado=p.veces_pagado,
+            cuotas_reducidas=p.cuotas_reducidas or 0,
         )
         opciones.append(opcion)
     

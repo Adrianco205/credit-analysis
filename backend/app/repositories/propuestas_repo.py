@@ -17,6 +17,16 @@ class PropuestasRepo:
     
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _filter_model_fields(data: dict) -> dict:
+        """Retorna solo campos válidos para PropuestaAhorro.
+
+        Permite que la capa de servicios pase métricas calculadas adicionales
+        sin romper la persistencia cuando aún no existen columnas en BD.
+        """
+        valid_fields = {column.key for column in PropuestaAhorro.__mapper__.columns}
+        return {key: value for key, value in data.items() if key in valid_fields}
     
     # ═══════════════════════════════════════════════════════════════════════════════
     # CRUD BÁSICO
@@ -24,14 +34,17 @@ class PropuestasRepo:
     
     def create(self, **kwargs) -> PropuestaAhorro:
         """Crear una nueva propuesta."""
-        propuesta = PropuestaAhorro(**kwargs)
+        propuesta = PropuestaAhorro(**self._filter_model_fields(kwargs))
         self.db.add(propuesta)
         self.db.flush()
         return propuesta
     
     def create_batch(self, propuestas_data: list[dict]) -> list[PropuestaAhorro]:
         """Crear múltiples propuestas de una vez."""
-        propuestas = [PropuestaAhorro(**data) for data in propuestas_data]
+        propuestas = [
+            PropuestaAhorro(**self._filter_model_fields(data))
+            for data in propuestas_data
+        ]
         self.db.add_all(propuestas)
         self.db.flush()
         return propuestas
@@ -162,6 +175,12 @@ class PropuestasRepo:
         # Dinero
         propuesta.nuevo_valor_cuota = resultado.get("nuevo_valor_cuota")
         propuesta.total_por_pagar_aprox = resultado.get("total_por_pagar_aprox")
+        if hasattr(propuesta, "costo_total_proyectado"):
+            propuesta.costo_total_proyectado = resultado.get("costo_total_proyectado")
+        if hasattr(propuesta, "costo_total_proyectado_banco"):
+            propuesta.costo_total_proyectado_banco = resultado.get("costo_total_proyectado_banco")
+        if hasattr(propuesta, "total_subsidio_frech_proyectado"):
+            propuesta.total_subsidio_frech_proyectado = resultado.get("total_subsidio_frech_proyectado")
         propuesta.valor_ahorrado_intereses = resultado.get("valor_ahorrado_intereses")
         propuesta.veces_pagado = resultado.get("veces_pagado")
         

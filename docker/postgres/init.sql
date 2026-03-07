@@ -136,6 +136,10 @@ CREATE TABLE IF NOT EXISTS analisis_hipotecario (
     valor_cuota_con_seguros numeric(15,2),
     beneficio_frech_mensual numeric(15,2),
     valor_cuota_con_subsidio numeric(15,2),
+    frech_fecha_inicio date,
+    frech_fecha_fin date,
+    frech_meses_restantes integer,
+    frech_vigencia_fuente varchar(20),
     saldo_capital_pesos numeric(15,2),
     total_por_pagar numeric(15,2),
     
@@ -225,6 +229,9 @@ CREATE TABLE IF NOT EXISTS propuestas_ahorro (
     -- Resultados calculados - Dinero
     nuevo_valor_cuota numeric(15,2),
     total_por_pagar_aprox numeric(15,2),
+    costo_total_proyectado numeric(15,2),
+    costo_total_proyectado_banco numeric(15,2),
+    total_subsidio_frech_proyectado numeric(15,2),
     valor_ahorrado_intereses numeric(15,2),
     veces_pagado numeric(5,2),
     

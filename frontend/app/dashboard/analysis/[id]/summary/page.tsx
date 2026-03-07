@@ -109,7 +109,7 @@ export default function AnalysisSummaryPage() {
                             <Row label="Cuotas Pactadas" value={summaryData.datos_basicos?.cuotas_pactadas} />
                             <Row label="Cuotas Pagadas" value={summaryData.datos_basicos?.cuotas_pagadas} />
                             <Row label="Cuotas por Pagar" value={summaryData.datos_basicos?.cuotas_por_pagar} />
-                            <Row label="Cuota Actual a Cancelar Aprox." value={formatMoney(summaryData.datos_basicos?.cuota_actual_aprox)} />
+                            <Row label="Cuota a Cancelar." value={formatMoney(summaryData.datos_basicos?.cuota_actual_aprox)} />
                             <Row label="Beneficio FRECH (cuota)" value={formatFrechValue(summaryData.datos_basicos?.beneficio_frech)} valueClass="text-green-600" />
                             <Row label="Cuota completa aprox. (sin FRECH + seguros)" value={formatMoney(summaryData.datos_basicos?.cuota_completa_aprox)} />
                             <div className="col-span-full border-t my-2" />

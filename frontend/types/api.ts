@@ -235,6 +235,10 @@ export interface ProjectionResponse {
   tiempo_ahorrado_meses?: number | null;
   nuevo_valor_cuota?: number | null;
   total_por_pagar_aprox?: number | null;
+  total_por_pagar_simple?: number | null;
+  costo_total_proyectado?: number | null;
+  costo_total_proyectado_banco?: number | null;
+  total_subsidio_frech_proyectado?: number | null;
   valor_ahorrado_intereses?: number | null;
   veces_pagado?: number | null;
   honorarios_calculados?: number | null;
@@ -442,6 +446,7 @@ export interface AdminAnalysisDetailResponse {
   sistema_amortizacion?: string | null;
   plan_credito?: string | null;
   tasa_interes_cobrada_ea?: number | null;
+  tasa_interes_subsidiada_ea?: number | null;
   valor_prestado_inicial?: number | null;
   valor_cuota_con_subsidio?: number | null;
   valor_cuota_sin_seguros?: number | null;
@@ -452,9 +457,14 @@ export interface AdminAnalysisDetailResponse {
   cuotas_pendientes?: number | null;
   cuotas_pagadas?: number | null;
   fecha_extracto?: string | null;
+  seguros_total_mensual?: number | null;
   saldo_capital_pesos?: number | null;
   total_por_pagar?: number | null;
   total_por_pagar_proyectado?: number | null;
+  total_por_pagar_simple?: number | null;
+  costo_total_proyectado?: number | null;
+  costo_total_proyectado_banco?: number | null;
+  total_subsidio_frech_proyectado?: number | null;
   veces_pagado_actual?: number | null;
   ingresos_mensuales?: number | null;
   capacidad_pago_max?: number | null;
@@ -492,6 +502,10 @@ export interface ProposalCurrentLimitsResponse {
   abono_adicional_cuota: number;
   valor_cuota: number;
   total_por_pagar_aprox: number;
+  total_por_pagar_simple: number;
+  costo_total_proyectado: number;
+  costo_total_proyectado_banco?: number;
+  total_subsidio_frech_proyectado?: number;
   veces_pagado: number;
 }
 
@@ -504,6 +518,10 @@ export interface ProposalOptionResponse {
   tiempo_restante: ProjectionTimeResponse;
   nuevo_valor_cuota: number;
   total_por_pagar_aprox: number;
+  total_por_pagar_simple: number;
+  costo_total_proyectado: number;
+  costo_total_proyectado_banco?: number;
+  total_subsidio_frech_proyectado?: number;
   cuotas_reducidas: number;
   tiempo_ahorrado: ProjectionTimeResponse;
   valor_ahorrado_intereses: number;
@@ -557,6 +575,10 @@ export interface AdminProjectionResponse {
   tiempo_ahorrado_meses?: number | null;
   nuevo_valor_cuota?: number | null;
   total_por_pagar_aprox?: number | null;
+  total_por_pagar_simple?: number | null;
+  costo_total_proyectado?: number | null;
+  costo_total_proyectado_banco?: number | null;
+  total_subsidio_frech_proyectado?: number | null;
   valor_ahorrado_intereses?: number | null;
   veces_pagado?: number | null;
   honorarios_calculados?: number | null;

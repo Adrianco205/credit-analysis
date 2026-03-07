@@ -292,10 +292,10 @@ class TestProyeccion:
             esperado = totales_pdf[idx]
             # Tolerancia del 12% para reflejar diferencias comerciales no visibles en extracto.
             limite = (esperado * Decimal("0.12")).quantize(Decimal("0.01"))
-            assert abs(proyeccion.total_por_pagar - esperado) <= limite
+            assert abs(proyeccion.costo_total_proyectado_banco - esperado) <= limite
 
-    def test_proyeccion_frech_incrementa_total_proyectado_en_opciones(self, calculadora):
-        """Con abono > 0, el total proyectado incorpora aporte FRECH en créditos subsidiados."""
+    def test_proyeccion_frech_incrementa_costo_banco_pero_no_cliente(self, calculadora):
+        """Con FRECH, el costo al banco aumenta por subsidio y el costo cliente se mantiene consistente."""
         datos_con_frech = DatosCredito(
             saldo_capital=Decimal("61765856"),
             valor_cuota_actual=Decimal("523427"),
@@ -330,10 +330,12 @@ class TestProyeccion:
             numero_opcion=1,
         )
 
-        assert con_frech.total_por_pagar > sin_frech.total_por_pagar
+        assert con_frech.costo_total_proyectado == sin_frech.costo_total_proyectado
+        assert con_frech.costo_total_proyectado_banco > sin_frech.costo_total_proyectado_banco
+        assert con_frech.total_subsidio_frech_proyectado > Decimal("0")
 
     def test_proyeccion_uvr_no_infla_total_por_frech(self, calculadora):
-        """En UVR, el total proyectado debe mantenerse en flujo cliente (sin inflar por FRECH)."""
+        """En UVR, el costo cliente no se infla por FRECH y el subsidio queda separado en costo banco."""
         datos_uvr_con_frech = DatosCredito(
             saldo_capital=Decimal("56069733.47"),
             valor_cuota_actual=Decimal("326168.17"),
@@ -368,17 +370,18 @@ class TestProyeccion:
             numero_opcion=1,
         )
 
-        assert con_frech.total_por_pagar == sin_frech.total_por_pagar
+        assert con_frech.costo_total_proyectado == sin_frech.costo_total_proyectado
+        assert con_frech.costo_total_proyectado_banco > sin_frech.costo_total_proyectado_banco
 
-    def test_veces_pagado_usa_total_por_pagar_sobre_saldo_actual(self, calculadora, datos_pesos_frech_pdf_mode):
-        """No. veces pagado debe alinearse con indicador 2.xx del PDF."""
+    def test_veces_pagado_usa_costo_total_banco_sobre_saldo_actual(self, calculadora, datos_pesos_frech_pdf_mode):
+        """No. veces pagado usa costo total integral (cliente + FRECH) sobre saldo actual."""
         proyeccion = calculadora.calcular_proyeccion(
             datos=datos_pesos_frech_pdf_mode,
             abono_extra=Decimal("149658"),
             numero_opcion=1,
         )
 
-        esperado = (proyeccion.total_por_pagar / datos_pesos_frech_pdf_mode.saldo_capital).quantize(Decimal("0.01"))
+        esperado = (proyeccion.costo_total_proyectado_banco / datos_pesos_frech_pdf_mode.saldo_capital).quantize(Decimal("0.01"))
         assert proyeccion.veces_pagado == esperado
         assert proyeccion.veces_pagado > Decimal("1.00")
 
@@ -405,8 +408,8 @@ class TestProyeccion:
 
         assert proyeccion.total_por_pagar == resultado_directo.total_pagado
 
-    def test_ahorro_total_y_ahorro_intereses_se_mantienen_separados(self, calculadora, datos_extracto_bancolombia):
-        """Ahorro total proyectado y ahorro puro de intereses deben ser métricas distintas."""
+    def test_ahorro_banco_es_al_menos_ahorro_cliente(self, calculadora, datos_extracto_bancolombia):
+        """Con la nueva semántica, ahorro visible (banco) debe ser >= ahorro cliente."""
         proyeccion = calculadora.calcular_proyeccion(
             datos=datos_extracto_bancolombia,
             abono_extra=Decimal("200000"),
@@ -415,7 +418,75 @@ class TestProyeccion:
 
         assert proyeccion.ahorro_total_proyectado > Decimal("0")
         assert proyeccion.valor_ahorrado_intereses > Decimal("0")
-        assert proyeccion.ahorro_total_proyectado != proyeccion.valor_ahorrado_intereses
+        assert proyeccion.valor_ahorrado_intereses >= proyeccion.ahorro_total_proyectado
+
+    def test_total_por_pagar_simple_es_cuota_por_cuotas(self, calculadora, datos_pesos_frech_pdf_mode):
+        """total_por_pagar_simple = nueva_cuota × cuotas_nuevas (estimación rápida)."""
+        abono = Decimal("149658")
+        proyeccion = calculadora.calcular_proyeccion(
+            datos=datos_pesos_frech_pdf_mode,
+            abono_extra=abono,
+            numero_opcion=1,
+        )
+
+        esperado = (proyeccion.nuevo_valor_cuota * Decimal(proyeccion.cuotas_nuevas)).quantize(Decimal("0.01"))
+        assert proyeccion.total_por_pagar_simple == esperado
+        # Simple y proyectado no deben colapsar en la misma cifra salvo casos límite.
+        assert proyeccion.total_por_pagar_simple != proyeccion.total_por_pagar
+
+    def test_costo_total_proyectado_no_supera_total_simple_en_ajuste_final(self, calculadora, datos_pesos_frech_pdf_mode):
+        """El costo proyectado real puede quedar levemente por debajo del simple por ajuste de última cuota."""
+        proyeccion = calculadora.calcular_proyeccion(
+            datos=datos_pesos_frech_pdf_mode,
+            abono_extra=Decimal("149658"),
+            numero_opcion=1,
+        )
+
+        diferencia = (proyeccion.total_por_pagar_simple - proyeccion.costo_total_proyectado).quantize(Decimal("0.01"))
+        assert proyeccion.costo_total_proyectado <= proyeccion.total_por_pagar_simple
+        # La diferencia debe ser acotada por la lógica del último período (no arbitraria).
+        assert diferencia <= proyeccion.nuevo_valor_cuota
+
+    def test_total_simple_actual_usa_cuotas_pendientes_reales(self, calculadora):
+        """El total simple actual debe usar SIEMPRE las cuotas pendientes del analisis (escenario hoy)."""
+        cuota_actual = Decimal("523427.08")
+        cuotas_pendientes = 305
+
+        total_simple_actual = calculadora.calcular_total_por_pagar_simple_actual(
+            cuota_actual=cuota_actual,
+            cuotas_pendientes=cuotas_pendientes,
+        )
+
+        assert total_simple_actual == Decimal("159645259.40")
+
+    def test_frech_null_se_limita_a_84_meses(self, calculadora):
+        """Cuando frech_meses_restantes es NULL, el subsidio proyectado debe limitarse a 84 meses."""
+        subsidio = calculadora.calcular_flujo_frech(
+            beneficio_frech_mensual=Decimal("201270"),
+            cuotas_proyectadas=240,
+            frech_meses_restantes=None,
+        )
+        assert subsidio == Decimal("16906680.00")
+
+    def test_frech_explicito_respeta_meses_restantes(self, calculadora):
+        """Con frech_meses_restantes explícito, se usa ese tope y no el default 84."""
+        subsidio = calculadora.calcular_flujo_frech(
+            beneficio_frech_mensual=Decimal("201270"),
+            cuotas_proyectadas=120,
+            frech_meses_restantes=36,
+        )
+        assert subsidio == Decimal("7245720.00")
+
+    def test_sin_frech_subsidio_y_costo_banco_igual_a_cliente(self, calculadora):
+        """Sin FRECH, el costo banco debe coincidir con el costo cliente."""
+        costo_cliente, costo_banco, subsidio = calculadora.calcular_costo_total_proyectado(
+            total_flujo_cliente=Decimal("140000000"),
+            beneficio_frech_mensual=Decimal("0"),
+            cuotas_proyectadas=200,
+            frech_meses_restantes=None,
+        )
+        assert subsidio == Decimal("0.00")
+        assert costo_banco == costo_cliente
 
 
 class TestHonorarios:

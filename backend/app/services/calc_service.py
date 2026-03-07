@@ -10,7 +10,7 @@ Soporta dos sistemas:
 Fórmulas clave:
 - Cuota fija (francesa): C = P * [r(1+r)^n] / [(1+r)^n - 1]
 - Tasa mensual: rm = (1 + EA)^(1/12) - 1
-- Veces pagado: total_por_pagar_aprox / saldo_credito_actual
+- Relación costo/saldo: costo_total_proyectado / saldo_credito_actual
 - Honorarios: max(ahorro * 0.06, TARIFA_MINIMA)
 - Ingreso mínimo: nueva_cuota / 0.30
 """
@@ -29,6 +29,7 @@ PORCENTAJE_HONORARIOS = Decimal("0.06")  # 6% del ahorro
 PORCENTAJE_IVA = Decimal("0.19")  # 19% IVA Colombia
 TARIFA_MINIMA_HONORARIOS = Decimal("500000")  # $500,000 COP mínimo
 PORCENTAJE_INGRESO_MINIMO = Decimal("0.30")  # 30% de la cuota (Ley 546/99)
+FRECH_MAX_MESES_DEFAULT = 84
 
 # Precisión para cálculos monetarios
 PRECISION_DINERO = Decimal("0.01")
@@ -55,6 +56,7 @@ class DatosCredito:
     sistema_amortizacion: str = "PESOS"  # PESOS o UVR
     valor_uvr_actual: Optional[Decimal] = None
     saldo_uvr: Optional[Decimal] = None
+    frech_meses_restantes: Optional[int] = None
 
 
 @dataclass
@@ -113,7 +115,13 @@ class ResultadoProyeccion:
     
     # Dinero
     nuevo_valor_cuota: Decimal
-    total_por_pagar: Decimal
+    # Legacy aliases kept for backward compatibility with older mappers/serializers.
+    total_por_pagar: Decimal  # Alias legacy de costo_total_proyectado
+    total_por_pagar_simple: Decimal  # Alias legacy de total_por_pagar_aprox
+    costo_total_proyectado: Decimal
+    costo_total_proyectado_banco: Decimal
+    total_subsidio_frech_proyectado: Decimal
+    incluye_frech_en_costo_total_banco: bool
     total_intereses_proyectados: Decimal
     total_seguros_proyectados: Decimal
     valor_ahorrado_intereses: Decimal
@@ -169,6 +177,92 @@ class CalculadoraFinanciera:
     def __init__(self):
         self._precision_dinero = PRECISION_DINERO
         self._precision_tasa = PRECISION_TASA
+
+    def _normalizar_sistema_amortizacion(self, sistema_amortizacion: str | None) -> str:
+        """Normaliza variantes del sistema de amortizacion a PESOS o UVR."""
+        sistema = (sistema_amortizacion or "PESOS").upper().strip()
+        if sistema in {"PESOS", "CAPITAL"}:
+            return "PESOS"
+        return "UVR" if sistema == "UVR" else "PESOS"
+
+    def calcular_total_por_pagar_simple_actual(self, cuota_actual: Decimal, cuotas_pendientes: int) -> Decimal:
+        """Total simple para escenario actual (hoy): cuota actual x cuotas pendientes del analisis."""
+        if cuota_actual <= 0 or cuotas_pendientes <= 0:
+            return Decimal("0.00")
+        return (cuota_actual * Decimal(cuotas_pendientes)).quantize(self._precision_dinero)
+
+    def calcular_total_por_pagar_simple_opcion(self, nueva_cuota: Decimal, cuotas_nuevas: int) -> Decimal:
+        """Total simple para opcion proyectada: nueva cuota x cuotas nuevas."""
+        if nueva_cuota <= 0 or cuotas_nuevas <= 0:
+            return Decimal("0.00")
+        return (nueva_cuota * Decimal(cuotas_nuevas)).quantize(self._precision_dinero)
+
+    def calcular_cuota_total_objetivo(
+        self,
+        saldo_capital: Decimal,
+        tasa_interes_ea: Decimal,
+        cuotas_objetivo: int,
+        seguros_mensual: Decimal = Decimal("0"),
+        cargos_no_amortizables_mensuales: Decimal = Decimal("0"),
+    ) -> Decimal:
+        """Calcula la cuota total mensual necesaria para amortizar en un numero objetivo de cuotas."""
+        if saldo_capital <= 0 or cuotas_objetivo <= 0:
+            return Decimal("0.00")
+
+        tasa_mensual = self.tasa_ea_a_mensual(tasa_interes_ea)
+        cuota_base = self.calcular_cuota_fija(saldo_capital, tasa_mensual, cuotas_objetivo)
+        cuota_total = cuota_base + (seguros_mensual or Decimal("0")) + (cargos_no_amortizables_mensuales or Decimal("0"))
+        return cuota_total.quantize(self._precision_dinero)
+
+    def calcular_flujo_frech(
+        self,
+        beneficio_frech_mensual: Decimal,
+        cuotas_proyectadas: int,
+        frech_meses_restantes: int | None = None,
+    ) -> Decimal:
+        """Calcula el subsidio FRECH proyectado total (si aplica)."""
+        if beneficio_frech_mensual <= 0 or cuotas_proyectadas <= 0:
+            return Decimal("0.00")
+
+        meses_subsidiados = cuotas_proyectadas
+        if frech_meses_restantes is not None:
+            try:
+                meses_frech = int(frech_meses_restantes)
+            except (TypeError, ValueError):
+                meses_frech = cuotas_proyectadas
+            meses_subsidiados = min(cuotas_proyectadas, max(0, meses_frech))
+        else:
+            logger.warning(
+                "frech_meses_restantes es NULL; usando politica por defecto de %s meses",
+                FRECH_MAX_MESES_DEFAULT,
+            )
+            meses_subsidiados = min(cuotas_proyectadas, FRECH_MAX_MESES_DEFAULT)
+
+        return (beneficio_frech_mensual * Decimal(meses_subsidiados)).quantize(self._precision_dinero)
+
+    def calcular_costo_total_proyectado(
+        self,
+        total_flujo_cliente: Decimal,
+        beneficio_frech_mensual: Decimal,
+        cuotas_proyectadas: int,
+        frech_meses_restantes: int | None = None,
+    ) -> tuple[Decimal, Decimal, Decimal]:
+        """
+        Separa el costo total proyectado en dos visiones:
+        - cliente: lo que paga el cliente
+        - banco: cliente + subsidio FRECH proyectado
+
+        Nota: cuando frech_meses_restantes es NULL, se aplica la politica conservadora
+        de tope FRECH (84 meses) para evitar sobreproyecciones.
+        """
+        costo_cliente = total_flujo_cliente.quantize(self._precision_dinero)
+        subsidio_frech = self.calcular_flujo_frech(
+            beneficio_frech_mensual=beneficio_frech_mensual,
+            cuotas_proyectadas=cuotas_proyectadas,
+            frech_meses_restantes=frech_meses_restantes,
+        )
+        costo_banco = (costo_cliente + subsidio_frech).quantize(self._precision_dinero)
+        return costo_cliente, costo_banco, subsidio_frech
 
     def _normalize_tasa_ea(self, tasa_ea: Decimal) -> Decimal:
         if tasa_ea <= 0:
@@ -288,7 +382,8 @@ class CalculadoraFinanciera:
         """
         tabla: List[FilaAmortizacion] = []
 
-        usa_uvr = sistema_amortizacion == "UVR" and valor_uvr_actual is not None and valor_uvr_actual > 0
+        sistema_normalizado = self._normalizar_sistema_amortizacion(sistema_amortizacion)
+        usa_uvr = sistema_normalizado == "UVR" and valor_uvr_actual is not None and valor_uvr_actual > 0
         factor_uvr = valor_uvr_actual if usa_uvr else Decimal("1")
 
         saldo = saldo_inicial / factor_uvr
@@ -387,10 +482,18 @@ class CalculadoraFinanciera:
         nombre_opcion: str = "Opción"
     ) -> ResultadoProyeccion:
         """
-        Calcula la proyección con un abono extra mensual.
+        Calcula la proyeccion con un abono extra mensual.
         
         Compara el escenario actual (sin abono) vs con abono extra
         para determinar ahorros en tiempo e intereses.
+
+        Semantica de costos:
+        - total_por_pagar_simple: estimacion rapida (nueva_cuota x cuotas_nuevas)
+        - costo_total_proyectado: suma real mes a mes de la tabla de amortizacion
+        - costo_total_proyectado_banco: costo cliente + FRECH proyectado
+
+        Por ajuste de ultima cuota, costo_total_proyectado puede quedar levemente
+        por debajo del total simple; ese comportamiento es esperado.
         """
         tasa_mensual = self.tasa_ea_a_mensual(datos.tasa_interes_ea)
         
@@ -422,18 +525,24 @@ class CalculadoraFinanciera:
             valor_uvr_actual=datos.valor_uvr_actual
         )
 
-        # Fuente oficial del total proyectado: flujo completo mensual amortizado.
-        total_por_pagar_proyectado = resultado_con_abono.total_pagado
-        # Para proyecciones PESOS, el total puede representarse como flujo total al banco
-        # (cliente + FRECH). En UVR se mantiene como flujo pagado por el cliente para
-        # evitar inflar el total mostrado frente a la cuota proyectada visible.
-        if (
-            abono_extra > 0
-            and datos.beneficio_frech > 0
-            and (datos.sistema_amortizacion or "PESOS").upper().strip() == "PESOS"
-        ):
-            total_por_pagar_proyectado += datos.beneficio_frech * Decimal(resultado_con_abono.cuotas_totales)
-        total_por_pagar_proyectado = total_por_pagar_proyectado.quantize(self._precision_dinero)
+        # Costo total proyectado del cliente: suma mes a mes de la amortizacion.
+        costo_total_proyectado, costo_total_proyectado_banco, total_subsidio_frech_proyectado = (
+            self.calcular_costo_total_proyectado(
+                total_flujo_cliente=resultado_con_abono.total_pagado,
+                beneficio_frech_mensual=datos.beneficio_frech,
+                cuotas_proyectadas=resultado_con_abono.cuotas_totales,
+                frech_meses_restantes=datos.frech_meses_restantes,
+            )
+        )
+
+        # Baseline banco para semantica comercial unificada de ahorro.
+        _, costo_total_actual_banco, _ = self.calcular_costo_total_proyectado(
+            total_flujo_cliente=resultado_actual.total_pagado,
+            beneficio_frech_mensual=datos.beneficio_frech,
+            cuotas_proyectadas=resultado_actual.cuotas_totales,
+            frech_meses_restantes=datos.frech_meses_restantes,
+        )
+        incluye_frech_en_costo_total_banco = total_subsidio_frech_proyectado > 0
         
         # ═══════════════════════════════════════════════════════════════════
         # CÁLCULOS DE AHORRO
@@ -445,18 +554,25 @@ class CalculadoraFinanciera:
         tiempo_ahorrado = TiempoAhorro.desde_meses(cuotas_reducidas)
         tiempo_restante = TiempoAhorro.desde_meses(resultado_con_abono.cuotas_totales)
         
-        # Ahorro en intereses
-        ahorro_intereses = (resultado_actual.total_intereses - resultado_con_abono.total_intereses).quantize(self._precision_dinero)
+        # Semantica solicitada: ahorro visible = baseline banco - costo banco opcion.
+        ahorro_intereses = (costo_total_actual_banco - costo_total_proyectado_banco).quantize(self._precision_dinero)
         ahorro_total_proyectado = (resultado_actual.total_pagado - resultado_con_abono.total_pagado).quantize(
             self._precision_dinero
         )
         
         # Nueva cuota total (cuota base + abono extra)
         nueva_cuota = datos.valor_cuota_actual + abono_extra
-        
-        # No. veces pagado = total por pagar / saldo actual del crédito
+
+        # Total por pagar simple (estimacion rapida): cuota x cuotas.
+        total_por_pagar_simple = self.calcular_total_por_pagar_simple_opcion(
+            nueva_cuota=nueva_cuota,
+            cuotas_nuevas=resultado_con_abono.cuotas_totales,
+        )
+
+        # Indicador comercial "No. Veces Pagado": relacion entre costo total
+        # integral (cliente + FRECH proyectado) y saldo de capital actual.
         if datos.saldo_capital > 0:
-            veces_pagado = (total_por_pagar_proyectado / datos.saldo_capital).quantize(
+            veces_pagado = (costo_total_proyectado_banco / datos.saldo_capital).quantize(
                 Decimal("0.01")
             )
         else:
@@ -482,7 +598,12 @@ class CalculadoraFinanciera:
             cuotas_reducidas=cuotas_reducidas,
             tiempo_ahorrado=tiempo_ahorrado,
             nuevo_valor_cuota=nueva_cuota,
-            total_por_pagar=total_por_pagar_proyectado,
+            total_por_pagar=costo_total_proyectado,
+            total_por_pagar_simple=total_por_pagar_simple,
+            costo_total_proyectado=costo_total_proyectado,
+            costo_total_proyectado_banco=costo_total_proyectado_banco,
+            total_subsidio_frech_proyectado=total_subsidio_frech_proyectado,
+            incluye_frech_en_costo_total_banco=incluye_frech_en_costo_total_banco,
             total_intereses_proyectados=resultado_con_abono.total_intereses,
             total_seguros_proyectados=resultado_con_abono.total_costos_no_amortizables,
             valor_ahorrado_intereses=ahorro_intereses,

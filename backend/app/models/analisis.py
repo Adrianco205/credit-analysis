@@ -80,6 +80,10 @@ class AnalisisHipotecario(Base):
     valor_cuota_con_seguros: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Cuota completa
     beneficio_frech_mensual: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     valor_cuota_con_subsidio: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Lo que paga el cliente
+    frech_fecha_inicio: Mapped[date | None] = mapped_column(Date)
+    frech_fecha_fin: Mapped[date | None] = mapped_column(Date)
+    frech_meses_restantes: Mapped[int | None] = mapped_column(Integer)
+    frech_vigencia_fuente: Mapped[str | None] = mapped_column(String(20))  # extracto, estimado_84m, manual
     
     saldo_capital_pesos: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Saldo actual en COP
     total_por_pagar: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # A la fecha del extracto

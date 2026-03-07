@@ -4,6 +4,10 @@ import type { NextConfig } from "next";
 const BACKEND_URL = process.env.INTERNAL_API_URL || 'http://127.0.0.1:8001';
 
 const nextConfig: NextConfig = {
+  turbopack: {
+    // Evita inferencias incorrectas de root cuando existen lockfiles fuera de /frontend.
+    root: __dirname,
+  },
   async rewrites() {
     return [
       {

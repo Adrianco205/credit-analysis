@@ -48,6 +48,8 @@ class DatosCredito:
     cuotas_pagadas: int
     fecha_desembolso: Optional[date]
     sistema_amortizacion: str  # UVR o PESOS
+    costo_total_proyectado_banco_actual: Optional[Decimal] = None
+    veces_pagado_actual: Optional[Decimal] = None
 
 
 @dataclass
@@ -73,6 +75,9 @@ class OpcionAhorro:
     honorarios_con_iva: Decimal
     ingreso_minimo_requerido: Decimal
     nueva_cuota: Decimal
+    costo_total_proyectado_banco: Optional[Decimal] = None
+    veces_pagado: Optional[Decimal] = None
+    cuotas_reducidas: int = 0
 
 
 @dataclass
@@ -355,6 +360,16 @@ class PropuestaPDFGenerator:
             self.styles['TextoNormal']
         ))
         
+        def _fmt_tiempo(total_meses: int) -> str:
+            anios = total_meses // 12
+            meses = total_meses % 12
+            return f"{anios} años, {meses} meses"
+
+        def _fmt_veces(valor: Optional[Decimal]) -> str:
+            if valor is None:
+                return "-"
+            return f"{valor:.2f}".replace(".", ",")
+
         # Encabezados de la tabla
         headers = ['Concepto', 'Sin abono\n(Actual)'] + [
             f"Opción {op.numero_opcion}\n(+${op.abono_extra_mensual:,.0f})"
@@ -367,37 +382,77 @@ class PropuestaPDFGenerator:
         
         data = [headers]
         
-        # Tiempo restante
-        tiempo_actual = f"{años_actual}a {meses_actual}m"
-        row_tiempo = ['Tiempo restante', tiempo_actual]
+        # Saldo credito
+        row_saldo = ['Saldo crédito', f"${credito.saldo_capital:,.0f}"]
+        for _ in opciones:
+            row_saldo.append('-')
+        data.append(row_saldo)
+
+        # Cuotas pendientes
+        row_cuotas = ['Cuotas pendientes', str(credito.cuotas_pendientes)]
         for op in opciones:
-            años = op.cuotas_nuevas // 12
-            meses = op.cuotas_nuevas % 12
-            row_tiempo.append(f"{años}a {meses}m")
+            row_cuotas.append(str(op.cuotas_nuevas))
+        data.append(row_cuotas)
+
+        # Tiempo pendiente
+        tiempo_actual = _fmt_tiempo(credito.cuotas_pendientes)
+        row_tiempo = ['Tiempo pendiente', tiempo_actual]
+        for op in opciones:
+            row_tiempo.append(_fmt_tiempo(op.cuotas_nuevas))
         data.append(row_tiempo)
-        
-        # Tiempo ahorrado
-        row_ahorro_tiempo = ['Tiempo ahorrado', '-']
+
+        # Abono adicional a cuota
+        row_abono = ['Abono adicional a cuota', '$0']
         for op in opciones:
-            años = op.tiempo_ahorrado_meses // 12
-            meses = op.tiempo_ahorrado_meses % 12
-            row_ahorro_tiempo.append(f"{años}a {meses}m")
-        data.append(row_ahorro_tiempo)
-        
-        # Intereses ahorrados
-        row_intereses = ['Intereses ahorrados', '-']
-        for op in opciones:
-            row_intereses.append(f"${op.intereses_ahorrados:,.0f}")
-        data.append(row_intereses)
-        
-        # Nueva cuota total
-        row_cuota = ['Nueva cuota mensual', f"${credito.cuota_mensual:,.0f}"]
+            row_abono.append(f"${op.abono_extra_mensual:,.0f}")
+        data.append(row_abono)
+
+        # Cuota actual / nueva cuota
+        row_cuota = ['Cuota actual a cancelar aprox.', f"${credito.cuota_mensual:,.0f}"]
         for op in opciones:
             row_cuota.append(f"${op.nueva_cuota:,.0f}")
         data.append(row_cuota)
+
+        # Costo total proyectado al banco
+        row_costo_banco = ['Costo total proyectado al banco', '-']
+        if credito.costo_total_proyectado_banco_actual is not None:
+            row_costo_banco[1] = f"${credito.costo_total_proyectado_banco_actual:,.0f}"
+        for op in opciones:
+            row_costo_banco.append(f"${(op.costo_total_proyectado_banco or Decimal('0')):,.0f}")
+        data.append(row_costo_banco)
+
+        # No. Veces Pagado
+        row_veces = ['No. Veces Pagado', _fmt_veces(credito.veces_pagado_actual)]
+        for op in opciones:
+            row_veces.append(_fmt_veces(op.veces_pagado))
+        data.append(row_veces)
+        
+        # Valor ahorrado en intereses
+        row_intereses = ['Valor Ahorrado en Intereses', '-']
+        for op in opciones:
+            row_intereses.append(f"${op.intereses_ahorrados:,.0f}")
+        data.append(row_intereses)
+
+        # Cuotas reducidas
+        row_cuotas_reducidas = ['Cuotas Reducidas', '-']
+        for op in opciones:
+            row_cuotas_reducidas.append(str(op.cuotas_reducidas))
+        data.append(row_cuotas_reducidas)
+
+        # Tiempo ahorrado
+        row_ahorro_tiempo = ['Tiempo Ahorrado', '-']
+        for op in opciones:
+            row_ahorro_tiempo.append(_fmt_tiempo(op.tiempo_ahorrado_meses))
+        data.append(row_ahorro_tiempo)
+
+        # Valor honorarios (con IVA)
+        row_honorarios = ['Valor Honorarios', '-']
+        for op in opciones:
+            row_honorarios.append(f"${op.honorarios_con_iva:,.0f}")
+        data.append(row_honorarios)
         
         # Ingreso mínimo
-        row_ingreso = ['Ingreso mínimo req.', '-']
+        row_ingreso = ['Ingresos Mínimos', '-']
         for op in opciones:
             row_ingreso.append(f"${op.ingreso_minimo_requerido:,.0f}")
         data.append(row_ingreso)
@@ -426,12 +481,16 @@ class PropuestaPDFGenerator:
             ('TOPPADDING', (0, 0), (-1, -1), 8),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
             
-            # Destacar fila de intereses ahorrados
-            ('BACKGROUND', (0, 3), (-1, 3), self.verde_claro),
+            # Destacar fila de valor ahorrado en intereses
+            ('BACKGROUND', (0, 8), (-1, 8), self.verde_claro),
             
             # Alternar colores
             ('BACKGROUND', (0, 1), (-1, 1), self.gris_claro),
+            ('BACKGROUND', (0, 3), (-1, 3), self.gris_claro),
             ('BACKGROUND', (0, 5), (-1, 5), self.gris_claro),
+            ('BACKGROUND', (0, 7), (-1, 7), self.gris_claro),
+            ('BACKGROUND', (0, 10), (-1, 10), self.gris_claro),
+            ('BACKGROUND', (0, 12), (-1, 12), self.gris_claro),
         ]))
         
         elementos.append(tabla)

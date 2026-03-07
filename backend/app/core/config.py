@@ -35,6 +35,8 @@ class Settings(BaseSettings):
 
     # Feature flags
     ENABLE_TEST_ENDPOINTS: bool = False
+    UVR_ENGINE_V2_ENABLED: bool = False
+    UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT: float = 0.06
     
     # AWS S3 (para almacenamiento de documentos)
     AWS_ACCESS_KEY_ID: Optional[str] = None

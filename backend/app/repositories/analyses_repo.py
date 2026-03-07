@@ -254,6 +254,10 @@ class AnalysesRepo:
             "valor_cuota_con_seguros": "valor_cuota_con_seguros",
             "beneficio_frech_mensual": "beneficio_frech_mensual",
             "valor_cuota_con_subsidio": "valor_cuota_con_subsidio",
+            "frech_fecha_inicio": "frech_fecha_inicio",
+            "frech_fecha_fin": "frech_fecha_fin",
+            "frech_meses_restantes": "frech_meses_restantes",
+            "frech_vigencia_fuente": "frech_vigencia_fuente",
             "saldo_capital_pesos": "saldo_capital_pesos",
             "total_por_pagar": "total_por_pagar",
             "saldo_capital_uvr": "saldo_capital_uvr",
@@ -391,6 +395,20 @@ class AnalysesRepo:
         4. Ajuste Inflación = saldo_actual - valor_prestado
         """
         from decimal import Decimal
+
+        def _add_months(base_date: date, months: int) -> date:
+            year = base_date.year + (base_date.month - 1 + months) // 12
+            month = (base_date.month - 1 + months) % 12 + 1
+            day = min(base_date.day, 28)
+            return date(year, month, day)
+
+        def _months_between(start_date: date, end_date: date) -> int:
+            if end_date <= start_date:
+                return 0
+            months = (end_date.year - start_date.year) * 12 + (end_date.month - start_date.month)
+            if end_date.day < start_date.day:
+                months -= 1
+            return max(0, months)
         
         # ═══════════════════════════════════════════════════════════════════
         # PASO 1: CALCULAR SALDO EN PESOS (fallback desde UVR)
@@ -420,21 +438,53 @@ class AnalysesRepo:
         analisis.intereses_corrientes_periodo = analisis.intereses_corrientes_periodo or Decimal("0")
         analisis.intereses_mora = analisis.intereses_mora or Decimal("0")
         analisis.otros_cargos = analisis.otros_cargos or Decimal("0")
+
+        # ═══════════════════════════════════════════════════════════════════
+        # PASO 2.5: VIGENCIA FRECH (oficial)
+        # Regla: extracto > estimado_84m > indeterminado.
+        # ═══════════════════════════════════════════════════════════════════
+        beneficio_frech = analisis.beneficio_frech_mensual or Decimal("0")
+        fecha_referencia = analisis.fecha_extracto or date.today()
+
+        if beneficio_frech > 0:
+            if analisis.frech_fecha_fin:
+                analisis.frech_meses_restantes = _months_between(fecha_referencia, analisis.frech_fecha_fin)
+                if analisis.frech_vigencia_fuente != "manual":
+                    analisis.frech_vigencia_fuente = "extracto"
+            elif analisis.frech_fecha_inicio:
+                analisis.frech_fecha_fin = _add_months(analisis.frech_fecha_inicio, 84)
+                analisis.frech_meses_restantes = _months_between(fecha_referencia, analisis.frech_fecha_fin)
+                if analisis.frech_vigencia_fuente != "manual":
+                    analisis.frech_vigencia_fuente = "estimado_84m"
+            elif analisis.fecha_desembolso:
+                analisis.frech_fecha_inicio = analisis.fecha_desembolso
+                analisis.frech_fecha_fin = _add_months(analisis.frech_fecha_inicio, 84)
+                analisis.frech_meses_restantes = _months_between(fecha_referencia, analisis.frech_fecha_fin)
+                if analisis.frech_vigencia_fuente != "manual":
+                    analisis.frech_vigencia_fuente = "estimado_84m"
+            else:
+                analisis.frech_meses_restantes = None
+                if analisis.frech_vigencia_fuente != "manual":
+                    analisis.frech_vigencia_fuente = None
+        else:
+            analisis.frech_meses_restantes = None
+            if analisis.frech_vigencia_fuente != "manual":
+                analisis.frech_vigencia_fuente = None
         
         # ═══════════════════════════════════════════════════════════════════
         # PASO 3: TOTALES PAGADOS (debe calcularse ANTES de intereses/seguros)
         # ═══════════════════════════════════════════════════════════════════
         # 
-        # Del extracto Bancolombia:
-        # - valor_cuota_con_seguros = $326,168 (Valor a Pagar, incluye seguros)
-        # - beneficio_frech = $183,855
-        # - cuota_completa = $326,168 + $183,855 = $510,023 (lo que recibe el banco)
+        # Regla: separar pago cliente, subsidio FRECH y total al banco.
         #
-        # Total pagado por usuario = cuota_con_seguros × cuotas_pagadas
-        # Total FRECH recibido = beneficio_frech × cuotas_pagadas  
-        # Monto real al banco = Total pagado + FRECH = cuota_completa × cuotas_pagadas
+        # pagado_cliente     = cuota_pago_cliente × cuotas_pagadas
+        # frech_acumulado    = beneficio_frech    × cuotas_pagadas
+        # total_al_banco     = pagado_cliente + frech_acumulado
+        #
+        # Donde cuota_pago_cliente = cuota_completa − beneficio_frech
+        # (si valor_cuota_con_seguros ya incluye el FRECH, se le resta).
         
-        # Cuota que paga el usuario (CON seguros)
+        # Cuota completa que reporta el extracto (puede incluir FRECH)
         cuota_usuario = analisis.valor_cuota_con_seguros or Decimal("0")
 
         # Componentes del último período pagado
@@ -457,9 +507,19 @@ class AnalysesRepo:
         
         beneficio_frech = analisis.beneficio_frech_mensual or Decimal("0")
         cuotas_pagadas = analisis.cuotas_pagadas or 0
+
+        # Preferir total_por_pagar cuando disponible (es lo que paga el cliente real)
+        total_por_pagar = getattr(analisis, "total_por_pagar", None)
+        if total_por_pagar and total_por_pagar > 0 and total_por_pagar != analisis.saldo_capital_pesos:
+            cuota_pago_cliente = total_por_pagar
+        elif cuota_usuario > 0 and beneficio_frech > 0:
+            # valor_cuota_con_seguros puede incluir FRECH; restarlo
+            cuota_pago_cliente = max(cuota_usuario - beneficio_frech, Decimal("0"))
+        else:
+            cuota_pago_cliente = cuota_usuario
         
-        if cuota_usuario and cuotas_pagadas:
-            analisis.total_pagado_fecha = cuota_usuario * cuotas_pagadas
+        if cuota_pago_cliente and cuotas_pagadas:
+            analisis.total_pagado_fecha = cuota_pago_cliente * cuotas_pagadas
             analisis.is_total_paid_estimated = True
         
         # Total FRECH recibido = beneficio × cuotas pagadas
@@ -509,8 +569,8 @@ class AnalysesRepo:
         # ═══════════════════════════════════════════════════════════════════
         # PASO 6: GUARDAR RESUMEN CALCULADO EN JSON (para auditoría)
         # ═══════════════════════════════════════════════════════════════════
-        # Calcular cuota usuario para JSON (usar valor_cuota_con_seguros preferentemente)
-        cuota_json = analisis.valor_cuota_con_seguros or Decimal("0")
+        # Calcular cuota cliente para JSON (ya con FRECH restado)
+        cuota_json = cuota_pago_cliente or Decimal("0")
         if cuota_json == 0 and analisis.valor_cuota_con_subsidio:
             cuota_json = (analisis.valor_cuota_con_subsidio or Decimal("0")) + (analisis.seguros_total_mensual or Decimal("0"))
         
@@ -520,10 +580,8 @@ class AnalysesRepo:
                 "cuotas_pactadas": analisis.cuotas_pactadas,
                 "cuotas_pagadas": analisis.cuotas_pagadas,
                 "cuotas_por_pagar": analisis.cuotas_pendientes,
-                # CORRECCIÓN: cuota_actual = valor_cuota_con_seguros (Valor a Pagar)
                 "cuota_actual": str(cuota_json),
                 "beneficio_frech": str(analisis.beneficio_frech_mensual or 0),
-                # CORRECCIÓN: cuota_completa = cuota_actual + beneficio_frech
                 "cuota_completa_sin_frech": str(cuota_json + (analisis.beneficio_frech_mensual or Decimal("0"))),
                 "total_pagado_fecha": str(analisis.total_pagado_fecha or 0),
                 "total_frech_recibido": str(analisis.total_frech_recibido or 0),

@@ -102,6 +102,8 @@ function buildLegacyProposal(
   const cuotaConSubsidio = Number(detail.valor_cuota_con_subsidio || 0);
   const cuotaConSeguros = Number(detail.valor_cuota_con_seguros || 0);
   const cuotaSinSeguros = Number(detail.valor_cuota_sin_seguros || 0);
+  const sistema = String(detail.sistema_amortizacion || '').toUpperCase();
+  const esUvr = sistema.includes('UVR');
 
   // Prioriza la cuota que realmente paga el cliente (sin FRECH).
   // Si no viene explícita, intenta derivarla desde cuota completa - FRECH.
@@ -111,19 +113,39 @@ function buildLegacyProposal(
       : (cuotaConSeguros > frech && frech > 0
         ? cuotaConSeguros - frech
         : (cuotaConSeguros || cuotaSinSeguros));
-  const totalPagarBackend = Number(detail.total_por_pagar_proyectado || detail.total_por_pagar || 0);
-  const totalPagarAprox =
-    totalPagarBackend > saldoCredito
-      ? totalPagarBackend
-      : cuotaActual * cuotasPendientes;
+  const costoTotalProyectado = Number(
+    detail.costo_total_proyectado || detail.total_por_pagar_proyectado || detail.total_por_pagar || 0
+  );
+  const costoTotalProyectadoBanco = Number(detail.costo_total_proyectado_banco || costoTotalProyectado);
+  const totalSubsidioFrechProyectado = Number(detail.total_subsidio_frech_proyectado || 0);
+  const totalPagarSimple = Number(detail.total_por_pagar_simple || 0) > 0
+    ? Number(detail.total_por_pagar_simple)
+    : cuotaActual * cuotasPendientes;
   const vecesPagado =
     Number(detail.veces_pagado_actual || 0) > 0
       ? Number(detail.veces_pagado_actual || 0)
-      : (saldoCredito > 0 ? totalPagarAprox / saldoCredito : 0);
+      : (saldoCredito > 0 ? costoTotalProyectadoBanco / saldoCredito : 0);
+
+  const tasaCobradaConFrech = Number(
+    detail.tasa_interes_subsidiada_ea ?? detail.tasa_interes_cobrada_ea ?? 0
+  );
+  const segurosActualesMensual = Number(detail.seguros_total_mensual || 0);
 
   const opciones: ProposalOptionResponse[] = legacy.map((item) => {
     const totalPorPagarAprox = Number(item.total_por_pagar_aprox || 0);
+    const totalPorPagarSimple = Number(item.total_por_pagar_simple || 0) > 0
+      ? Number(item.total_por_pagar_simple)
+      : Number(item.nuevo_valor_cuota || 0) * Number(item.cuotas_nuevas || 0);
+    const costoTotalProyectadoOpcion = Number(item.costo_total_proyectado || 0);
+    const costoTotalProyectadoBancoOpcion = Number(item.costo_total_proyectado_banco || costoTotalProyectadoOpcion);
+    const totalSubsidioFrechProyectadoOpcion = Number(item.total_subsidio_frech_proyectado || 0);
     const vecesPagadoOpcion = Number(item.veces_pagado || 0);
+
+    // Compatibilidad con respuestas antiguas: total_por_pagar_aprox era costo proyectado.
+    const totalSimpleFinal = totalPorPagarSimple > 0 ? totalPorPagarSimple : totalPorPagarAprox;
+    const costoFinal = costoTotalProyectadoOpcion > 0
+      ? costoTotalProyectadoOpcion
+      : (totalPorPagarAprox > totalSimpleFinal ? totalPorPagarAprox : totalSimpleFinal);
 
     return {
       id: item.id,
@@ -133,7 +155,11 @@ function buildLegacyProposal(
       cuotas_nuevas: Number(item.cuotas_nuevas || 0),
       tiempo_restante: monthsToTime((item.tiempo_restante_anios || 0) * 12 + (item.tiempo_restante_meses || 0)),
       nuevo_valor_cuota: Number(item.nuevo_valor_cuota || 0),
-      total_por_pagar_aprox: totalPorPagarAprox,
+      total_por_pagar_aprox: totalSimpleFinal,
+      total_por_pagar_simple: totalSimpleFinal,
+      costo_total_proyectado: costoFinal,
+      costo_total_proyectado_banco: costoTotalProyectadoBancoOpcion,
+      total_subsidio_frech_proyectado: totalSubsidioFrechProyectadoOpcion,
       cuotas_reducidas: Number(item.cuotas_reducidas || 0),
       tiempo_ahorrado: monthsToTime((item.tiempo_ahorrado_anios || 0) * 12 + (item.tiempo_ahorrado_meses || 0)),
       valor_ahorrado_intereses: Number(item.valor_ahorrado_intereses || 0),
@@ -158,12 +184,16 @@ function buildLegacyProposal(
       tiempo_pendiente: monthsToTime(cuotasPendientes),
       abono_adicional_cuota: 0,
       valor_cuota: cuotaActual,
-      total_por_pagar_aprox: totalPagarAprox,
+      total_por_pagar_aprox: totalPagarSimple,
+      total_por_pagar_simple: totalPagarSimple,
+      costo_total_proyectado: costoTotalProyectado,
+      costo_total_proyectado_banco: costoTotalProyectadoBanco,
+      total_subsidio_frech_proyectado: totalSubsidioFrechProyectado,
       veces_pagado: vecesPagado,
     },
     opciones,
-    tasa_cobrada_con_frech: detail.tasa_interes_cobrada_ea || null,
-    seguros_actuales: null,
+    tasa_cobrada_con_frech: esUvr && tasaCobradaConFrech > 0 ? tasaCobradaConFrech : null,
+    seguros_actuales: segurosActualesMensual > 0 ? segurosActualesMensual : null,
     vigencia_dias: 20,
     fecha_vencimiento: null,
     agente_financiero: null,
@@ -521,7 +551,12 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <InstitutionalOpportunitiesTable proposal={proposal} />
+            <InstitutionalOpportunitiesTable
+              proposal={proposal}
+              sistemaAmortizacion={detail.sistema_amortizacion}
+              beneficioFrechMensual={detail.beneficio_frech_mensual}
+              tasaInteresCobradaEa={detail.tasa_interes_cobrada_ea}
+            />
           </div>
         )}
       </Card>
@@ -538,9 +573,26 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
   );
 }
 
-function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaCompletaResponse }) {
+function InstitutionalOpportunitiesTable({
+  proposal,
+  sistemaAmortizacion,
+  beneficioFrechMensual,
+  tasaInteresCobradaEa,
+}: {
+  proposal: PropuestaCompletaResponse;
+  sistemaAmortizacion?: string | null;
+  beneficioFrechMensual?: number | null;
+  tasaInteresCobradaEa?: number | null;
+}) {
   const opciones = proposal.opciones || [];
   const gridTemplateColumns = `minmax(290px, 290px) repeat(${opciones.length}, minmax(220px, 1fr))`;
+  const esUvr = String(sistemaAmortizacion || '').toUpperCase().includes('UVR');
+  const frechActivo = Number(beneficioFrechMensual || 0) > 0;
+  const tasaRaw = proposal.tasa_cobrada_con_frech ?? tasaInteresCobradaEa ?? null;
+  const tasaLabel = frechActivo ? 'Tasa cobrada UVR + FRECH' : 'Tasa cobrada UVR';
+  const showTasa = esUvr && tasaRaw !== null && Number(tasaRaw) > 0;
+  const segurosActuales = Number(proposal.seguros_actuales || 0);
+  const showSeguros = segurosActuales > 0;
 
   return (
     <div className="min-w-[980px] rounded-xl border border-[var(--gray-200)] bg-white overflow-hidden">
@@ -597,15 +649,15 @@ function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaComp
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="Total por Pagar Aprox."
-        leftValue={formatCop(proposal.limites_actuales.total_por_pagar_aprox)}
+        label="Total estimado a pagar al banco\n(incluye seguros proyectados)"
+        leftValue={formatCop(proposal.limites_actuales.costo_total_proyectado_banco || proposal.limites_actuales.costo_total_proyectado)}
         options={opciones}
-        getOptionValue={(opcion) => formatCop(opcion.total_por_pagar_aprox)}
+        getOptionValue={(opcion) => formatCop(opcion.costo_total_proyectado_banco || opcion.costo_total_proyectado)}
         leftVariant="base"
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="No. Veces Pagado"
+        label="No. Veces Pagado (sobre costo banco)"
         leftValue={formatTimesPaid(proposal.limites_actuales.veces_pagado)}
         options={opciones}
         getOptionValue={(opcion) => formatTimesPaid(opcion.veces_pagado)}
@@ -623,6 +675,14 @@ function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaComp
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
+        label=""
+        options={opciones}
+        getOptionValue={() => 'Calculado como: Total actual banco - Total proyectado banco opción'}
+        valueTone="benefit"
+        textSize="xs"
+      />
+      <OpportunityRow
+        gridTemplateColumns={gridTemplateColumns}
         label="Cuotas Reducidas"
         options={opciones}
         getOptionValue={(opcion) => String(opcion.cuotas_reducidas || 0)}
@@ -636,6 +696,31 @@ function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaComp
         valueTone="benefit"
         isBlockEnd
       />
+
+      {showTasa && (
+        <OpportunityRow
+          gridTemplateColumns={gridTemplateColumns}
+          label={tasaLabel}
+          leftValue={formatPercentRate(tasaRaw)}
+          options={opciones}
+          getOptionValue={() => ''}
+          leftVariant="base"
+          isBlockStart={!showSeguros}
+        />
+      )}
+
+      {showSeguros && (
+        <OpportunityRow
+          gridTemplateColumns={gridTemplateColumns}
+          label="Seguros actuales"
+          leftValue={formatCop(segurosActuales)}
+          options={opciones}
+          getOptionValue={() => ''}
+          leftVariant="base"
+          isBlockEnd
+          isBlockStart={!showTasa}
+        />
+      )}
 
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
@@ -680,6 +765,14 @@ function InstitutionalOpportunitiesTable({ proposal }: { proposal: PropuestaComp
       />
     </div>
   );
+}
+
+function formatPercentRate(value?: number | null): string {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return 'N/A';
+  }
+  const normalized = value > 1 ? value : value * 100;
+  return `${normalized.toFixed(2)} %`;
 }
 
 function HeaderLeftCell({ title }: { title: string }) {
@@ -743,6 +836,8 @@ function OpportunityRow({
         ? 'bg-[var(--gray-50)] text-[var(--gray-700)] font-medium'
         : 'bg-white text-[var(--gray-900)]';
 
+  const labelLines = label.split('\n');
+
   return (
     <div className="grid" style={{ gridTemplateColumns }}>
       <div
@@ -751,7 +846,9 @@ function OpportunityRow({
         }`}
       >
         <div className={`${leftVariant === 'base' ? 'text-blue-50' : leftLabelToneClass} ${textSize === 'xs' ? 'text-xs' : 'text-sm'}`}>
-          {label}
+          {labelLines.map((line, index) => (
+            <div key={`${line}-${index}`}>{line}</div>
+          ))}
         </div>
         {leftVariant === 'base' && (
           <div className="mt-1 text-base font-semibold text-white">{leftValue || '$ 0'}</div>

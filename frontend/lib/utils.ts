@@ -90,6 +90,38 @@ export function formatDigitsInput(value: string): string {
   return INTEGER_FORMATTER.format(parsed);
 }
 
+/**
+ * Calcula los totales del resumen de crédito separando correctamente
+ * el pago del cliente, el subsidio FRECH y el total abonado al banco.
+ *
+ * Reglas:
+ *   pagadoCliente     = cuotaPagadaCliente × cuotasPagadas
+ *   frechAcumulado    = beneficioFrech     × cuotasPagadas
+ *   totalAbonadoCredito = pagadoCliente + frechAcumulado
+ *
+ * Donde cuotaPagadaCliente = cuotaTotal − beneficioFrech
+ */
+export interface CreditSummaryInput {
+  cuotaTotal: number;
+  beneficioFrech: number;
+  cuotasPagadas: number;
+}
+
+export interface CreditSummaryResult {
+  pagadoCliente: number;
+  frechAcumulado: number;
+  totalAbonadoCredito: number;
+}
+
+export function calculateCreditSummary(input: CreditSummaryInput): CreditSummaryResult {
+  const { cuotaTotal, beneficioFrech, cuotasPagadas } = input;
+  const cuotaPagadaCliente = Math.max(cuotaTotal - beneficioFrech, 0);
+  const pagadoCliente = cuotaPagadaCliente * cuotasPagadas;
+  const frechAcumulado = beneficioFrech * cuotasPagadas;
+  const totalAbonadoCredito = pagadoCliente + frechAcumulado;
+  return { pagadoCliente, frechAcumulado, totalAbonadoCredito };
+}
+
 export function formatMonetaryInput(value: string): string {
   if (!value) return '';
 

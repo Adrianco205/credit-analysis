@@ -175,7 +175,7 @@ def test_summary_keeps_structure_when_values_missing_or_raw_formatted():
     datos_basicos_rows = summary.sections[0].rows
     assert len(datos_basicos_rows) == 10
     assert datos_basicos_rows[0].label == "Valor prestado"
-    assert datos_basicos_rows[4].label == "Cuota actual a cancelar aprox."
+    assert datos_basicos_rows[4].label == "Cuota a cancelar."
     assert datos_basicos_rows[6].label == "Cuota completa aprox."
 
     value_map = {row.key: row.value for row in datos_basicos_rows}
@@ -202,8 +202,10 @@ def test_summary_blocks_when_cuota_matches_saldo_value():
     assert "blocked_quota_equals_saldo" in summary.warnings
     assert rows["cuota_actual_aprox"].value == Decimal("724696.78")
     assert rows["cuota_completa_aprox"].value == Decimal("724696.78")
-    assert rows["total_pagado_fecha"].value == Decimal("39858322.90")
-    assert rows["monto_real_pagado_banco"].value == Decimal("50928156.40")
+    # After fix: total_pagado must exclude FRECH (client portion only)
+    assert rows["total_pagado_fecha"].value == Decimal("28788489.40")
+    assert rows["total_frech_recibido"].value == Decimal("11069833.50")
+    assert rows["monto_real_pagado_banco"].value == Decimal("39858322.90")
     assert summary.debug["applied_rules"]["quota_mapping_blocked"] is True
 
 
