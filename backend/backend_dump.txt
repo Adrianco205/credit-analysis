@@ -1,4 +1,4 @@
-﻿===============================
+===============================
 C:\Proyectos en desarrollo\credit-analysis\docker-compose.yml
 ===============================
 services:
@@ -110,19 +110,19 @@ OTP_EXPIRE_MINUTES=10
 # ==========================================
 # SMTP / EMAIL CONFIGURATION
 # ==========================================
-# Para Gmail: Usar "App Password" (no la contraseña normal)
+# Para Gmail: Usar "App Password" (no la contrase�a normal)
 # Generar en: https://myaccount.google.com/apppasswords
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=tu-email@gmail.com
 SMTP_PASSWORD=tu-app-password-aqui
-SMTP_FROM_NAME=EcoFinanzas
-SMTP_FROM_EMAIL=noreply@ecofinanzas.com
+SMTP_FROM_NAME=PerFinanzas
+SMTP_FROM_EMAIL=noreply@perfinanzas.com
 
 # ==========================================
 # APPLICATION
 # ==========================================
-APP_PUBLIC_NAME=EcoFinanzas
+APP_PUBLIC_NAME=PerFinanzas
 
 # ==========================================
 # GEMINI AI (para implementar)
@@ -135,7 +135,7 @@ APP_PUBLIC_NAME=EcoFinanzas
 # AWS_ACCESS_KEY_ID=tu-access-key
 # AWS_SECRET_ACCESS_KEY=tu-secret-key
 # AWS_REGION=us-east-1
-# S3_BUCKET_NAME=ecofinanzas-documents
+# S3_BUCKET_NAME=perfinanzas-documents
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\alembic.ini
 ===============================
@@ -178,8 +178,8 @@ def get_current_user(
     Decodifica el JWT del header Authorization, valida el usuario y retorna el Usuario activo.
     
     Raises:
-        HTTPException 401: Si el token es inválido, expirado o el usuario no existe
-        HTTPException 403: Si el usuario no está ACTIVE
+        HTTPException 401: Si el token es inv�lido, expirado o el usuario no existe
+        HTTPException 403: Si el usuario no est� ACTIVE
     """
     token = credentials.credentials
     credentials_exception = HTTPException(
@@ -206,11 +206,11 @@ def get_current_user(
     if user is None:
         raise credentials_exception
     
-    # Validar que el usuario esté activo
+    # Validar que el usuario est� activo
     if user.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tu cuenta no está activa. Verifica tu correo para activarla."
+            detail="Tu cuenta no est� activa. Verifica tu correo para activarla."
         )
     
     return user
@@ -221,10 +221,10 @@ def require_role(*allowed_roles: str) -> Callable:
     Dependencia que verifica si el usuario actual tiene uno de los roles permitidos.
     
     Args:
-        *allowed_roles: Códigos de roles permitidos (e.g., "CLIENT", "ADMIN")
+        *allowed_roles: C�digos de roles permitidos (e.g., "CLIENT", "ADMIN")
     
     Returns:
-        Función de dependencia que valida el rol del usuario
+        Funci�n de dependencia que valida el rol del usuario
     
     Example:
         @router.get("/admin/dashboard", dependencies=[Depends(require_role("ADMIN"))])
@@ -296,28 +296,28 @@ def register(
     db: Session = Depends(get_db)
 ):
     """
-    Registra un nuevo usuario y envía código OTP por email.
+    Registra un nuevo usuario y env�a c�digo OTP por email.
     
-    - Si el usuario ya existe y está ACTIVE, devuelve error 409
-    - Si existe pero está PENDING, reutiliza el registro y actualiza datos
-    - El envío de email se ejecuta en background para no bloquear la respuesta
+    - Si el usuario ya existe y est� ACTIVE, devuelve error 409
+    - Si existe pero est� PENDING, reutiliza el registro y actualiza datos
+    - El env�o de email se ejecuta en background para no bloquear la respuesta
     """
     users = UsersRepo(db)
     
     try:
-        # 1. Buscar si el usuario ya existe (por email o identificación)
+        # 1. Buscar si el usuario ya existe (por email o identificaci�n)
         existing_user = users.get_by_email(str(payload.email)) or \
                         users.get_by_identificacion(payload.identificacion)
 
         if existing_user:
-            # Si ya está activo, lanzamos el error de conflicto
+            # Si ya est� activo, lanzamos el error de conflicto
             if existing_user.status == "ACTIVE":
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT, 
                     detail="El usuario ya se encuentra registrado y activo."
                 )
             
-            # SI ESTÁ PENDING: Lo reutilizamos. Actualizamos sus datos por si cambió algo.
+            # SI EST� PENDING: Lo reutilizamos. Actualizamos sus datos por si cambi� algo.
             user = existing_user
             user.nombres = payload.nombres
             user.primer_apellido = payload.primer_apellido
@@ -348,7 +348,7 @@ def register(
             # Asignar rol por primera vez
             users.ensure_role_assignment(user.id, "CLIENT")
 
-        # 2. Lógica de OTP (Se genera uno nuevo independientemente de si es nuevo o re-intento)
+        # 2. L�gica de OTP (Se genera uno nuevo independientemente de si es nuevo o re-intento)
         code = f"{secrets.randbelow(1_000_000):06d}"
         expires = datetime.now(timezone.utc) + timedelta(minutes=settings.OTP_EXPIRE_MINUTES)
 
@@ -373,21 +373,21 @@ def register(
         return RegisterResponse(
             user_id=str(user.id),
             status=user.status,
-            message="Código de verificación enviado. Revisa tu correo para activar tu cuenta.",
+            message="C�digo de verificaci�n enviado. Revisa tu correo para activar tu cuenta.",
         ).model_dump()
     
     except IntegrityError as e:
         db.rollback()
-        # Manejar violación de constraints (email/identificación duplicada)
+        # Manejar violaci�n de constraints (email/identificaci�n duplicada)
         if "email" in str(e.orig):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="El correo electrónico ya está registrado"
+                detail="El correo electr�nico ya est� registrado"
             )
         elif "identificacion" in str(e.orig):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="El número de identificación ya está registrado"
+                detail="El n�mero de identificaci�n ya est� registrado"
             )
         else:
             raise HTTPException(
@@ -404,29 +404,29 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     try:
         user_id = uuid.UUID(payload.user_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="ID de usuario no válido.")
+        raise HTTPException(status_code=400, detail="ID de usuario no v�lido.")
 
     user = users.get_by_id(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="El usuario no existe.")
 
-    # Obtenemos el último OTP pendiente
+    # Obtenemos el �ltimo OTP pendiente
     otp = otp_repo.get_pending(user_id=user.id, tipo="EMAIL")
     if not otp:
-        raise HTTPException(status_code=400, detail="No tienes códigos de verificación pendientes.")
+        raise HTTPException(status_code=400, detail="No tienes c�digos de verificaci�n pendientes.")
 
     now = datetime.now(timezone.utc)
 
-    # Verificar expiración
+    # Verificar expiraci�n
     if otp.expires_at and now > otp.expires_at:
         otp.status = "EXPIRED"
         db.add(otp)
         db.commit()
-        raise HTTPException(status_code=400, detail="El código ha expirado. Regístrate de nuevo para recibir uno nuevo.")
+        raise HTTPException(status_code=400, detail="El c�digo ha expirado. Reg�strate de nuevo para recibir uno nuevo.")
 
-    # Verificar validez del código
+    # Verificar validez del c�digo
     if not verify_password(payload.code, otp.code_hash):
-        raise HTTPException(status_code=400, detail="Código incorrecto.")
+        raise HTTPException(status_code=400, detail="C�digo incorrecto.")
 
     # Marcar como verificado y activar usuario
     otp.status = "VERIFIED"
@@ -440,7 +440,7 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    return {"message": "¡Cuenta activada con éxito! Ya puedes iniciar sesión.", "status": user.status}
+    return {"message": "�Cuenta activada con �xito! Ya puedes iniciar sesi�n.", "status": user.status}
 
 
 @router.post("/login", response_model=dict)
@@ -449,12 +449,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = users.get_by_identificacion(payload.identificacion)
 
     if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Cédula o contraseña incorrectas.")
+        raise HTTPException(status_code=401, detail="C�dula o contrase�a incorrectas.")
 
     if user.status != "ACTIVE":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tu cuenta aún no está activa. Por favor verifica tu correo con el código OTP."
+            detail="Tu cuenta a�n no est� activa. Por favor verifica tu correo con el c�digo OTP."
         )
 
     token = create_access_token(subject=str(user.id))
@@ -494,7 +494,7 @@ def buscar_ciudades(
 ):
     """
     Busca ciudades de Colombia por nombre.
-    Retorna máximo 50 resultados ordenados alfabéticamente.
+    Retorna m�ximo 50 resultados ordenados alfab�ticamente.
     """
     query = db.query(Ciudad, Departamento).join(
         Departamento, Ciudad.departamento_id == Departamento.id
@@ -550,7 +550,7 @@ def get_my_profile(current_user: Usuario = Depends(get_current_user)):
     """
     Obtiene el perfil del usuario autenticado.
     
-    Retorna información básica: cédula, nombre completo, género, email.
+    Retorna informaci�n b�sica: c�dula, nombre completo, g�nero, email.
     """
     return UserProfileResponse(
         id=str(current_user.id),
@@ -573,31 +573,31 @@ def update_password(
     db: Session = Depends(get_db)
 ):
     """
-    Actualiza la contraseña del usuario autenticado.
+    Actualiza la contrase�a del usuario autenticado.
     
-    Requiere proporcionar la contraseña actual para verificar identidad.
+    Requiere proporcionar la contrase�a actual para verificar identidad.
     """
-    # Verificar contraseña actual
+    # Verificar contrase�a actual
     if not current_user.password_hash or not verify_password(payload.current_password, current_user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La contraseña actual es incorrecta"
+            detail="La contrase�a actual es incorrecta"
         )
     
-    # Validar que la nueva contraseña sea diferente
+    # Validar que la nueva contrase�a sea diferente
     if payload.current_password == payload.new_password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="La nueva contraseña debe ser diferente a la actual"
+            detail="La nueva contrase�a debe ser diferente a la actual"
         )
     
-    # Actualizar contraseña
+    # Actualizar contrase�a
     current_user.password_hash = hash_password(payload.new_password)
     db.add(current_user)
     db.commit()
     
     return {
-        "message": "Contraseña actualizada exitosamente"
+        "message": "Contrase�a actualizada exitosamente"
     }
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\app\core\config.py
@@ -633,7 +633,7 @@ C:\Proyectos en desarrollo\credit-analysis\backend\app\core\exceptions.py
 ===============================
 """
 Exception handlers y middleware para manejo global de errores.
-Captura errores de base de datos, validación y excepciones no controladas.
+Captura errores de base de datos, validaci�n y excepciones no controladas.
 """
 import logging
 from typing import Union
@@ -663,7 +663,7 @@ class ErrorResponse:
             error_type: Tipo de error (validation, database, server, etc.)
             message: Mensaje principal del error
             detail: Detalles adicionales opcionales
-            status_code: Código HTTP del error
+            status_code: C�digo HTTP del error
             
         Returns:
             Dict con estructura de error estandarizada
@@ -686,7 +686,7 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
     
     Args:
         request: Request de FastAPI
-        exc: Excepción de IntegrityError
+        exc: Excepci�n de IntegrityError
         
     Returns:
         JSONResponse con error formateado
@@ -695,12 +695,12 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
     
     error_msg = str(exc.orig).lower()
     
-    # Detectar tipo de violación de constraint
+    # Detectar tipo de violaci�n de constraint
     if "unique" in error_msg or "duplicate" in error_msg:
         if "email" in error_msg:
-            message = "El correo electrónico ya está registrado"
+            message = "El correo electr�nico ya est� registrado"
         elif "identificacion" in error_msg:
-            message = "El número de identificación ya está registrado"
+            message = "El n�mero de identificaci�n ya est� registrado"
         else:
             message = "El valor ingresado ya existe en el sistema"
         
@@ -734,12 +734,12 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
             )
         )
     
-    # Error genérico de integridad
+    # Error gen�rico de integridad
     return JSONResponse(
         status_code=status.HTTP_400_BAD_REQUEST,
         content=ErrorResponse.format(
             error_type="database_integrity_error",
-            message="Error de validación en la base de datos",
+            message="Error de validaci�n en la base de datos",
             status_code=status.HTTP_400_BAD_REQUEST
         )
     )
@@ -747,11 +747,11 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
 
 async def operational_error_handler(request: Request, exc: OperationalError) -> JSONResponse:
     """
-    Maneja errores operacionales de base de datos (conexión, timeout, etc.).
+    Maneja errores operacionales de base de datos (conexi�n, timeout, etc.).
     
     Args:
         request: Request de FastAPI
-        exc: Excepción de OperationalError
+        exc: Excepci�n de OperationalError
         
     Returns:
         JSONResponse con error formateado
@@ -762,7 +762,7 @@ async def operational_error_handler(request: Request, exc: OperationalError) -> 
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         content=ErrorResponse.format(
             error_type="database_unavailable",
-            message="Error de conexión con la base de datos. Intenta nuevamente en unos momentos.",
+            message="Error de conexi�n con la base de datos. Intenta nuevamente en unos momentos.",
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE
         )
     )
@@ -770,11 +770,11 @@ async def operational_error_handler(request: Request, exc: OperationalError) -> 
 
 async def data_error_handler(request: Request, exc: DataError) -> JSONResponse:
     """
-    Maneja errores de datos inválidos en base de datos.
+    Maneja errores de datos inv�lidos en base de datos.
     
     Args:
         request: Request de FastAPI
-        exc: Excepción de DataError
+        exc: Excepci�n de DataError
         
     Returns:
         JSONResponse con error formateado
@@ -785,8 +785,8 @@ async def data_error_handler(request: Request, exc: DataError) -> JSONResponse:
         status_code=status.HTTP_400_BAD_REQUEST,
         content=ErrorResponse.format(
             error_type="invalid_data_format",
-            message="Formato de datos inválido",
-            detail="Uno o más campos tienen un formato incorrecto",
+            message="Formato de datos inv�lido",
+            detail="Uno o m�s campos tienen un formato incorrecto",
             status_code=status.HTTP_400_BAD_REQUEST
         )
     )
@@ -794,18 +794,18 @@ async def data_error_handler(request: Request, exc: DataError) -> JSONResponse:
 
 async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """
-    Maneja errores de validación de Pydantic.
+    Maneja errores de validaci�n de Pydantic.
     
     Args:
         request: Request de FastAPI
-        exc: Excepción de RequestValidationError
+        exc: Excepci�n de RequestValidationError
         
     Returns:
-        JSONResponse con errores de validación formateados
+        JSONResponse con errores de validaci�n formateados
     """
     logger.info(f"ValidationError en {request.url.path}: {exc.errors()}")
     
-    # Formatear errores de validación de forma más amigable
+    # Formatear errores de validaci�n de forma m�s amigable
     formatted_errors = []
     for error in exc.errors():
         field = " -> ".join(str(loc) for loc in error["loc"][1:])  # Omitir 'body'
@@ -819,7 +819,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content=ErrorResponse.format(
             error_type="validation_error",
-            message="Error de validación en los datos enviados",
+            message="Error de validaci�n en los datos enviados",
             detail=formatted_errors,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY
         )
@@ -832,10 +832,10 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
     
     Args:
         request: Request de FastAPI
-        exc: Excepción genérica
+        exc: Excepci�n gen�rica
         
     Returns:
-        JSONResponse con error genérico
+        JSONResponse con error gen�rico
     """
     logger.error(f"Unhandled exception en {request.url.path}: {type(exc).__name__} - {str(exc)}", exc_info=True)
     
@@ -844,7 +844,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
         content=ErrorResponse.format(
             error_type="internal_server_error",
             message="Error interno del servidor",
-            detail="Ha ocurrido un error inesperado. El equipo técnico ha sido notificado.",
+            detail="Ha ocurrido un error inesperado. El equipo t�cnico ha sido notificado.",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
     )
@@ -918,21 +918,21 @@ from app.core.exceptions import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # --- Al iniciar la aplicación ---
+    # --- Al iniciar la aplicaci�n ---
     scheduler = BackgroundScheduler()
     # Programamos para que revise la DB cada 10 minutos (puedes ajustar este intervalo)
     scheduler.add_job(cleanup_expired_pending_users, 'interval', minutes=10)
     scheduler.start()
     
-    yield # Aquí la app funciona normalmente
+    yield # Aqu� la app funciona normalmente
     
-    # --- Al apagar la aplicación ---
+    # --- Al apagar la aplicaci�n ---
     scheduler.shutdown()
 
 
 app = FastAPI(
-    title="EcoFinanzas Credit Analysis API",
-    description="API para análisis de créditos hipotecarios con IA",
+    title="PerFinanzas Credit Analysis API",
+    description="API para an�lisis de cr�ditos hipotecarios con IA",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -940,7 +940,7 @@ app = FastAPI(
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios permitidos
+    allow_origins=["*"],  # En producci�n, especificar dominios permitidos
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -976,8 +976,8 @@ from app.db.base import Base
 
 class AnalisisHipotecario(Base):
     """
-    Modelo para análisis de crédito hipotecario.
-    Almacena datos extraídos del PDF y proporcionados por el usuario.
+    Modelo para an�lisis de cr�dito hipotecario.
+    Almacena datos extra�dos del PDF y proporcionados por el usuario.
     """
     __tablename__ = "analisis_hipotecario"
 
@@ -997,13 +997,13 @@ class AnalisisHipotecario(Base):
     capacidad_pago_max: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     tipo_contrato_laboral: Mapped[str | None] = mapped_column(String(80))
     
-    # Datos básicos del crédito (extraídos del PDF)
+    # Datos b�sicos del cr�dito (extra�dos del PDF)
     numero_credito: Mapped[str | None] = mapped_column(String(50))
     sistema_amortizacion: Mapped[str | None] = mapped_column(String(20))  # UVR, PESOS, etc.
     valor_prestado_inicial: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))
     fecha_desembolso: Mapped[date | None] = mapped_column(Date)
     
-    # Estado del crédito
+    # Estado del cr�dito
     cuotas_pactadas: Mapped[int | None] = mapped_column(Integer)
     cuotas_pagadas: Mapped[int | None] = mapped_column(Integer)
     cuotas_pendientes: Mapped[int | None] = mapped_column(Integer)
@@ -1082,7 +1082,7 @@ class DocumentoS3(Base):
     file_size: Mapped[int | None] = mapped_column(BigInteger)
     mime_type: Mapped[str | None] = mapped_column(String(50))
     
-    # Seguridad y validación
+    # Seguridad y validaci�n
     pdf_encrypted: Mapped[bool] = mapped_column(Boolean, server_default=text("false"))
     checksum_sha256: Mapped[str | None] = mapped_column(String(64))  # Hash del archivo
     
@@ -1154,7 +1154,7 @@ from app.db.base import Base
 class PropuestaAhorro(Base):
     """
     Modelo para propuestas de ahorro (nuevas oportunidades).
-    Cada análisis puede tener múltiples opciones de abono adicional.
+    Cada an�lisis puede tener m�ltiples opciones de abono adicional.
     """
     __tablename__ = "propuestas_ahorro"
 
@@ -1169,7 +1169,7 @@ class PropuestaAhorro(Base):
         nullable=False
     )
     
-    # Identificador de la opción (1ra, 2da, 3ra elección)
+    # Identificador de la opci�n (1ra, 2da, 3ra elecci�n)
     numero_opcion: Mapped[int] = mapped_column(Integer)  # 1, 2, 3, etc.
     
     # Abono adicional propuesto
@@ -1285,7 +1285,7 @@ class OtpRepo:
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\app\repositories\users_repo.py
 ===============================
-import uuid  # <--- ESTA ES LA LÍNEA QUE FALTABA
+import uuid  # <--- ESTA ES LA L�NEA QUE FALTABA
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.models.user import Usuario
@@ -1323,7 +1323,7 @@ class UsersRepo:
             self.db.add(UsuarioRole(user_id=user_id, role_id=role.id))
             self.db.commit()
 
-    # Función añadida para el flujo de re-intento de registro
+    # Funci�n a�adida para el flujo de re-intento de registro
     def update_pending_user(self, user_id: uuid.UUID, **kwargs) -> Usuario:
         user = self.get_by_id(user_id)
         if user and user.status == "PENDING":
@@ -1404,9 +1404,9 @@ class UserProfileResponse(BaseModel):
 
 
 class UpdatePasswordRequest(BaseModel):
-    """Schema para actualizar contraseña"""
-    current_password: str = Field(min_length=1, description="Contraseña actual")
-    new_password: str = Field(min_length=8, max_length=72, description="Nueva contraseña")
+    """Schema para actualizar contrase�a"""
+    current_password: str = Field(min_length=1, description="Contrase�a actual")
+    new_password: str = Field(min_length=8, max_length=72, description="Nueva contrase�a")
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\app\services\calc_service.py
 ===============================
@@ -1419,22 +1419,22 @@ from app.db.session import SessionLocal
 from app.models.user import Usuario
 import logging
 
-# Configuración básica de logs para ver la limpieza en la consola de Docker
+# Configuraci�n b�sica de logs para ver la limpieza en la consola de Docker
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def cleanup_expired_pending_users():
     """
-    Elimina usuarios en estado 'PENDING' que lleven más de 40 minutos sin activar.
+    Elimina usuarios en estado 'PENDING' que lleven m�s de 40 minutos sin activar.
     """
     db = SessionLocal()
     try:
-        # Definimos el tiempo límite: ahora menos 40 minutos
+        # Definimos el tiempo l�mite: ahora menos 40 minutos
         # Usamos timezone.utc porque tus modelos usan DateTime(timezone=True)
         threshold_time = datetime.now(timezone.utc) - timedelta(minutes=40)
         
-        # Ejecutamos la eliminación
-        # El ON DELETE CASCADE de la DB limpiará las tablas: 
+        # Ejecutamos la eliminaci�n
+        # El ON DELETE CASCADE de la DB limpiar� las tablas: 
         # usuario_roles, verificaciones_otp, etc.
         stmt = delete(Usuario).where(
             Usuario.status == "PENDING",
@@ -1445,10 +1445,10 @@ def cleanup_expired_pending_users():
         db.commit()
         
         if result.rowcount > 0:
-            logger.info(f"🧹 [CLEANUP] Se eliminaron {result.rowcount} registros PENDING expirados (>40 min).")
+            logger.info(f"?? [CLEANUP] Se eliminaron {result.rowcount} registros PENDING expirados (>40 min).")
             
     except Exception as e:
-        logger.error(f"❌ [CLEANUP ERROR] Falló la limpieza automática: {e}")
+        logger.error(f"? [CLEANUP ERROR] Fall� la limpieza autom�tica: {e}")
         db.rollback()
     finally:
         db.close()
@@ -1466,38 +1466,38 @@ logger = logging.getLogger(__name__)
 
 class EmailOtpService:
     """
-    Servicio para envío de códigos OTP por email.
-    Diseñado para ser ejecutado en BackgroundTasks de FastAPI.
+    Servicio para env�o de c�digos OTP por email.
+    Dise�ado para ser ejecutado en BackgroundTasks de FastAPI.
     """
     
     @staticmethod
     def send_otp(to_email: str, code: str) -> bool:
         """
-        Envía un código OTP por correo electrónico.
+        Env�a un c�digo OTP por correo electr�nico.
         
         Args:
-            to_email: Dirección de correo destino
-            code: Código OTP a enviar
+            to_email: Direcci�n de correo destino
+            code: C�digo OTP a enviar
             
         Returns:
-            bool: True si se envió exitosamente, False en caso contrario
+            bool: True si se envi� exitosamente, False en caso contrario
         """
         try:
             # 1. Crear el contenedor del mensaje
             msg = MIMEMultipart()
             msg["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
             msg["To"] = to_email
-            msg["Subject"] = f"Código de Verificación - {settings.APP_PUBLIC_NAME}"
+            msg["Subject"] = f"C�digo de Verificaci�n - {settings.APP_PUBLIC_NAME}"
 
             # 2. Cuerpo del mensaje con formato profesional
             body = f"""
 Hola,
 
-Tu código de verificación para activar tu cuenta de {settings.APP_PUBLIC_NAME} es:
+Tu c�digo de verificaci�n para activar tu cuenta de {settings.APP_PUBLIC_NAME} es:
 
     {code}
 
-Este código expirará en {settings.OTP_EXPIRE_MINUTES} minutos.
+Este c�digo expirar� en {settings.OTP_EXPIRE_MINUTES} minutos.
 Si no solicitaste este registro, puedes ignorar este correo.
 
 ---
@@ -1505,28 +1505,28 @@ Equipo de {settings.APP_PUBLIC_NAME}
             """
             msg.attach(MIMEText(body, "plain"))
 
-            # 3. Conexión al servidor SMTP
+            # 3. Conexi�n al servidor SMTP
             with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
                 server.set_debuglevel(0)
                 server.starttls()  # Inicia cifrado TLS
                 
-                # 4. Autenticación
+                # 4. Autenticaci�n
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                 
-                # 5. Envío
+                # 5. Env�o
                 server.send_message(msg)
                 
-            logger.info(f"✅ Email OTP enviado exitosamente a {to_email}")
+            logger.info(f"? Email OTP enviado exitosamente a {to_email}")
             return True
 
         except smtplib.SMTPAuthenticationError as e:
-            logger.error(f"❌ Error de autenticación SMTP: {str(e)}")
+            logger.error(f"? Error de autenticaci�n SMTP: {str(e)}")
             return False
         except smtplib.SMTPException as e:
-            logger.error(f"❌ Error SMTP al enviar email a {to_email}: {str(e)}")
+            logger.error(f"? Error SMTP al enviar email a {to_email}: {str(e)}")
             return False
         except Exception as e:
-            logger.error(f"❌ Error inesperado al enviar email a {to_email}: {str(e)}")
+            logger.error(f"? Error inesperado al enviar email a {to_email}: {str(e)}")
             return False
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\app\services\gemini_service.py
@@ -1539,8 +1539,8 @@ logger = logging.getLogger(__name__)
 
 class GeminiService:
     """
-    Servicio para interacción con Gemini 1.5 Pro/Flash.
-    Procesa PDFs de análisis de crédito y extrae datos estructurados en JSON.
+    Servicio para interacci�n con Gemini 1.5 Pro/Flash.
+    Procesa PDFs de an�lisis de cr�dito y extrae datos estructurados en JSON.
     """
     
     def __init__(self, api_key: str | None = None):
@@ -1551,7 +1551,7 @@ class GeminiService:
             api_key: API key de Google Generative AI
         """
         self.api_key = api_key
-        # TODO: Inicializar cliente de Gemini cuando se agregue la librería
+        # TODO: Inicializar cliente de Gemini cuando se agregue la librer�a
         # import google.generativeai as genai
         # genai.configure(api_key=self.api_key)
         # self.model = genai.GenerativeModel('gemini-3-flash-preview')
@@ -1562,14 +1562,14 @@ class GeminiService:
         context: Dict[str, Any] | None = None
     ) -> Dict[str, Any]:
         """
-        Extrae datos estructurados de un PDF de análisis de crédito usando Gemini.
+        Extrae datos estructurados de un PDF de an�lisis de cr�dito usando Gemini.
         
         Args:
             pdf_content: Contenido binario del PDF
             context: Contexto adicional (banco, usuario, etc.)
             
         Returns:
-            Dict con datos extraídos en formato JSON
+            Dict con datos extra�dos en formato JSON
             
         Ejemplo de respuesta esperada:
         {
@@ -1581,17 +1581,17 @@ class GeminiService:
             "valor_cuota_actual": 1200000.00,
             "beneficio_frech_mensual": 200000.00,
             "sistema_amortizacion": "UVR",
-            "nombre_titular": "Juan Pérez García",
+            "nombre_titular": "Juan P�rez Garc�a",
             ...
         }
         """
-        logger.info("Iniciando extracción de datos con Gemini")
+        logger.info("Iniciando extracci�n de datos con Gemini")
         
         # TODO: Implementar llamada a Gemini API
         # Prompt example:
         # prompt = '''
-        # Analiza el siguiente documento de análisis de crédito hipotecario y extrae 
-        # la siguiente información en formato JSON:
+        # Analiza el siguiente documento de an�lisis de cr�dito hipotecario y extrae 
+        # la siguiente informaci�n en formato JSON:
         # - numero_credito
         # - valor_prestado_inicial
         # - cuotas_pactadas, cuotas_pagadas, cuotas_pendientes
@@ -1605,7 +1605,7 @@ class GeminiService:
         # - seguros_totales
         # '''
         
-        # Por ahora retornamos estructura vacía
+        # Por ahora retornamos estructura vac�a
         return {
             "extraction_status": "pending",
             "message": "Gemini API integration pending",
@@ -1614,13 +1614,13 @@ class GeminiService:
     
     async def validate_document_authenticity(self, pdf_content: bytes) -> Dict[str, Any]:
         """
-        Valida que el documento sea un análisis de crédito real usando Gemini.
+        Valida que el documento sea un an�lisis de cr�dito real usando Gemini.
         
         Args:
             pdf_content: Contenido binario del PDF
             
         Returns:
-            Dict con resultado de validación:
+            Dict con resultado de validaci�n:
             {
                 "is_valid": bool,
                 "confidence": float,
@@ -1629,14 +1629,14 @@ class GeminiService:
         """
         logger.info("Validando autenticidad del documento con Gemini")
         
-        # TODO: Implementar validación con Gemini
-        # Prompt: "¿Este documento es un análisis de crédito hipotecario real? 
+        # TODO: Implementar validaci�n con Gemini
+        # Prompt: "�Este documento es un an�lisis de cr�dito hipotecario real? 
         # Responde en JSON con is_valid, confidence y reason"
         
         return {
             "is_valid": True,
             "confidence": 0.0,
-            "reason": "Validación pendiente - Gemini API no integrada"
+            "reason": "Validaci�n pendiente - Gemini API no integrada"
         }
     
     async def compare_names(
@@ -1648,11 +1648,11 @@ class GeminiService:
         Compara el nombre en el PDF con el nombre del usuario usando matching inteligente.
         
         Args:
-            pdf_name: Nombre extraído del PDF
+            pdf_name: Nombre extra�do del PDF
             user_name: Nombre del usuario autenticado
             
         Returns:
-            Dict con resultado de comparación:
+            Dict con resultado de comparaci�n:
             {
                 "match": bool,
                 "similarity": float,
@@ -1686,19 +1686,19 @@ logger = logging.getLogger(__name__)
 class PdfService:
     """
     Servicio para manejo de archivos PDF.
-    Incluye detección de encriptación y preparación para extracción con IA.
+    Incluye detecci�n de encriptaci�n y preparaci�n para extracci�n con IA.
     """
     
     @staticmethod
     def is_pdf_encrypted(file_stream: BinaryIO) -> bool:
         """
-        Detecta si un PDF está protegido con contraseña.
+        Detecta si un PDF est� protegido con contrase�a.
         
         Args:
             file_stream: Stream del archivo PDF
             
         Returns:
-            bool: True si el PDF está encriptado, False en caso contrario
+            bool: True si el PDF est� encriptado, False en caso contrario
         """
         try:
             # Resetear el cursor al inicio
@@ -1707,7 +1707,7 @@ class PdfService:
             # Intentar leer el PDF
             reader = PyPDF2.PdfReader(file_stream)
             
-            # PyPDF2 detecta automáticamente si está encriptado
+            # PyPDF2 detecta autom�ticamente si est� encriptado
             is_encrypted = reader.is_encrypted
             
             # Resetear cursor para uso posterior
@@ -1716,28 +1716,28 @@ class PdfService:
             return is_encrypted
             
         except Exception as e:
-            logger.error(f"Error al verificar encriptación del PDF: {str(e)}")
+            logger.error(f"Error al verificar encriptaci�n del PDF: {str(e)}")
             file_stream.seek(0)
             return False
     
     @staticmethod
     def decrypt_pdf(file_stream: BinaryIO, password: str) -> Tuple[bool, str]:
         """
-        Intenta desencriptar un PDF con la contraseña proporcionada.
+        Intenta desencriptar un PDF con la contrase�a proporcionada.
         
         Args:
             file_stream: Stream del archivo PDF
-            password: Contraseña para desencriptar
+            password: Contrase�a para desencriptar
             
         Returns:
-            Tuple[bool, str]: (éxito, mensaje)
+            Tuple[bool, str]: (�xito, mensaje)
         """
         try:
             file_stream.seek(0)
             reader = PyPDF2.PdfReader(file_stream)
             
             if not reader.is_encrypted:
-                return True, "El PDF no está encriptado"
+                return True, "El PDF no est� encriptado"
             
             # Intentar desencriptar
             if reader.decrypt(password):
@@ -1749,10 +1749,10 @@ class PdfService:
                 except Exception as e:
                     logger.warning(f"PDF desencriptado pero no se puede leer: {str(e)}")
                     file_stream.seek(0)
-                    return False, "Contraseña incorrecta o PDF corrupto"
+                    return False, "Contrase�a incorrecta o PDF corrupto"
             else:
                 file_stream.seek(0)
-                return False, "Contraseña incorrecta"
+                return False, "Contrase�a incorrecta"
                 
         except Exception as e:
             logger.error(f"Error al desencriptar PDF: {str(e)}")
@@ -1783,25 +1783,25 @@ class PdfService:
     @staticmethod
     def extract_text_basic(file_stream: BinaryIO, password: str | None = None) -> str:
         """
-        Extrae texto básico del PDF usando PyPDF2.
-        Útil para validación rápida antes de enviar a Gemini.
+        Extrae texto b�sico del PDF usando PyPDF2.
+        �til para validaci�n r�pida antes de enviar a Gemini.
         
         Args:
             file_stream: Stream del archivo PDF
-            password: Contraseña si el PDF está protegido
+            password: Contrase�a si el PDF est� protegido
             
         Returns:
-            str: Texto extraído del PDF
+            str: Texto extra�do del PDF
         """
         try:
             file_stream.seek(0)
             reader = PyPDF2.PdfReader(file_stream)
             
-            # Si está encriptado, intentar desencriptar
+            # Si est� encriptado, intentar desencriptar
             if reader.is_encrypted and password:
                 reader.decrypt(password)
             
-            # Extraer texto de todas las páginas
+            # Extraer texto de todas las p�ginas
             text_parts = []
             for page in reader.pages:
                 text = page.extract_text()
@@ -1819,19 +1819,19 @@ class PdfService:
     @staticmethod
     def validate_credit_analysis_keywords(text: str) -> Tuple[bool, float]:
         """
-        Valida que el texto contenga palabras clave de un análisis de crédito.
+        Valida que el texto contenga palabras clave de un an�lisis de cr�dito.
         
         Args:
-            text: Texto extraído del PDF
+            text: Texto extra�do del PDF
             
         Returns:
-            Tuple[bool, float]: (es válido, score_confianza)
+            Tuple[bool, float]: (es v�lido, score_confianza)
         """
-        # Palabras clave que debe contener un análisis de crédito
+        # Palabras clave que debe contener un an�lisis de cr�dito
         keywords = [
-            "crédito", "credito", "préstamo", "prestamo", "cuota",
-            "capital", "interés", "interes", "saldo", "desembolso",
-            "amortización", "amortizacion", "banco", "hipotecario"
+            "cr�dito", "credito", "pr�stamo", "prestamo", "cuota",
+            "capital", "inter�s", "interes", "saldo", "desembolso",
+            "amortizaci�n", "amortizacion", "banco", "hipotecario"
         ]
         
         text_lower = text.lower()
@@ -1840,7 +1840,7 @@ class PdfService:
         # Score de confianza basado en matches
         confidence_score = min(matches / len(keywords), 1.0)
         
-        # Se considera válido si tiene al menos 30% de las keywords
+        # Se considera v�lido si tiene al menos 30% de las keywords
         is_valid = confidence_score >= 0.3
         
         return is_valid, confidence_score
@@ -1895,28 +1895,28 @@ C:\Proyectos en desarrollo\credit-analysis\backend\pyproject.toml
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\README.md
 ===============================
-# 🏦 EcoFinanzas Backend - API de Análisis de Crédito
+# ?? PerFinanzas Backend - API de An�lisis de Cr�dito
 
-Backend refactorizado con arquitectura senior para análisis de créditos hipotecarios con IA.
+Backend refactorizado con arquitectura senior para an�lisis de cr�ditos hipotecarios con IA.
 
-## 🚀 Stack Tecnológico
+## ?? Stack Tecnol�gico
 
 - **Framework**: FastAPI 0.115.0
 - **ORM**: SQLAlchemy 2.0.34
 - **Database**: PostgreSQL 16+
 - **Authentication**: JWT (python-jose)
 - **Security**: bcrypt hashing
-- **IA**: Gemini 1.5 Pro/Flash (pendiente integración)
+- **IA**: Gemini 1.5 Pro/Flash (pendiente integraci�n)
 - **Background Jobs**: APScheduler
 - **PDF Processing**: PyPDF2
 
-## 📋 Requisitos Previos
+## ?? Requisitos Previos
 
 - Python 3.11+
 - PostgreSQL 16+
 - pip (gestor de paquetes)
 
-## 🔧 Instalación
+## ?? Instalaci�n
 
 ### 1. Clonar y navegar al directorio
 
@@ -1954,15 +1954,15 @@ nano .env     # Linux/Mac
 ```
 
 **Variables obligatorias:**
-- `DATABASE_URL`: Conexión a PostgreSQL
-- `SECRET_KEY`: Mínimo 32 caracteres aleatorios
+- `DATABASE_URL`: Conexi�n a PostgreSQL
+- `SECRET_KEY`: M�nimo 32 caracteres aleatorios
 - `SMTP_*`: Credenciales de email (Gmail App Password recomendado)
 
 ### 5. Inicializar base de datos
 
 ```bash
-# Asegúrate que PostgreSQL esté corriendo
-# Ejecutar desde la raíz del proyecto con Docker:
+# Aseg�rate que PostgreSQL est� corriendo
+# Ejecutar desde la ra�z del proyecto con Docker:
 docker-compose up -d postgres
 
 # O manualmente:
@@ -1976,106 +1976,106 @@ docker-compose up -d postgres
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-La API estará disponible en: `http://localhost:8000`
+La API estar� disponible en: `http://localhost:8000`
 
-## 📚 Documentación de la API
+## ?? Documentaci�n de la API
 
 - **Swagger UI**: http://localhost:8000/docs
 - **ReDoc**: http://localhost:8000/redoc
 
-## 🔐 Endpoints Principales
+## ?? Endpoints Principales
 
 ### Auth
 - `POST /api/v1/auth/register` - Registro de usuario
-- `POST /api/v1/auth/verify-otp` - Verificar código OTP
-- `POST /api/v1/auth/login` - Iniciar sesión
+- `POST /api/v1/auth/verify-otp` - Verificar c�digo OTP
+- `POST /api/v1/auth/login` - Iniciar sesi�n
 
-### Users (requiere autenticación)
+### Users (requiere autenticaci�n)
 - `GET /api/v1/users/me` - Ver perfil
-- `PATCH /api/v1/users/me/password` - Cambiar contraseña
+- `PATCH /api/v1/users/me/password` - Cambiar contrase�a
 
-## 🏗️ Arquitectura
+## ??? Arquitectura
 
 ```
 backend/
-├── app/
-│   ├── main.py                    # Punto de entrada, exception handlers
-│   ├── api/
-│   │   ├── deps.py               # Dependencias (auth, roles)
-│   │   └── v1/
-│   │       ├── router.py         # Router principal
-│   │       ├── auth.py           # Endpoints de autenticación
-│   │       └── users.py          # Endpoints de usuarios
-│   ├── core/
-│   │   ├── config.py             # Configuración (pydantic-settings)
-│   │   ├── security.py           # JWT, hashing
-│   │   ├── logging.py            # Logging centralizado
-│   │   └── exceptions.py         # Exception handlers globales
-│   ├── db/
-│   │   ├── base.py               # Base declarativa SQLAlchemy
-│   │   └── session.py            # Session factory
-│   ├── models/                   # Modelos SQLAlchemy
-│   │   ├── user.py               # Usuario
-│   │   ├── otp.py                # Verificación OTP
-│   │   ├── role.py               # Roles y permisos
-│   │   ├── banco.py              # Bancos
-│   │   ├── documento.py          # DocumentoS3 (metadata archivos)
-│   │   ├── analisis.py           # AnalisisHipotecario
-│   │   └── propuesta.py          # PropuestaAhorro
-│   ├── repositories/             # Capa de acceso a datos
-│   │   ├── users_repo.py
-│   │   └── otp_repo.py
-│   ├── schemas/                  # Pydantic schemas (DTOs)
-│   │   ├── auth.py
-│   │   └── user.py
-│   └── services/                 # Lógica de negocio
-│       ├── email_otp_service.py  # Envío de OTP por email
-│       ├── pdf_service.py        # Procesamiento PDFs
-│       ├── gemini_service.py     # Integración IA (esqueleto)
-│       ├── calc_service.py       # Cálculos financieros
-│       └── cleanup_service.py    # Limpieza usuarios PENDING
-├── alembic/                      # Migraciones de DB
-├── requirements.txt              # Dependencias Python
-└── .env                          # Variables de entorno (no versionado)
++-- app/
+�   +-- main.py                    # Punto de entrada, exception handlers
+�   +-- api/
+�   �   +-- deps.py               # Dependencias (auth, roles)
+�   �   +-- v1/
+�   �       +-- router.py         # Router principal
+�   �       +-- auth.py           # Endpoints de autenticaci�n
+�   �       +-- users.py          # Endpoints de usuarios
+�   +-- core/
+�   �   +-- config.py             # Configuraci�n (pydantic-settings)
+�   �   +-- security.py           # JWT, hashing
+�   �   +-- logging.py            # Logging centralizado
+�   �   +-- exceptions.py         # Exception handlers globales
+�   +-- db/
+�   �   +-- base.py               # Base declarativa SQLAlchemy
+�   �   +-- session.py            # Session factory
+�   +-- models/                   # Modelos SQLAlchemy
+�   �   +-- user.py               # Usuario
+�   �   +-- otp.py                # Verificaci�n OTP
+�   �   +-- role.py               # Roles y permisos
+�   �   +-- banco.py              # Bancos
+�   �   +-- documento.py          # DocumentoS3 (metadata archivos)
+�   �   +-- analisis.py           # AnalisisHipotecario
+�   �   +-- propuesta.py          # PropuestaAhorro
+�   +-- repositories/             # Capa de acceso a datos
+�   �   +-- users_repo.py
+�   �   +-- otp_repo.py
+�   +-- schemas/                  # Pydantic schemas (DTOs)
+�   �   +-- auth.py
+�   �   +-- user.py
+�   +-- services/                 # L�gica de negocio
+�       +-- email_otp_service.py  # Env�o de OTP por email
+�       +-- pdf_service.py        # Procesamiento PDFs
+�       +-- gemini_service.py     # Integraci�n IA (esqueleto)
+�       +-- calc_service.py       # C�lculos financieros
+�       +-- cleanup_service.py    # Limpieza usuarios PENDING
++-- alembic/                      # Migraciones de DB
++-- requirements.txt              # Dependencias Python
++-- .env                          # Variables de entorno (no versionado)
 ```
 
-## 🔒 Seguridad Implementada
+## ?? Seguridad Implementada
 
-### Autenticación
-- ✅ JWT con expiración configurable
-- ✅ HTTPBearer authentication
-- ✅ Validación de estado ACTIVE del usuario
-- ✅ Hashing de passwords con bcrypt
+### Autenticaci�n
+- ? JWT con expiraci�n configurable
+- ? HTTPBearer authentication
+- ? Validaci�n de estado ACTIVE del usuario
+- ? Hashing de passwords con bcrypt
 
-### Autorización
-- ✅ Sistema RBAC (Role-Based Access Control)
-- ✅ Decorador `require_role()` para protección granular
-- ✅ Verificación de roles en cada request
+### Autorizaci�n
+- ? Sistema RBAC (Role-Based Access Control)
+- ? Decorador `require_role()` para protecci�n granular
+- ? Verificaci�n de roles en cada request
 
 ### Integridad
-- ✅ Constraints DB (unique email/identificación)
-- ✅ Exception handlers para IntegrityError
-- ✅ Rollback automático en transacciones fallidas
-- ✅ SHA-256 checksum para archivos
+- ? Constraints DB (unique email/identificaci�n)
+- ? Exception handlers para IntegrityError
+- ? Rollback autom�tico en transacciones fallidas
+- ? SHA-256 checksum para archivos
 
 ### Resiliencia
-- ✅ BackgroundTasks para operaciones I/O
-- ✅ Cleanup automático de usuarios PENDING (10 min)
-- ✅ Timeouts en conexiones SMTP
-- ✅ Logging estructurado con niveles
+- ? BackgroundTasks para operaciones I/O
+- ? Cleanup autom�tico de usuarios PENDING (10 min)
+- ? Timeouts en conexiones SMTP
+- ? Logging estructurado con niveles
 
-## 📝 Flujo de Registro y Autenticación
+## ?? Flujo de Registro y Autenticaci�n
 
 ```mermaid
 sequenceDiagram
     User->>API: POST /auth/register
     API->>DB: Crear usuario (status=PENDING)
     API->>DB: Crear OTP
-    API->>BackgroundTask: Enviar email con código
+    API->>BackgroundTask: Enviar email con c�digo
     API-->>User: 200 OK (user_id, message)
     BackgroundTask->>SMTP: Enviar email
     User->>API: POST /auth/verify-otp
-    API->>DB: Validar código
+    API->>DB: Validar c�digo
     API->>DB: Actualizar usuario (status=ACTIVE)
     API-->>User: 200 OK (cuenta activada)
     User->>API: POST /auth/login
@@ -2083,19 +2083,19 @@ sequenceDiagram
     API-->>User: 200 OK (access_token)
 ```
 
-## 🧪 Testing
+## ?? Testing
 
-### Validación Rápida
+### Validaci�n R�pida
 ```bash
 python validate_refactor.py
 ```
 
-### Tests Unitarios (pendiente implementación)
+### Tests Unitarios (pendiente implementaci�n)
 ```bash
 pytest app/tests/
 ```
 
-## 🐛 Troubleshooting
+## ?? Troubleshooting
 
 ### Error: "Import PyPDF2 could not be resolved"
 ```bash
@@ -2107,123 +2107,123 @@ pip install PyPDF2==3.0.1
 - Copia `.env.example` a `.env` y completa las variables
 
 ### Error SMTP: "Authentication failed"
-- Para Gmail: Usa "App Password", no la contraseña normal
+- Para Gmail: Usa "App Password", no la contrase�a normal
 - Genera en: https://myaccount.google.com/apppasswords
 - Habilita "Less secure app access" si usas otro proveedor
 
 ### Error: "Connection refused" (PostgreSQL)
 ```bash
-# Verificar que PostgreSQL esté corriendo
+# Verificar que PostgreSQL est� corriendo
 docker-compose ps
 
 # Iniciar PostgreSQL
 docker-compose up -d postgres
 ```
 
-## 📦 Dependencias Principales
+## ?? Dependencias Principales
 
 ```txt
 fastapi==0.115.0          # Framework web
 uvicorn[standard]         # ASGI server
 SQLAlchemy==2.0.34        # ORM
 psycopg2-binary           # Driver PostgreSQL
-pydantic==2.9.2           # Validación datos
+pydantic==2.9.2           # Validaci�n datos
 python-jose==3.3.0        # JWT
 passlib[bcrypt]           # Hashing passwords
 PyPDF2==3.0.1             # Procesamiento PDFs
 apscheduler==3.10.4       # Background jobs
 ```
 
-## 🚧 Pendientes de Implementación
+## ?? Pendientes de Implementaci�n
 
-- [ ] Integración Gemini API (extracción JSON de PDFs)
-- [ ] Endpoints de análisis (upload, list, detail)
+- [ ] Integraci�n Gemini API (extracci�n JSON de PDFs)
+- [ ] Endpoints de an�lisis (upload, list, detail)
 - [ ] Storage S3 o filesystem local
-- [ ] Servicio de cálculos financieros completo
+- [ ] Servicio de c�lculos financieros completo
 - [ ] Rate limiting con slowapi
-- [ ] Tests unitarios e integración
+- [ ] Tests unitarios e integraci�n
 - [ ] Matching de nombres con rapidfuzz
 
-## 📄 Licencia
+## ?? Licencia
 
-Propietario - EcoFinanzas © 2026
+Propietario - PerFinanzas � 2026
 
-## 👥 Contacto
+## ?? Contacto
 
-Para soporte técnico o consultas sobre el proyecto, contacta al equipo de desarrollo.
+Para soporte t�cnico o consultas sobre el proyecto, contacta al equipo de desarrollo.
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\REFACTORING_SUMMARY.md
 ===============================
-# 🏗️ Refactorización Arquitectura Senior - EcoFinanzas Backend
+# ??? Refactorizaci�n Arquitectura Senior - PerFinanzas Backend
 
-## ✅ Tareas Completadas
+## ? Tareas Completadas
 
-### 📋 Tarea 1: Refactor de Auth & Users - COMPLETADO
+### ?? Tarea 1: Refactor de Auth & Users - COMPLETADO
 
 #### Dependencias de Seguridad (`app/api/deps.py`)
-- ✅ **`get_current_user()`**: Decodifica JWT, valida expiración, verifica usuario ACTIVE
-- ✅ **`require_role(*roles)`**: Decorator/dependencia para verificar roles específicos
-- ✅ Protección completa con `HTTPBearer` authentication
-- ✅ Manejo de excepciones 401 (token inválido) y 403 (usuario inactivo/sin permisos)
+- ? **`get_current_user()`**: Decodifica JWT, valida expiraci�n, verifica usuario ACTIVE
+- ? **`require_role(*roles)`**: Decorator/dependencia para verificar roles espec�ficos
+- ? Protecci�n completa con `HTTPBearer` authentication
+- ? Manejo de excepciones 401 (token inv�lido) y 403 (usuario inactivo/sin permisos)
 
 #### Endpoints de Usuarios (`app/api/v1/users.py`)
-- ✅ **GET `/api/v1/users/me`**: Obtener perfil del usuario autenticado
-  - Retorna: identificación, nombre completo, género, email, teléfono, status
+- ? **GET `/api/v1/users/me`**: Obtener perfil del usuario autenticado
+  - Retorna: identificaci�n, nombre completo, g�nero, email, tel�fono, status
   - Protegido con `get_current_user`
   
-- ✅ **PATCH `/api/v1/users/me/password`**: Actualizar contraseña
-  - Requiere contraseña actual para validación
-  - Valida que nueva contraseña sea diferente
+- ? **PATCH `/api/v1/users/me/password`**: Actualizar contrase�a
+  - Requiere contrase�a actual para validaci�n
+  - Valida que nueva contrase�a sea diferente
   - Hash seguro con bcrypt
 
 #### Schemas (`app/schemas/user.py`)
-- ✅ `UserProfileResponse`: Schema de respuesta de perfil
-- ✅ `UpdatePasswordRequest`: Schema para cambio de contraseña
+- ? `UserProfileResponse`: Schema de respuesta de perfil
+- ? `UpdatePasswordRequest`: Schema para cambio de contrase�a
 
 ---
 
-### 🔄 Tarea 2: Capa de Servicios & Background - COMPLETADO
+### ?? Tarea 2: Capa de Servicios & Background - COMPLETADO
 
 #### Refactor EmailOtpService (`app/services/email_otp_service.py`)
-- ✅ Método estático para uso directo en BackgroundTasks
-- ✅ Logging robusto con niveles INFO/ERROR
-- ✅ Manejo de excepciones SMTP con retorno bool (no bloquea con raise)
-- ✅ Timeout de 10s en conexión SMTP
-- ✅ Mensajes profesionales con detalles de expiración
+- ? M�todo est�tico para uso directo en BackgroundTasks
+- ? Logging robusto con niveles INFO/ERROR
+- ? Manejo de excepciones SMTP con retorno bool (no bloquea con raise)
+- ? Timeout de 10s en conexi�n SMTP
+- ? Mensajes profesionales con detalles de expiraci�n
 
-#### Endpoint de Registro Asíncrono (`app/api/v1/auth.py`)
-- ✅ Importación de `BackgroundTasks` y `IntegrityError`
-- ✅ Envío de email en background con `background_tasks.add_task()`
-- ✅ Captura de `IntegrityError` para constraints duplicados
-- ✅ Respuestas HTTP específicas para email/identificación duplicados
-- ✅ Rollback automático en caso de error
+#### Endpoint de Registro As�ncrono (`app/api/v1/auth.py`)
+- ? Importaci�n de `BackgroundTasks` y `IntegrityError`
+- ? Env�o de email en background con `background_tasks.add_task()`
+- ? Captura de `IntegrityError` para constraints duplicados
+- ? Respuestas HTTP espec�ficas para email/identificaci�n duplicados
+- ? Rollback autom�tico en caso de error
 
 ---
 
-### 📦 Tarea 3: Estructura para PDFs - COMPLETADO
+### ?? Tarea 3: Estructura para PDFs - COMPLETADO
 
 #### Modelos SQLAlchemy
 
 **`app/models/banco.py`**
-- ✅ Modelo `Banco` con id y nombre único
+- ? Modelo `Banco` con id y nombre �nico
 
 **`app/models/documento.py`**
-- ✅ Modelo `DocumentoS3` completo:
+- ? Modelo `DocumentoS3` completo:
   - Metadata: s3_key, original_filename, file_size, mime_type
   - Seguridad: pdf_encrypted, checksum_sha256
   - Estado: status (UPLOADED, PROCESSING, COMPLETED, FAILED)
   - Relaciones: usuario_id, banco_id
 
 **`app/models/analisis.py`**
-- ✅ Modelo `AnalisisHipotecario` completo:
+- ? Modelo `AnalisisHipotecario` completo:
   - Datos del usuario: ingresos_mensuales, capacidad_pago_max, tipo_contrato
-  - Datos del crédito: numero_credito, valor_prestado, cuotas, saldo_capital
+  - Datos del cr�dito: numero_credito, valor_prestado, cuotas, saldo_capital
   - Beneficios: beneficio_frech_mensual, ajuste_inflacion_pesos
   - Validaciones: es_analisis_real, validado_por_sistema
   - JSON flexible: datos_manuales_json (JSONB)
 
 **`app/models/propuesta.py`**
-- ✅ Modelo `PropuestaAhorro` completo:
+- ? Modelo `PropuestaAhorro` completo:
   - Opciones: numero_opcion, abono_adicional
   - Resultados: cuotas_reducidas, tiempo_ahorrado, valor_ahorrado_intereses
   - Financiero: honorarios_calculados, ingreso_minimo_requerido
@@ -2232,126 +2232,126 @@ C:\Proyectos en desarrollo\credit-analysis\backend\REFACTORING_SUMMARY.md
 #### Servicios
 
 **`app/services/pdf_service.py`** - COMPLETO
-- ✅ **`is_pdf_encrypted()`**: Detecta si PDF tiene contraseña con PyPDF2
-- ✅ **`decrypt_pdf()`**: Intenta desencriptar con password proporcionado
-- ✅ **`calculate_checksum()`**: SHA-256 para integridad de archivos
-- ✅ **`extract_text_basic()`**: Extracción básica con PyPDF2 (pre-Gemini)
-- ✅ **`validate_credit_analysis_keywords()`**: Valida keywords de crédito
-  - Detecta: crédito, préstamo, cuota, capital, interés, amortización, etc.
+- ? **`is_pdf_encrypted()`**: Detecta si PDF tiene contrase�a con PyPDF2
+- ? **`decrypt_pdf()`**: Intenta desencriptar con password proporcionado
+- ? **`calculate_checksum()`**: SHA-256 para integridad de archivos
+- ? **`extract_text_basic()`**: Extracci�n b�sica con PyPDF2 (pre-Gemini)
+- ? **`validate_credit_analysis_keywords()`**: Valida keywords de cr�dito
+  - Detecta: cr�dito, pr�stamo, cuota, capital, inter�s, amortizaci�n, etc.
   - Score de confianza basado en matches
 
 **`app/services/gemini_service.py`** - ESQUELETO PREPARADO
-- ✅ Clase base con estructura para Gemini 1.5 Pro/Flash
-- ✅ **`extract_credit_analysis()`**: Placeholder para extracción JSON
-- ✅ **`validate_document_authenticity()`**: Placeholder para validación IA
-- ✅ **`compare_names()`**: Placeholder para matching de nombres
-- 📝 TODO: Integrar `google-generativeai` SDK cuando esté listo
+- ? Clase base con estructura para Gemini 1.5 Pro/Flash
+- ? **`extract_credit_analysis()`**: Placeholder para extracci�n JSON
+- ? **`validate_document_authenticity()`**: Placeholder para validaci�n IA
+- ? **`compare_names()`**: Placeholder para matching de nombres
+- ?? TODO: Integrar `google-generativeai` SDK cuando est� listo
 
 #### Dependencias
-- ✅ Agregado `PyPDF2==3.0.1` a `requirements.txt`
+- ? Agregado `PyPDF2==3.0.1` a `requirements.txt`
 
 ---
 
-### ⚠️ Tarea 4: Manejo Global de Errores - COMPLETADO
+### ?? Tarea 4: Manejo Global de Errores - COMPLETADO
 
 #### Exception Handlers (`app/core/exceptions.py`)
-- ✅ **`ErrorResponse`**: Clase para respuestas estandarizadas
-- ✅ **`integrity_error_handler`**: Captura constraints DB
-  - Detecta: duplicados (email, identificación), foreign keys, not null
-  - Retorna 409 CONFLICT o 400 BAD_REQUEST según caso
+- ? **`ErrorResponse`**: Clase para respuestas estandarizadas
+- ? **`integrity_error_handler`**: Captura constraints DB
+  - Detecta: duplicados (email, identificaci�n), foreign keys, not null
+  - Retorna 409 CONFLICT o 400 BAD_REQUEST seg�n caso
   
-- ✅ **`operational_error_handler`**: Maneja errores de conexión DB
+- ? **`operational_error_handler`**: Maneja errores de conexi�n DB
   - Retorna 503 SERVICE_UNAVAILABLE
   
-- ✅ **`data_error_handler`**: Maneja formatos inválidos
+- ? **`data_error_handler`**: Maneja formatos inv�lidos
   - Retorna 400 BAD_REQUEST
   
-- ✅ **`validation_error_handler`**: Formatea errores Pydantic
+- ? **`validation_error_handler`**: Formatea errores Pydantic
   - Retorna 422 UNPROCESSABLE_ENTITY con detalles legibles
   
-- ✅ **`generic_exception_handler`**: Catch-all para excepciones no controladas
+- ? **`generic_exception_handler`**: Catch-all para excepciones no controladas
   - Logging con stack trace
   - Retorna 500 INTERNAL_SERVER_ERROR
 
 #### Registro en Main (`app/main.py`)
-- ✅ Importaciones de handlers y excepciones SQLAlchemy
-- ✅ Registrados todos los handlers con `app.add_exception_handler()`
-- ✅ Título actualizado: "EcoFinanzas Credit Analysis API"
-- ✅ Descripción y versión agregadas
+- ? Importaciones de handlers y excepciones SQLAlchemy
+- ? Registrados todos los handlers con `app.add_exception_handler()`
+- ? T�tulo actualizado: "PerFinanzas Credit Analysis API"
+- ? Descripci�n y versi�n agregadas
 
 ---
 
-## 📊 Estructura Final del Backend
+## ?? Estructura Final del Backend
 
 ```
 backend/
-├── app/
-│   ├── main.py                    ✅ Refactorizado con exception handlers
-│   ├── api/
-│   │   ├── deps.py               ✅ get_current_user + require_role
-│   │   └── v1/
-│   │       ├── router.py         ✅ Incluye users router
-│   │       ├── auth.py           ✅ BackgroundTasks + IntegrityError
-│   │       └── users.py          ✅ /me endpoints implementados
-│   ├── core/
-│   │   ├── config.py             ✅ Settings
-│   │   ├── security.py           ✅ JWT + hashing
-│   │   └── exceptions.py         ✅ NUEVO: Exception handlers globales
-│   ├── models/
-│   │   ├── user.py               ✅ Existente
-│   │   ├── otp.py                ✅ Existente
-│   │   ├── role.py               ✅ Existente
-│   │   ├── banco.py              ✅ NUEVO
-│   │   ├── documento.py          ✅ NUEVO: DocumentoS3
-│   │   ├── analisis.py           ✅ NUEVO: AnalisisHipotecario
-│   │   └── propuesta.py          ✅ NUEVO: PropuestaAhorro
-│   ├── repositories/
-│   │   ├── users_repo.py         ✅ Existente
-│   │   └── otp_repo.py           ✅ Existente
-│   ├── schemas/
-│   │   ├── auth.py               ✅ Existente
-│   │   └── user.py               ✅ NUEVO: UserProfile + UpdatePassword
-│   └── services/
-│       ├── email_otp_service.py  ✅ Refactorizado (async-ready)
-│       ├── pdf_service.py        ✅ NUEVO: Detección + extracción
-│       ├── gemini_service.py     ✅ NUEVO: Esqueleto para IA
-│       └── cleanup_service.py    ✅ Existente
-└── requirements.txt              ✅ Actualizado con PyPDF2
++-- app/
+�   +-- main.py                    ? Refactorizado con exception handlers
+�   +-- api/
+�   �   +-- deps.py               ? get_current_user + require_role
+�   �   +-- v1/
+�   �       +-- router.py         ? Incluye users router
+�   �       +-- auth.py           ? BackgroundTasks + IntegrityError
+�   �       +-- users.py          ? /me endpoints implementados
+�   +-- core/
+�   �   +-- config.py             ? Settings
+�   �   +-- security.py           ? JWT + hashing
+�   �   +-- exceptions.py         ? NUEVO: Exception handlers globales
+�   +-- models/
+�   �   +-- user.py               ? Existente
+�   �   +-- otp.py                ? Existente
+�   �   +-- role.py               ? Existente
+�   �   +-- banco.py              ? NUEVO
+�   �   +-- documento.py          ? NUEVO: DocumentoS3
+�   �   +-- analisis.py           ? NUEVO: AnalisisHipotecario
+�   �   +-- propuesta.py          ? NUEVO: PropuestaAhorro
+�   +-- repositories/
+�   �   +-- users_repo.py         ? Existente
+�   �   +-- otp_repo.py           ? Existente
+�   +-- schemas/
+�   �   +-- auth.py               ? Existente
+�   �   +-- user.py               ? NUEVO: UserProfile + UpdatePassword
+�   +-- services/
+�       +-- email_otp_service.py  ? Refactorizado (async-ready)
+�       +-- pdf_service.py        ? NUEVO: Detecci�n + extracci�n
+�       +-- gemini_service.py     ? NUEVO: Esqueleto para IA
+�       +-- cleanup_service.py    ? Existente
++-- requirements.txt              ? Actualizado con PyPDF2
 ```
 
 ---
 
-## 🔐 Seguridad Implementada
+## ?? Seguridad Implementada
 
-### Autenticación y Autorización
-- ✅ JWT con expiración configurable
-- ✅ Validación de usuario ACTIVE en cada request protegido
-- ✅ Sistema de roles (CLIENT, ADMIN) con verificación granular
-- ✅ HTTPBearer authentication en todos los endpoints privados
+### Autenticaci�n y Autorizaci�n
+- ? JWT con expiraci�n configurable
+- ? Validaci�n de usuario ACTIVE en cada request protegido
+- ? Sistema de roles (CLIENT, ADMIN) con verificaci�n granular
+- ? HTTPBearer authentication en todos los endpoints privados
 
 ### Integridad de Datos
-- ✅ Constraints de DB (unique email/identificación) con manejo robusto
-- ✅ Hash SHA-256 para checksums de archivos
-- ✅ Detección de PDFs encriptados antes de procesamiento
-- ✅ Validación de contraseña actual antes de actualizar
+- ? Constraints de DB (unique email/identificaci�n) con manejo robusto
+- ? Hash SHA-256 para checksums de archivos
+- ? Detecci�n de PDFs encriptados antes de procesamiento
+- ? Validaci�n de contrase�a actual antes de actualizar
 
 ### Resiliencia
-- ✅ BackgroundTasks para operaciones I/O (email)
-- ✅ Rollback automático en transacciones fallidas
-- ✅ Exception handlers globales con logging
-- ✅ Timeouts en conexiones SMTP
+- ? BackgroundTasks para operaciones I/O (email)
+- ? Rollback autom�tico en transacciones fallidas
+- ? Exception handlers globales con logging
+- ? Timeouts en conexiones SMTP
 
 ---
 
-## 🚀 Próximos Pasos Sugeridos
+## ?? Pr�ximos Pasos Sugeridos
 
 ### Alta Prioridad
 1. **Integrar Gemini API**
    - Instalar `google-generativeai`
-   - Implementar prompts para extracción JSON
+   - Implementar prompts para extracci�n JSON
    - Configurar API key en settings
 
-2. **Implementar Endpoints de Análisis**
+2. **Implementar Endpoints de An�lisis**
    - POST `/api/v1/analyses/upload` (Cliente)
    - GET `/api/v1/analyses/` (Admin - listar todos)
    - GET `/api/v1/analyses/{id}` (Cliente - ver propio)
@@ -2361,15 +2361,15 @@ backend/
    - Implementar `s3_service.py` con boto3 o filesystem local
    - Generar URLs prefirmadas para descargas seguras
 
-4. **Servicio de Cálculos**
-   - Completar `calc_service.py` con fórmulas financieras
+4. **Servicio de C�lculos**
+   - Completar `calc_service.py` con f�rmulas financieras
    - Algoritmos para nuevas oportunidades de ahorro
-   - Cálculo de honorarios e ingresos mínimos
+   - C�lculo de honorarios e ingresos m�nimos
 
 ### Media Prioridad
 5. **Tests**
    - Tests unitarios para servicios (pdf, calc)
-   - Tests de integración para endpoints
+   - Tests de integraci�n para endpoints
    - Fixtures en `conftest.py`
 
 6. **Rate Limiting**
@@ -2377,21 +2377,21 @@ backend/
    - Limitar endpoints de OTP y upload
 
 7. **Admin Panel Features**
-   - Filtros por fecha/cédula/número crédito
-   - Exportación a Excel/PDF de propuestas
+   - Filtros por fecha/c�dula/n�mero cr�dito
+   - Exportaci�n a Excel/PDF de propuestas
 
 ### Baja Prioridad
-8. **Auditoría**
-   - Modelo de auditoría para tracking de cambios
+8. **Auditor�a**
+   - Modelo de auditor�a para tracking de cambios
    - Logs de acciones sensibles
 
 9. **Notificaciones**
-   - Email cuando análisis esté listo
+   - Email cuando an�lisis est� listo
    - Notificaciones a admin de nuevos uploads
 
 ---
 
-## 🧪 Testing Básico
+## ?? Testing B�sico
 
 ### Endpoints para Probar
 
@@ -2401,7 +2401,7 @@ backend/
 POST /api/v1/auth/register
 {
   "nombres": "Juan",
-  "primer_apellido": "Pérez",
+  "primer_apellido": "P�rez",
   "tipo_identificacion": "CC",
   "identificacion": "1234567890",
   "email": "juan@example.com",
@@ -2430,7 +2430,7 @@ POST /api/v1/auth/login
 GET /api/v1/users/me
 Authorization: Bearer <token>
 
-# Cambiar contraseña
+# Cambiar contrase�a
 PATCH /api/v1/users/me/password
 Authorization: Bearer <token>
 {
@@ -2441,16 +2441,16 @@ Authorization: Bearer <token>
 
 ---
 
-## 📝 Notas Importantes
+## ?? Notas Importantes
 
-### ⚠️ Consideraciones de Producción
+### ?? Consideraciones de Producci�n
 - **SMTP**: Considerar usar SendGrid/Mailgun en vez de SMTP directo
 - **File Storage**: Implementar S3 privado con presigned URLs
 - **Secrets**: Usar gestores de secretos (AWS Secrets Manager, Vault)
 - **Logging**: Integrar Sentry o similar para monitoreo
 - **CORS**: Configurar origins permitidos para frontend
 
-### 🔧 Variables de Entorno Requeridas
+### ?? Variables de Entorno Requeridas
 ```env
 DATABASE_URL=postgresql://user:pass@localhost/dbname
 SECRET_KEY=tu-secret-key-seguro
@@ -2458,13 +2458,13 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=tu-email@gmail.com
 SMTP_PASSWORD=tu-app-password
-SMTP_FROM_EMAIL=noreply@ecofinanzas.com
-SMTP_FROM_NAME=EcoFinanzas
+SMTP_FROM_EMAIL=noreply@perfinanzas.com
+SMTP_FROM_NAME=PerFinanzas
 ```
 
-### 📚 Librerías Adicionales Sugeridas
+### ?? Librer�as Adicionales Sugeridas
 ```txt
-# Para implementar próximamente
+# Para implementar pr�ximamente
 google-generativeai>=0.3.0  # Gemini API
 boto3>=1.34.0               # AWS S3
 slowapi>=0.1.9              # Rate limiting
@@ -2475,32 +2475,32 @@ celery>=5.3.0              # Background jobs (escalado)
 
 ---
 
-## ✅ Checklist de Completitud
+## ? Checklist de Completitud
 
 - [x] Dependencias de seguridad (get_current_user, require_role)
 - [x] Endpoints de usuarios (/me, /me/password)
 - [x] BackgroundTasks para emails
-- [x] Modelos de documento, análisis y propuestas
-- [x] Servicio de PDF (detección contraseña, extracción)
+- [x] Modelos de documento, an�lisis y propuestas
+- [x] Servicio de PDF (detecci�n contrase�a, extracci�n)
 - [x] Servicio Gemini (esqueleto)
 - [x] Exception handlers globales
 - [x] Manejo de IntegrityError
 - [x] Requirements.txt actualizado
 - [x] Main.py con handlers registrados
 - [x] Logging estructurado
-- [ ] Endpoints de análisis (pendiente)
-- [ ] Integración Gemini real (pendiente)
+- [ ] Endpoints de an�lisis (pendiente)
+- [ ] Integraci�n Gemini real (pendiente)
 - [ ] Storage S3 (pendiente)
-- [ ] Cálculos financieros (pendiente)
+- [ ] C�lculos financieros (pendiente)
 - [ ] Tests (pendiente)
 
 ---
 
 **Estado actual: Backend 40% completo**  
-**Infraestructura de seguridad: 100% ✅**  
-**Modelos de datos: 90% ✅**  
-**Servicios core: 60% ✅**  
-**APIs de negocio: 20% 🚧**
+**Infraestructura de seguridad: 100% ?**  
+**Modelos de datos: 90% ?**  
+**Servicios core: 60% ?**  
+**APIs de negocio: 20% ??**
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\requirements.txt
 ===============================
@@ -2512,39 +2512,39 @@ pydantic==2.9.2
 pydantic-settings==2.5.2
 python-jose==3.3.0
 passlib[bcrypt]==1.7.4
-bcrypt==4.0.1  # <-- ES VITAL QUE SEA ESTA VERSIÓN
+bcrypt==4.0.1  # <-- ES VITAL QUE SEA ESTA VERSI�N
 python-multipart==0.0.9
 email-validator==2.2.0
 apscheduler==3.10.4
-PyPDF2==3.0.1  # Para detección de PDFs encriptados y extracción básica
+PyPDF2==3.0.1  # Para detecci�n de PDFs encriptados y extracci�n b�sica
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\validate_refactor.py
 ===============================
 """
-Script de validación rápida para verificar imports y estructura.
+Script de validaci�n r�pida para verificar imports y estructura.
 NO ejecuta el servidor, solo valida sintaxis y dependencias.
 """
 import sys
 from pathlib import Path
 
-# Agregar el directorio raíz al path
+# Agregar el directorio ra�z al path
 sys.path.insert(0, str(Path(__file__).parent))
 
 def test_imports():
-    """Verifica que todos los módulos se importen correctamente"""
-    print("🔍 Validando imports...")
+    """Verifica que todos los m�dulos se importen correctamente"""
+    print("?? Validando imports...")
     
     try:
         # Core
         from app.core.config import settings
         from app.core.security import hash_password, verify_password, create_access_token
         from app.core.exceptions import ErrorResponse
-        print("✅ Core imports OK")
+        print("? Core imports OK")
         
         # Database
         from app.db.base import Base
         from app.db.session import SessionLocal
-        print("✅ Database imports OK")
+        print("? Database imports OK")
         
         # Models
         from app.models.user import Usuario
@@ -2554,46 +2554,46 @@ def test_imports():
         from app.models.documento import DocumentoS3
         from app.models.analisis import AnalisisHipotecario
         from app.models.propuesta import PropuestaAhorro
-        print("✅ Models imports OK")
+        print("? Models imports OK")
         
         # Repositories
         from app.repositories.users_repo import UsersRepo
         from app.repositories.otp_repo import OtpRepo
-        print("✅ Repositories imports OK")
+        print("? Repositories imports OK")
         
         # Schemas
         from app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse
         from app.schemas.user import UserProfileResponse, UpdatePasswordRequest
-        print("✅ Schemas imports OK")
+        print("? Schemas imports OK")
         
         # Services (algunos tienen dependencias externas que faltan)
         from app.services.email_otp_service import EmailOtpService
         from app.services.cleanup_service import cleanup_expired_pending_users
         from app.services.gemini_service import GeminiService
-        print("✅ Services imports OK (excepto pdf_service - PyPDF2 pendiente)")
+        print("? Services imports OK (excepto pdf_service - PyPDF2 pendiente)")
         
         # API
         from app.api.deps import get_db, get_current_user, require_role
         from app.api.v1.router import api_router
-        print("✅ API imports OK")
+        print("? API imports OK")
         
         # Main app
         from app.main import app
-        print("✅ Main app import OK")
+        print("? Main app import OK")
         
         return True
         
     except ImportError as e:
-        print(f"❌ Import error: {e}")
+        print(f"? Import error: {e}")
         return False
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"? Error: {e}")
         return False
 
 
 def test_security_functions():
-    """Prueba las funciones de seguridad básicas"""
-    print("\n🔐 Validando funciones de seguridad...")
+    """Prueba las funciones de seguridad b�sicas"""
+    print("\n?? Validando funciones de seguridad...")
     
     try:
         from app.core.security import hash_password, verify_password
@@ -2601,27 +2601,27 @@ def test_security_functions():
         # Test hashing
         password = "Test1234!"
         hashed = hash_password(password)
-        assert len(hashed) > 0, "Hash vacío"
+        assert len(hashed) > 0, "Hash vac�o"
         assert hashed != password, "Hash no funciona"
-        print(f"✅ Hash generado: {hashed[:30]}...")
+        print(f"? Hash generado: {hashed[:30]}...")
         
         # Test verification
-        assert verify_password(password, hashed), "Verificación falló"
-        print("✅ Verificación de password OK")
+        assert verify_password(password, hashed), "Verificaci�n fall�"
+        print("? Verificaci�n de password OK")
         
-        assert not verify_password("wrong_password", hashed), "Verificación debería fallar"
-        print("✅ Rechazo de password incorrecta OK")
+        assert not verify_password("wrong_password", hashed), "Verificaci�n deber�a fallar"
+        print("? Rechazo de password incorrecta OK")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error en security: {e}")
+        print(f"? Error en security: {e}")
         return False
 
 
 def test_error_response():
     """Prueba la estructura de respuestas de error"""
-    print("\n⚠️ Validando ErrorResponse...")
+    print("\n?? Validando ErrorResponse...")
     
     try:
         from app.core.exceptions import ErrorResponse
@@ -2637,18 +2637,18 @@ def test_error_response():
         assert "message" in error
         assert "status_code" in error
         assert error["error"] == "test_error"
-        print("✅ ErrorResponse format OK")
+        print("? ErrorResponse format OK")
         
         return True
         
     except Exception as e:
-        print(f"❌ Error en ErrorResponse: {e}")
+        print(f"? Error en ErrorResponse: {e}")
         return False
 
 
 def main():
     print("=" * 60)
-    print("🧪 VALIDACIÓN DE REFACTORIZACIÓN - EcoFinanzas Backend")
+    print("?? VALIDACI�N DE REFACTORIZACI�N - PerFinanzas Backend")
     print("=" * 60)
     
     results = []
@@ -2664,27 +2664,27 @@ def main():
     
     # Resumen
     print("\n" + "=" * 60)
-    print("📊 RESUMEN DE VALIDACIÓN")
+    print("?? RESUMEN DE VALIDACI�N")
     print("=" * 60)
     
     passed = sum(1 for _, result in results if result)
     total = len(results)
     
     for test_name, result in results:
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "? PASS" if result else "? FAIL"
         print(f"{status} - {test_name}")
     
     print("\n" + "=" * 60)
     print(f"Resultado: {passed}/{total} tests pasaron")
     
     if passed == total:
-        print("🎉 ¡VALIDACIÓN EXITOSA! El código está listo.")
-        print("\n📝 Notas:")
+        print("?? �VALIDACI�N EXITOSA! El c�digo est� listo.")
+        print("\n?? Notas:")
         print("  - PyPDF2 no instalado (esperado)")
         print("  - Para ejecutar: pip install -r requirements.txt")
         print("  - Luego: uvicorn app.main:app --reload")
     else:
-        print("⚠️ Algunos tests fallaron. Revisa los errores arriba.")
+        print("?? Algunos tests fallaron. Revisa los errores arriba.")
     
     print("=" * 60)
     
@@ -2777,9 +2777,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
     # Validaciones de unicidad
     if users.get_by_email(str(payload.email)):
-        raise HTTPException(status_code=409, detail="El email ya estÃ¡ registrado.")
+        raise HTTPException(status_code=409, detail="El email ya está registrado.")
     if users.get_by_identificacion(payload.identificacion):
-        raise HTTPException(status_code=409, detail="La identificaciÃ³n ya estÃ¡ registrada.")
+        raise HTTPException(status_code=409, detail="La identificación ya está registrada.")
 
     # Crear usuario
     user = Usuario(
@@ -2843,7 +2843,7 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     try:
         user_id = uuid.UUID(payload.user_id)
     except Exception:
-        raise HTTPException(status_code=400, detail="user_id invÃ¡lido.")
+        raise HTTPException(status_code=400, detail="user_id inválido.")
 
     user = users.get_by_id(user_id)
     if not user:
@@ -2873,7 +2873,7 @@ def verify_otp(payload: VerifyOtpRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    return {"message": "Cuenta verificada. Ya puedes iniciar sesiÃ³n.", "status": user.status}
+    return {"message": "Cuenta verificada. Ya puedes iniciar sesión.", "status": user.status}
 
 
 @router.post("/login", response_model=dict)
@@ -2882,7 +2882,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = users.get_by_identificacion(payload.identificacion)
 
     if not user or not user.password_hash or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Credenciales invÃ¡lidas.")
+        raise HTTPException(status_code=401, detail="Credenciales inválidas.")
 
     if user.status != "ACTIVE" or not user.email_verificado:
         raise HTTPException(
@@ -3229,8 +3229,8 @@ from app.core.config import settings
 
 class EmailOtpService:
     def send_otp(self, to_email: str, code: str):
-        subject = f"{settings.APP_PUBLIC_NAME} - CÃ³digo de verificaciÃ³n"
-        body = f"Tu cÃ³digo OTP es: {code}\n\nVence en {settings.OTP_EXPIRE_MINUTES} minutos."
+        subject = f"{settings.APP_PUBLIC_NAME} - Código de verificación"
+        body = f"Tu código OTP es: {code}\n\nVence en {settings.OTP_EXPIRE_MINUTES} minutos."
 
         msg = MIMEText(body, "plain", "utf-8")
         msg["Subject"] = subject
@@ -3274,3 +3274,5 @@ C:\Proyectos en desarrollo\credit-analysis\backend\app\utils\hashing.py
 ===============================
 C:\Proyectos en desarrollo\credit-analysis\backend\app\utils\money.py
 ===============================
+
+

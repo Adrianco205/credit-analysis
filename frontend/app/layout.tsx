@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "EcoFinanzas",
-    template: "%s | EcoFinanzas",
+    default: "PerFinanzas",
+    template: "%s | PerFinanzas",
   },
   description: "Plataforma de análisis financiero y crédito hipotecario",
   icons: {
@@ -42,3 +42,5 @@ export default function RootLayout({
     </html>
   );
 }
+
+

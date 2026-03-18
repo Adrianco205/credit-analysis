@@ -1315,7 +1315,7 @@ def download_admin_proposal_pdf(
             detail=f"Error generando PDF: {str(e)}"
         )
 
-    filename = f"propuesta_admin_ecofinanzas_{analysis_id}.pdf"
+    filename = f"propuesta_admin_perfinanzas_{analysis_id}.pdf"
 
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
@@ -1513,3 +1513,6 @@ def get_admin_stats(
         promedio_ahorro=promedio_ahorro,
         total_honorarios_potenciales=total_honorarios
     )
+
+
+

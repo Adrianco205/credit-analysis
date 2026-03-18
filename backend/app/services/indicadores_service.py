@@ -710,7 +710,7 @@ class IndicadoresFinancierosService:
                 timeout=HTTP_TIMEOUT,
                 follow_redirects=True,
                 headers={
-                    "User-Agent": "EcoFinanzas/3.0 (Indicadores Oficiales)",
+                    "User-Agent": "PerFinanzas/3.0 (Indicadores Oficiales)",
                 },
             )
         return self._client
@@ -1337,3 +1337,4 @@ def obtener_servicio_indicadores() -> IndicadoresFinancierosService:
     if _servicio_global is None:
         _servicio_global = crear_servicio_indicadores()
     return _servicio_global
+

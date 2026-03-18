@@ -126,7 +126,7 @@ def test_error_response():
 
 def main():
     print("=" * 60)
-    print("🧪 VALIDACIÓN DE REFACTORIZACIÓN - EcoFinanzas Backend")
+    print("🧪 VALIDACIÓN DE REFACTORIZACIÓN - PerFinanzas Backend")
     print("=" * 60)
     
     results = []
@@ -172,3 +172,4 @@ def main():
 if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
+

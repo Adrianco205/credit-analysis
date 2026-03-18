@@ -15,7 +15,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
             <Leaf className="w-8 h-8 text-white" strokeWidth={2.5} />
           </div>
           <h1 className="text-3xl font-bold text-verde-bosque tracking-tight">
-            EcoFinanzas
+            PerFinanzas
           </h1>
           <p className="mt-2 text-sm text-gray-600">
             Análisis inteligente de crédito hipotecario
@@ -28,10 +28,12 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
         {/* Footer */}
         <div className="mt-8 text-center">
           <p className="text-xs text-gray-500">
-            © 2026 EcoFinanzas. Todos los derechos reservados.
+            © 2026 PerFinanzas. Todos los derechos reservados.
           </p>
         </div>
       </div>
     </div>
   );
 };
+
+

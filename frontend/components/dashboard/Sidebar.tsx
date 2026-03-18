@@ -99,9 +99,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="p-6 border-b border-[rgba(255,255,255,0.1)]">
           <div className="flex items-center gap-3">
              <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-lg">
-               <Image src="/assets/brand/logo.png" alt="EcoFinanzas" width={28} height={28} />
+               <Image src="/assets/brand/logo.png" alt="PerFinanzas" width={28} height={28} />
              </div>
-             <h1 className="text-2xl font-bold tracking-tight">EcoFinanzas</h1>
+             <h1 className="text-2xl font-bold tracking-tight">PerFinanzas</h1>
              <button
                type="button"
                onClick={onClose}
@@ -164,3 +164,5 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     </>
   );
 }
+
+

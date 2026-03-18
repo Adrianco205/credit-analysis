@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="EcoFinanzas Credit Analysis API",
+    title="PerFinanzas Credit Analysis API",
     description="API para análisis de créditos hipotecarios con IA",
     version="1.0.0",
     lifespan=lifespan

@@ -1,4 +1,4 @@
-// 🌿 EJEMPLOS DE CÓDIGO - Sistema de Diseño EcoFinanzas
+// 🌿 EJEMPLOS DE CÓDIGO - Sistema de Diseño PerFinanzas
 // Copypaste ready components y patterns
 
 import React from 'react';
@@ -577,3 +577,4 @@ USO EN TAILWIND:
 */
 
 export { Button, Input, Card, CardHeader, CardTitle, CardDescription };
+

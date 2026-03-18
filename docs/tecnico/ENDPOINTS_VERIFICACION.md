@@ -1,4 +1,4 @@
-# ✅ Verificación de Endpoints - EcoFinanzas
+# ✅ Verificación de Endpoints - PerFinanzas
 
 ## 📋 Estado de Implementación
 
@@ -281,3 +281,4 @@ Ciudades: Barranquilla, Bogotá, Medellín
 
 **Última actualización:** 28 de Enero de 2026
 **Versión:** 1.0 - ENDPOINTS PRINCIPALES COMPLETADOS
+

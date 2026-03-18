@@ -280,7 +280,7 @@ export default function DashboardPage() {
                                 <h2 className="text-2xl font-bold text-[var(--verde-bosque)]">
                                     ¡Bienvenido, {user.nombres}!
                                 </h2>
-                                <p className="text-gray-600">Tu panel de control de EcoFinanzas</p>
+                                <p className="text-gray-600">Tu panel de control de PerFinanzas</p>
                             </div>
                         </div>
 
@@ -335,3 +335,5 @@ export default function DashboardPage() {
         </div>
     );
 }
+
+

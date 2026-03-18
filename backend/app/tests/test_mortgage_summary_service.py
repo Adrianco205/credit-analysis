@@ -17,7 +17,8 @@ def _analysis_stub(**overrides):
         "plazo_total_meses": None,
         "cuotas_pagadas": None,
         "cuotas_pendientes": None,
-        "total_intereses_seguros": None,
+        "intereses_seguros_acumulados": None,
+        "monto_real_pagado_banco": None,
         "datos_raw_gemini": {},
         "raw_data_json": {},
         "computed_summary_json": {},
@@ -57,6 +58,31 @@ def test_summary_with_subsidy_uses_total_a_pagar_as_cuota_actual():
     assert ajuste_rows["ajuste_pesos"].value == Decimal("-2967238.36")
     assert intereses_rows["total_intereses_seguros"].value == Decimal("36891084.54")
     assert "possible_wrong_quota_mapping" not in summary.warnings
+
+
+def test_summary_intereses_y_seguros_usa_formula_acumulada_e_ignora_periodo():
+    analisis = _analysis_stub(
+        valor_prestado_inicial=Decimal("45200180.00"),
+        saldo_capital_pesos=Decimal("56069733.47"),
+        monto_real_pagado_banco=Decimal("18360828.00"),
+        datos_raw_gemini={
+            "Interés corriente": "$ 215,660.30",
+            "Interés de mora": "$ 64.80",
+            "Seguro de vida": "$ 6,075.00",
+            "Seguro de incendio": "$ 9,036.00",
+            "Seguro de terremoto": "$ 6,023.00",
+            "Intereses y seguros": "$ 236,859.10",
+        },
+    )
+
+    payload = build_mortgage_summary_payload(analisis)
+    summary = payload["mortgage_summary"]
+    rows = {row.key: row for row in summary.sections[3].rows}
+
+    # Fórmula canónica: saldo + monto_real_pagado - valor_prestado
+    assert rows["total_intereses_seguros"].value == Decimal("29230381.47")
+    assert rows["total_intereses_seguros"].source == "calculated"
+    assert "intereses_seguros_period_value_ignored" in summary.warnings
 
 
 def test_summary_extracts_valor_a_pagar_and_derives_cuotas_pagadas_from_pending():

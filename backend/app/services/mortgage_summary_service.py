@@ -102,6 +102,13 @@ class MortgageSummaryBuilder:
         "nro_cuota_cancelar": ["nro cuota a cancelar", "nro cuota", "numero cuota a cancelar", "número cuota a cancelar"],
         "cuotas_pendientes": ["cuotas pendientes", "cuotas por pagar", "nro cuotas pendientes"],
         "intereses_seguros_acumulado": ["intereses y seguros", "total intereses y seguros", "intereses corrientes", "seguros del periodo"],
+        "monto_real_pagado_banco": [
+            "monto real pagado al banco",
+            "monto real pagado al banco a la fecha",
+            "monto real pagado",
+            "total abonado al credito",
+            "total abonado al crédito",
+        ],
         "fecha_pago": ["fecha de pago", "proxima fecha de pago", "fecha proximo pago"],
     }
 
@@ -116,6 +123,7 @@ class MortgageSummaryBuilder:
         "nro_cuota_cancelar": [],
         "cuotas_pendientes": ["cuotas_pendientes"],
         "intereses_seguros_acumulado": ["total_intereses_seguros"],
+        "monto_real_pagado_banco": ["monto_real_pagado_banco"],
         "fecha_pago": [],
     }
 
@@ -291,6 +299,9 @@ class MortgageSummaryBuilder:
         total_pagado_refs: list[str] = []
         total_beneficio_frech = None
         monto_real_pagado = None
+        monto_real_pagado_source = "missing"
+        monto_real_pagado_conf: float | None = None
+        monto_real_pagado_refs: list[str] = []
 
         pagos_reales_acumulados = self._resolve_real_paid_from_movements(raw_data)
         if cuota_pago_cliente is not None and cuotas_pagadas is not None:
@@ -307,6 +318,25 @@ class MortgageSummaryBuilder:
             total_beneficio_frech = beneficio_frech * Decimal(cuotas_pagadas)
             monto_real_pagado = total_pagado_dia + total_beneficio_frech
 
+        # Fuente preferida: monto real pagado persistido/extraído explícitamente.
+        # Fallback controlado: estimación desde pagos del cliente + FRECH.
+        monto_real_pagado_resuelto = _to_decimal_or_none(resolved["monto_real_pagado_banco"].value)
+        if monto_real_pagado_resuelto is not None and monto_real_pagado_resuelto > 0:
+            monto_real_pagado = monto_real_pagado_resuelto
+            monto_real_pagado_source = resolved["monto_real_pagado_banco"].source
+            monto_real_pagado_conf = resolved["monto_real_pagado_banco"].confidence
+            monto_real_pagado_refs = resolved["monto_real_pagado_banco"].refs
+        elif monto_real_pagado is not None and monto_real_pagado > 0:
+            monto_real_pagado_source = "calculated"
+            monto_real_pagado_conf = 0.9
+            monto_real_pagado_refs = ["rule:total_pagado+total_frech"]
+            warnings.append("estimated_monto_real_pagado_banco")
+        else:
+            monto_real_pagado = None
+            monto_real_pagado_source = "missing"
+            monto_real_pagado_conf = None
+            monto_real_pagado_refs = []
+
         variacion_saldo_pesos = None
         porcentaje_variacion_saldo = None
         if valor_prestado is not None and saldo_actual is not None and valor_prestado != 0:
@@ -315,25 +345,30 @@ class MortgageSummaryBuilder:
             if variacion_saldo_pesos > 0:
                 warnings.append("saldo_mayor_que_desembolso")
 
-        intereses_explicitos = _to_decimal_or_none(resolved["intereses_seguros_acumulado"].value)
-        if intereses_explicitos is not None and intereses_explicitos > 0:
-            total_intereses_seguros = intereses_explicitos
-            intereses_source = resolved["intereses_seguros_acumulado"].source
-            intereses_refs = resolved["intereses_seguros_acumulado"].refs
-            intereses_conf = resolved["intereses_seguros_acumulado"].confidence
+        intereses_periodo_extraido = _to_decimal_or_none(resolved["intereses_seguros_acumulado"].value)
+        if intereses_periodo_extraido is not None and intereses_periodo_extraido > 0:
+            warnings.append("intereses_seguros_period_value_ignored")
+
+        # Regla canónica del resumen principal:
+        # interesesYSegurosAcumulados = saldoActualCredito + montoRealPagadoBanco - valorPrestado
+        if saldo_actual is not None and monto_real_pagado is not None and valor_prestado is not None:
+            total_intereses_seguros = saldo_actual + monto_real_pagado - valor_prestado
+            intereses_source = "calculated"
+            intereses_refs = [
+                "rule:saldo_actual+monto_real_pagado_banco-valor_prestado",
+                *monto_real_pagado_refs,
+            ]
+            intereses_conf = 0.92
         elif monto_real_pagado is not None and variacion_saldo_pesos is not None:
             total_intereses_seguros = monto_real_pagado + variacion_saldo_pesos
             intereses_source = "calculated"
-            intereses_refs = ["rule:total_abonado+variacion_saldo"]
+            intereses_refs = ["rule:monto_real_pagado_banco+variacion_saldo"]
             intereses_conf = 0.9
         else:
             total_intereses_seguros = None
             intereses_source = "missing"
             intereses_refs = []
             intereses_conf = None
-
-        if intereses_source == "extracted":
-            warnings.append("intereses_seguros_period_value")
 
         if no_subsidy_detected:
             warnings.append("no_subsidy_detected")
@@ -416,7 +451,7 @@ class MortgageSummaryBuilder:
                         "Total abonado al crédito (cliente + FRECH)",
                         monto_real_pagado,
                         True,
-                        ResolvedValue(monto_real_pagado, "calculated" if monto_real_pagado is not None else "missing", 0.9 if monto_real_pagado is not None else None, ["rule:total_pagado+total_frech"]),
+                        ResolvedValue(monto_real_pagado, monto_real_pagado_source, monto_real_pagado_conf, monto_real_pagado_refs),
                     ),
                 ],
             ),
@@ -473,6 +508,7 @@ class MortgageSummaryBuilder:
                     "intereses_y_seguros": intereses_source,
                     "cuotas_por_pagar": "extracted" if cuotas_pendientes_expl is not None else "calculated",
                     "total_pagado": total_pagado_source,
+                    "monto_real_pagado_banco": monto_real_pagado_source,
                     "quota_mapping_blocked": quota_mapping_blocked,
                 },
                 "raw_matches": raw_data["matches"],
@@ -674,7 +710,7 @@ class MortgageSummaryBuilder:
 
         costos_extra = CostosExtraResumen(
             total_intereses_seguros=_to_decimal_or_zero(row_map.get("total_intereses_seguros")),
-            formula="total_abonado_al_credito + variacion_saldo_vs_desembolso",
+            formula="saldo_actual_credito + monto_real_pagado_banco - valor_prestado",
         )
 
         return {

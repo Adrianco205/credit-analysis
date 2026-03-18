@@ -148,14 +148,17 @@ class DesgloseInteresesSeguros(BaseModel):
 
 class CostosExtraResumen(BaseModel):
     """
-    Bloque 4: INTERESES Y SEGUROS (con desglose auditable)
-    
-    FÓRMULA CORRECTA:
-    total = interes_corriente + interes_mora + seguros + otros_cargos
-    
-    NO usar: monto_real_pagado - capital_amortizado
+    Bloque 4: INTERESES Y SEGUROS del resumen principal (acumulado del crédito).
+
+    FÓRMULA CANÓNICA:
+    total_intereses_seguros = saldo_actual_credito + monto_real_pagado_banco - valor_prestado
+
+    Nota:
+    el desglose de interés corriente/mora/seguros corresponde al período y puede
+    conservarse como referencia, pero no debe usarse para el valor principal de
+    este bloque en la vista de resumen.
     """
-    total_intereses_seguros: Decimal  # Suma de componentes del período
+    total_intereses_seguros: Decimal  # Acumulado del crédito
     
     # Desglose detallado para auditoría
     desglose: DesgloseInteresesSeguros | None = None
@@ -168,7 +171,7 @@ class CostosExtraResumen(BaseModel):
     otros_cargos_periodo: Decimal | None = None
     
     # Metadata de cálculo
-    formula: str | None = "sum(interes_corriente + interes_mora + seguros + otros_cargos)"
+    formula: str | None = "saldo_actual_credito + monto_real_pagado_banco - valor_prestado"
 
 
 class SummaryRow(BaseModel):

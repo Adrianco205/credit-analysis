@@ -1,5 +1,5 @@
 """
-Motor de Cálculo Financiero - EcoFinanzas
+Motor de Cálculo Financiero - PerFinanzas
 =========================================
 El "cerebro" del sistema. Calcula amortización, proyecciones y ahorros.
 
@@ -820,3 +820,4 @@ if __name__ == "__main__":
         print(f"Honorarios (6%): ${p.honorarios:,.0f}")
         print(f"Honorarios + IVA: ${p.honorarios_con_iva:,.0f}")
         print(f"Ingreso mínimo requerido: ${p.ingreso_minimo_requerido:,.0f}")
+

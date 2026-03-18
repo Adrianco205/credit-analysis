@@ -1,4 +1,4 @@
-# 🏦 EcoFinanzas Backend - API de Análisis de Crédito
+# 🏦 PerFinanzas Backend - API de Análisis de Crédito
 
 Backend refactorizado con arquitectura senior para análisis de créditos hipotecarios con IA.
 
@@ -249,8 +249,10 @@ apscheduler==3.10.4       # Background jobs
 
 ## 📄 Licencia
 
-Propietario - EcoFinanzas © 2026
+Propietario - PerFinanzas © 2026
 
 ## 👥 Contacto
 
 Para soporte técnico o consultas sobre el proyecto, contacta al equipo de desarrollo.
+
+

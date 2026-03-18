@@ -1,4 +1,4 @@
-# 🎨 Resumen de Implementación - Identidad Visual EcoFinanzas
+# 🎨 Resumen de Implementación - Identidad Visual PerFinanzas
 
 ## ✅ Cambios Realizados
 
@@ -8,7 +8,7 @@
 Se han definido las siguientes variables base en el selector `:root`:
 
 ```css
-/* Paleta Principal EcoFinanzas */
+/* Paleta Principal PerFinanzas */
 --verde-bosque: #1B5E20      /* Primario Oscuro */
 --verde-hoja: #4CAF50        /* Color de Marca */
 --verde-claro: #66BB6A       /* Acento Vibrante */
@@ -251,3 +251,4 @@ Estado Error: border red-400, ring red-200
 **Implementación completada**: ✨ Enero 2026
 **Sistema de Diseño**: Versión 1.0
 **Estado**: Listo para usar en toda la aplicación
+

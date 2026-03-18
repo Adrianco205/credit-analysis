@@ -1,8 +1,8 @@
-# 📑 ÍNDICE MAESTRO - Sistema de Diseño EcoFinanzas
+# 📑 ÍNDICE MAESTRO - Sistema de Diseño PerFinanzas
 
 ## 🎯 Bienvenida
 
-Bienvenido al **Sistema de Diseño EcoFinanzas**. Esta página sirve como punto de entrada a toda la documentación y recursos del proyecto.
+Bienvenido al **Sistema de Diseño PerFinanzas**. Esta página sirve como punto de entrada a toda la documentación y recursos del proyecto.
 
 ---
 
@@ -67,8 +67,8 @@ Bienvenido al **Sistema de Diseño EcoFinanzas**. Esta página sirve como punto 
 
 ---
 
-### 4. 🎭 **GUIA_VISUAL_ECOFINANZAS.md** - Previsualizaciones ASCII
-**Ubicación**: `GUIA_VISUAL_ECOFINANZAS.md`
+### 4. 🎭 **GUIA_VISUAL_PerFinanzas.md** - Previsualizaciones ASCII
+**Ubicación**: `GUIA_VISUAL_PerFinanzas.md`
 
 **Contenido**:
 - Mockups en ASCII art
@@ -185,7 +185,7 @@ frontend/app/auth/
 1. Leer: **RESUMEN_EJECUTIVO.md** (5 min)
 2. Revisar: **frontend/DESIGN_SYSTEM.md** (15 min)
 3. Explorar: **EJEMPLOS_CODIGO.tsx** (20 min)
-4. Referencia: **GUIA_VISUAL_ECOFINANZAS.md** (según necesites)
+4. Referencia: **GUIA_VISUAL_PerFinanzas.md** (según necesites)
 
 **Tiempo Total**: 40 minutos
 
@@ -202,7 +202,7 @@ frontend/app/auth/
 ---
 
 ### 📌 Para Diseñadores
-1. Ver: **GUIA_VISUAL_ECOFINANZAS.md** (10 min)
+1. Ver: **GUIA_VISUAL_PerFinanzas.md** (10 min)
 2. Leer: **frontend/DESIGN_SYSTEM.md** sección componentes (10 min)
 3. Usar: **EJEMPLOS_CODIGO.tsx** para referencias (10 min)
 
@@ -226,7 +226,7 @@ frontend/app/auth/
 → Revisar **frontend/DESIGN_SYSTEM.md** Button component
 
 ### "¿Cómo se ve un input con error?"
-→ Ver **GUIA_VISUAL_ECOFINANZAS.md** sección Formularios
+→ Ver **GUIA_VISUAL_PerFinanzas.md** sección Formularios
 → Código en **EJEMPLOS_CODIGO.tsx** sección 1
 
 ### "¿Cuáles son los colores oficiales?"
@@ -235,7 +235,7 @@ frontend/app/auth/
 
 ### "¿Qué colores puedo usar para texto?"
 → **DESIGN_SYSTEM.md** sección Reglas de Aplicación
-→ Checklist en **GUIA_VISUAL_ECOFINANZAS.md**
+→ Checklist en **GUIA_VISUAL_PerFinanzas.md**
 
 ### "¿Cómo hago un formulario completo?"
 → **EJEMPLOS_CODIGO.tsx** sección 6
@@ -251,7 +251,7 @@ frontend/app/auth/
 
 ### "¿Qué fechas de transición debo usar?"
 → **DESIGN_SYSTEM.md** sección Reglas de Aplicación
-→ **GUIA_VISUAL_ECOFINANZAS.md** sección Efectos Visuales
+→ **GUIA_VISUAL_PerFinanzas.md** sección Efectos Visuales
 
 ---
 
@@ -374,7 +374,7 @@ Después de revisar esta documentación, estás listo para:
 
 ## 🎉 Conclusión
 
-**Bienvenido al Sistema de Diseño EcoFinanzas**
+**Bienvenido al Sistema de Diseño PerFinanzas**
 
 Tienes todo lo que necesitas para:
 - 🎨 Diseñar coherentemente
@@ -389,7 +389,8 @@ Tienes todo lo que necesitas para:
 
 **Última actualización**: Enero 2026  
 **Versión**: 1.0  
-**Autor**: Sistema de Diseño EcoFinanzas  
+**Autor**: Sistema de Diseño PerFinanzas  
 **Status**: ✅ Activo y validado  
 
 **Next Steps**: Comienza con tu rol recomendado arriba 👆
+

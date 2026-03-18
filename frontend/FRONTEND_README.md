@@ -1,6 +1,6 @@
-# 🌿 EcoFinanzas Frontend
+# 🌿 PerFinanzas Frontend
 
-Frontend de la plataforma EcoFinanzas construido con Next.js 16, React 19, Tailwind CSS y TypeScript.
+Frontend de la plataforma PerFinanzas construido con Next.js 16, React 19, Tailwind CSS y TypeScript.
 
 ## 🚀 Stack Tecnológico
 
@@ -73,7 +73,7 @@ frontend/
 
 ## 🎨 Paleta de Colores
 
-Basada en el logo de EcoFinanzas:
+Basada en el logo de PerFinanzas:
 
 ```css
 --verde-bosque: #1B5E20;    /* Verde oscuro - Textos, iconos */
@@ -156,4 +156,6 @@ await apiClient.register({
 
 ## 📄 Licencia
 
-Propietario - EcoFinanzas © 2026
+Propietario - PerFinanzas © 2026
+
+

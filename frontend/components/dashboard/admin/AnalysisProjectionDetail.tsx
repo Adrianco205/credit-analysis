@@ -312,7 +312,7 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `propuesta_admin_ecofinanzas_${analysisId}.pdf`;
+      anchor.download = `propuesta_admin_perfinanzas_${analysisId}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -866,3 +866,6 @@ function OpportunityRow({
     </div>
   );
 }
+
+
+

@@ -1,8 +1,8 @@
-# 🌿 Sistema de Diseño EcoFinanzas
+# 🌿 Sistema de Diseño PerFinanzas
 
 ## Introducción
 
-Este documento define el sistema de diseño visual de **EcoFinanzas**, una plataforma de análisis inteligente de crédito hipotecario. La identidad visual se basa en una paleta de colores sostenible derivada del logo de la marca.
+Este documento define el sistema de diseño visual de **PerFinanzas**, una plataforma de análisis inteligente de crédito hipotecario. La identidad visual se basa en una paleta de colores sostenible derivada del logo de la marca.
 
 ---
 
@@ -74,7 +74,7 @@ Las variables se declaran en el selector `:root`:
   --background: #ffffff;
   --foreground: #171717;
 
-  /* EcoFinanzas Color Palette */
+  /* PerFinanzas Color Palette */
   --verde-bosque: #1B5E20;
   --verde-hoja: #4CAF50;
   --verde-claro: #66BB6A;
@@ -437,4 +437,5 @@ Para preguntas sobre el sistema de diseño:
 
 **Última actualización**: Enero 2026
 **Versión**: 1.0
-**Autor**: EcoFinanzas Design System
+**Autor**: PerFinanzas Design System
+

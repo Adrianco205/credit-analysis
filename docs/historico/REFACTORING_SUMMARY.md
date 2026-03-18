@@ -1,4 +1,4 @@
-# 🏗️ Refactorización Arquitectura Senior - EcoFinanzas Backend
+# 🏗️ Refactorización Arquitectura Senior - PerFinanzas Backend
 
 ## ✅ Tareas Completadas
 
@@ -120,7 +120,7 @@
 #### Registro en Main (`app/main.py`)
 - ✅ Importaciones de handlers y excepciones SQLAlchemy
 - ✅ Registrados todos los handlers con `app.add_exception_handler()`
-- ✅ Título actualizado: "EcoFinanzas Credit Analysis API"
+- ✅ Título actualizado: "PerFinanzas Credit Analysis API"
 - ✅ Descripción y versión agregadas
 
 ---
@@ -302,8 +302,8 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=587
 SMTP_USER=tu-email@gmail.com
 SMTP_PASSWORD=tu-app-password
-SMTP_FROM_EMAIL=noreply@ecofinanzas.com
-SMTP_FROM_NAME=EcoFinanzas
+SMTP_FROM_EMAIL=noreply@PerFinanzas.com
+SMTP_FROM_NAME=PerFinanzas
 ```
 
 ### 📚 Librerías Adicionales Sugeridas
@@ -345,3 +345,4 @@ celery>=5.3.0              # Background jobs (escalado)
 **Modelos de datos: 90% ✅**  
 **Servicios core: 60% ✅**  
 **APIs de negocio: 20% 🚧**
+

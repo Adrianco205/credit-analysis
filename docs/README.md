@@ -3,7 +3,7 @@
 Esta carpeta agrupa documentación no esencial para ejecución en tres categorías:
 
 ## Producto
-- [GUIA_VISUAL_ECOFINANZAS.md](producto/GUIA_VISUAL_ECOFINANZAS.md)
+- [GUIA_VISUAL_PerFinanzas.md](producto/GUIA_VISUAL_PerFinanzas.md)
 - [IDENTIDAD_VISUAL_RESUMEN.md](producto/IDENTIDAD_VISUAL_RESUMEN.md)
 - [README_DISEÑO.md](producto/README_DISEÑO.md)
 
@@ -30,3 +30,5 @@ Esta carpeta agrupa documentación no esencial para ejecución en tres categorí
 - [frontend/DESIGN_SYSTEM.md](../frontend/DESIGN_SYSTEM.md)
 - [docker/postgres/README.md](../docker/postgres/README.md)
 - [.github/copilot-instructions.md](../.github/copilot-instructions.md)
+
+

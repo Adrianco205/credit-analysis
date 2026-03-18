@@ -1,6 +1,6 @@
-# Formulas y funciones - Tabla "Nuevas Oportunidades"
+﻿# Formulas y funciones - Tabla "Nuevas Oportunidades"
 
-Este documento explica, de punta a punta, como se calcula la tabla de "Nuevas Oportunidades" en EcoFinanzas: funciones involucradas, formulas financieras y mapeo exacto hacia cada fila que ve el usuario/admin.
+Este documento explica, de punta a punta, como se calcula la tabla de "Nuevas Oportunidades" en PerFinanzas: funciones involucradas, formulas financieras y mapeo exacto hacia cada fila que ve el usuario/admin.
 
 ## 1. Flujo general de calculo
 
@@ -556,3 +556,4 @@ En `AnalysisProjectionDetail.tsx::buildLegacyProposal(...)` se hacen estas opera
 ```
 
 Con esta capa, la tabla mantiene el mismo significado financiero incluso cuando llegan respuestas historicas.
+

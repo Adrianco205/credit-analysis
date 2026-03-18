@@ -34,7 +34,7 @@ export default function LoginPage() {
       await apiClient.login(data);
 
       toast.success('¡Sesión iniciada!', {
-        description: 'Bienvenido a EcoFinanzas',
+        description: 'Bienvenido a PerFinanzas',
         duration: 2000,
       });
 
@@ -143,3 +143,5 @@ export default function LoginPage() {
     </AuthLayout>
   );
 }
+
+

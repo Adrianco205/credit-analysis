@@ -1,5 +1,5 @@
 """
-PDF Service - Manejo de archivos PDF para EcoFinanzas
+PDF Service - Manejo de archivos PDF para PerFinanzas
 =====================================================
 
 Funcionalidades:
@@ -674,3 +674,4 @@ def get_storage_service() -> LocalStorageService:
     if _storage_service is None:
         _storage_service = LocalStorageService()
     return _storage_service
+

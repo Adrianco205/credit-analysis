@@ -26,7 +26,7 @@ def test_email():
         msg = MIMEMultipart()
         msg["From"] = SMTP_FROM_EMAIL
         msg["To"] = SMTP_USER  # Enviarse a sí mismo para probar
-        msg["Subject"] = "Prueba de Configuración SMTP EcoFinanzas"
+        msg["Subject"] = "Prueba de Configuración SMTP PerFinanzas"
         msg.attach(MIMEText("Si recibes esto, la configuración SMTP funciona correctamente.", "plain"))
 
         print(f"Intentando conectar a {SMTP_HOST}...")
@@ -51,3 +51,4 @@ def test_email():
 
 if __name__ == "__main__":
     test_email()
+

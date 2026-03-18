@@ -94,10 +94,10 @@ export const CitySearch: React.FC<CitySearchProps> = ({
 
   return (
     <div ref={wrapperRef} className="relative w-full flex flex-col gap-1.5">
-      <label className="block text-sm font-semibold text-gray-700 ml-1">
-        Ciudad *
+      <label className="block text-sm font-semibold text-verde-bosque mb-[0.2rem] ml-1">
+        Ciudad
       </label>
-      
+
       <div className="relative group">
         <input
           type="text"

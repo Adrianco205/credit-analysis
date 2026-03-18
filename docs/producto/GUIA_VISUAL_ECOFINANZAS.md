@@ -1,4 +1,4 @@
-# 🌿 Guía Visual - EcoFinanzas Paleta de Colores
+# 🌿 Guía Visual - PerFinanzas Paleta de Colores
 
 ## Vista Previa de Componentes
 
@@ -9,7 +9,7 @@
 │                                                     │
 │             [LOGO - Fondo: gradient-eco-primary]   │
 │                                                     │
-│               EcoFinanzas                          │
+│               PerFinanzas                          │
 │          (color: text-verde-bosque)                │
 │                                                     │
 │           Accede a tu cuenta                       │
@@ -37,7 +37,7 @@
 │  │                 (verde-bosque/hoja)        │ │
 │  └──────────────────────────────────────────────┘ │
 │                                                     │
-│    © 2026 EcoFinanzas. Todos los derechos        │
+│    © 2026 PerFinanzas. Todos los derechos        │
 │                                                     │
 └─────────────────────────────────────────────────────┘
 
@@ -296,7 +296,7 @@ ESTADO: DISABLED
 
 ```
 ═══════════════════════════════════════════════
-              EcoFinanzas
+              PerFinanzas
   Accede a tu cuenta de forma segura
 ═══════════════════════════════════════════════
 
@@ -319,7 +319,7 @@ Contraseña
 ¿No tienes cuenta? [Regístrate] (verde-bosque)
 
 ───────────────────────────────────────────
-  © 2026 EcoFinanzas - Privacidad
+  © 2026 PerFinanzas - Privacidad
 ═══════════════════════════════════════════════
 ```
 
@@ -420,3 +420,4 @@ Antes de crear nuevos componentes:
 **Última actualización**: Enero 2026
 **Versión**: 1.0
 **Status**: Implementado ✅
+

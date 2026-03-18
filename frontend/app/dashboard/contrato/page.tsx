@@ -24,7 +24,7 @@ export default function ClientContratoPage() {
           </h2>
         </CardHeader>
         <div className="bg-[var(--gray-50)] border border-gray-200 rounded-xl p-4 text-sm text-gray-700">
-          La aceptación se realiza al crear tu cuenta en EcoFinanzas y aplica para el uso de la plataforma.
+          La aceptación se realiza al crear tu cuenta en PerFinanzas y aplica para el uso de la plataforma.
         </div>
       </Card>
 
@@ -50,3 +50,5 @@ export default function ClientContratoPage() {
     </div>
   );
 }
+
+

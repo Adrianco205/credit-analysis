@@ -18,6 +18,7 @@ import {
 import { AuthLayout } from '@/components/auth-layout-glass';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { CitySearch } from '@/components/city-search';
 import { apiClient } from '@/lib/api-client';
 import { registerSchema, type RegisterFormData } from '@/lib/validations';
 import type { ApiError } from '@/types/api';
@@ -25,15 +26,12 @@ import type { ApiError } from '@/types/api';
 export default function RegisterPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  const [cities, setCities] = useState<Array<{ valor: string; ciudad: string; departamento: string }>>([]);
-
-  useEffect(() => {
-    apiClient.getCities().then(setCities).catch(console.error);
-  }, []);
 
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<RegisterFormData>({
     resolver: zodResolver(registerSchema),
@@ -88,7 +86,7 @@ export default function RegisterPage() {
         <div className="text-center space-y-1 sm:space-y-2">
           <h2 className="text-2xl sm:text-3xl font-bold text-verde-bosque">Crear Cuenta</h2>
           <p className="text-gray-700 text-xs sm:text-sm">
-            Únete a EcoFinanzas y transforma tu relación con el dinero
+            Únete a PerFinanzas y transforma tu relación con el dinero
           </p>
         </div>
 
@@ -236,25 +234,13 @@ export default function RegisterPage() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div>
-                  <label className="block text-sm font-semibold text-verde-bosque mb-2 ml-1">
-                    Ciudad
-                  </label>
-                  <select
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-4 focus:ring-verde-hoja/15 focus:border-verde-hoja outline-none transition-all text-sm md:text-base hover:border-gray-300 text-gray-900 font-medium"
-                    {...register('ciudad_departamento')}
+                <div className="flex flex-col">
+                  <CitySearch 
+                    value={watch('ciudad_departamento')}
+                    onChange={(val) => setValue('ciudad_departamento', val)}
+                    error={errors.ciudad_departamento?.message}
                     disabled={isLoading}
-                  >
-                    <option value="">Selecciona tu ciudad...</option>
-                    {cities.map((c) => (
-                      <option key={c.valor} value={c.valor}>
-                        {c.ciudad}, {c.departamento}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.ciudad_departamento && (
-                    <p className="text-red-500 text-xs mt-1 ml-1">{errors.ciudad_departamento.message}</p>
-                  )}
+                  />
                 </div>
 
                 <div>
@@ -366,3 +352,4 @@ export default function RegisterPage() {
     </AuthLayout>
   );
 }
+

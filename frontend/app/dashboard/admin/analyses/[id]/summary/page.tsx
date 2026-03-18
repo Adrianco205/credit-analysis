@@ -21,7 +21,6 @@ const WARNING_MESSAGES: Record<string, string> = {
   cuotas_consistency_mismatch: 'No hay coherencia entre cuotas pactadas, pagadas y por pagar.',
   low_confidence_extraction: 'Algunos campos fueron extraídos con baja confianza.',
   no_subsidy_detected: 'No se detectó subsidio/beneficio FRECH para este extracto.',
-  intereses_seguros_period_value: 'El valor de intereses y seguros corresponde al periodo, no al acumulado histórico.',
   saldo_mayor_que_desembolso: 'El saldo actual es mayor que el valor desembolsado inicial.',
 };
 

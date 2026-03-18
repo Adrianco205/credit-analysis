@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
@@ -278,7 +278,7 @@ export default function AdminManualAnalysisPage() {
         <div className="p-6 space-y-2">
           <h1 className="text-2xl font-bold text-[var(--verde-bosque)] flex items-center gap-2">
             <Calculator size={26} className="text-[var(--verde-hoja)]" />
-            Calculadora manual para EcoFinanzas
+            Calculadora manual para PerFinanzas
           </h1>
           <p className="text-sm text-gray-600">
             El PDF quedó guardado. Completa los datos mínimos faltantes para generar proyecciones del cliente.

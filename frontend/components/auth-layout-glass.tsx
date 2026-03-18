@@ -51,12 +51,12 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
               <div className="relative w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-sm">
                 <Image
                   src="/assets/brand/logo.png"
-                  alt="EcoFinanzas"
+                  alt="PerFinanzas"
                   fill
                   className="object-cover"
                 />
               </div>
-              <span className="text-xl sm:text-2xl font-bold text-white">EcoFinanzas</span>
+              <span className="text-xl sm:text-2xl font-bold text-white">PerFinanzas</span>
             </div>
           </div>
 
@@ -68,7 +68,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
           {/* Footer */}
           <div className="mt-5 sm:mt-6 text-center px-5">
             <p className="text-xs sm:text-sm text-white/80">
-              © 2026 EcoFinanzas. Todos los derechos reservados.
+              © 2026 PerFinanzas. Todos los derechos reservados.
             </p>
           </div>
         </div>
@@ -76,3 +76,4 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
     </div>
   );
 };
+

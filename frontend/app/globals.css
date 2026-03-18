@@ -1,11 +1,11 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 :root {
   /* Base Colors */
   --background: #ffffff;
   --foreground: #171717;
 
-  /* EcoFinanzas Color Palette */
+  /* PerFinanzas Color Palette */
   --verde-bosque: #1B5E20;
   --verde-hoja: #4CAF50;
   --verde-claro: #66BB6A;
@@ -51,7 +51,7 @@ body {
 }
 
 @layer base {
-  /* Enlaces con estilo de EcoFinanzas */
+  /* Enlaces con estilo de PerFinanzas */
   a {
     transition: color 200ms;
 
@@ -93,7 +93,7 @@ body {
   .ring-verde-claro { --tw-ring-color: var(--verde-claro); }
   .ring-verde-suave { --tw-ring-color: var(--verde-suave); }
 
-  /* Gradientes con tema EcoFinanzas */
+  /* Gradientes con tema PerFinanzas */
   .gradient-eco-subtle {
     background-image: linear-gradient(to bottom right, #FFFFFF, #FFFFFF, var(--verde-suave));
   }

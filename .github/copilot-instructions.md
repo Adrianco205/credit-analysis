@@ -1,6 +1,6 @@
-# 🤖 EcoFinanzas — Copilot Instructions (Stack Estricto)
+# 🤖 PerFinanzas — Copilot Instructions (Stack Estricto)
 
-> **Objetivo**: asegurar consistencia técnica, mantenibilidad y calidad en todo cambio generado por IA para EcoFinanzas.  
+> **Objetivo**: asegurar consistencia técnica, mantenibilidad y calidad en todo cambio generado por IA para PerFinanzas.  
 > **Stack oficial**:
 - **Backend**: Python + FastAPI + Pydantic
 - **Frontend**: Next.js + Tailwind CSS + TypeScript estricto
@@ -215,3 +215,4 @@ Un cambio se considera completo si:
 3. Explicar supuestos técnicos cuando existan ambigüedades.
 4. Si hay conflicto entre estilos, priorizar estas instrucciones.
 5. Toda salida debe ser directamente aplicable al repositorio.
+

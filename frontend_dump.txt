@@ -1,5 +1,5 @@
 ================================================================================
-                         FRONTEND DUMP - ECOFINANZAS
+                         FRONTEND DUMP - PerFinanzas
                     Archivo de referencia completo del frontend
 ================================================================================
 
@@ -31,7 +31,7 @@ export default function HomePage() {
 
           {/* Título */}
           <h1 className="text-5xl md:text-6xl font-bold text-gray-900 tracking-tight mb-6">
-            EcoFinanzas
+            PerFinanzas
           </h1>
           
           <p className="text-xl md:text-2xl text-gray-600 mb-4">
@@ -88,7 +88,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "EcoFinanzas - Análisis de Crédito Hipotecario",
+  title: "PerFinanzas - Análisis de Crédito Hipotecario",
   description: "Plataforma inteligente para análisis y optimización de créditos hipotecarios",
   keywords: ["crédito hipotecario", "análisis financiero", "ahorro", "Colombia"],
 };
@@ -129,7 +129,7 @@ export default function RootLayout({
   --background: #ffffff;
   --foreground: #1a1a1a;
   
-  /* EcoFinanzas Brand Colors */
+  /* PerFinanzas Brand Colors */
   --verde-bosque: #1B5E20;
   --verde-hoja: #4CAF50;
   --verde-claro: #66BB6A;
@@ -157,7 +157,7 @@ export default function RootLayout({
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   
-  /* Custom colors for EcoFinanzas */
+  /* Custom colors for PerFinanzas */
   --color-verde-bosque: var(--verde-bosque);
   --color-verde-hoja: var(--verde-hoja);
   --color-verde-claro: var(--verde-claro);
@@ -286,7 +286,7 @@ export default function LoginPage() {
             <LogIn className="w-7 h-7 text-verde-bosque" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Iniciar Sesión</h1>
-          <p className="text-gray-600">Ingresa a tu cuenta de EcoFinanzas</p>
+          <p className="text-gray-600">Ingresa a tu cuenta de PerFinanzas</p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
@@ -457,7 +457,7 @@ export default function RegisterPage() {
             <ShieldCheck className="w-7 h-7 text-verde-bosque" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Crear Cuenta</h1>
-          <p className="text-gray-600">Únete a EcoFinanzas y transforma tu relación con el dinero</p>
+          <p className="text-gray-600">Únete a PerFinanzas y transforma tu relación con el dinero</p>
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
@@ -973,7 +973,7 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-verde-bosque">EcoFinanzas</h1>
+              <h1 className="text-2xl font-bold text-verde-bosque">PerFinanzas</h1>
               <p className="text-sm text-gray-600">Panel de Control</p>
             </div>
             <Button
@@ -1453,12 +1453,12 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
               <div className="relative w-10 h-10">
                 <Image
                   src="/assets/brand/logo.png"
-                  alt="EcoFinanzas"
+                  alt="PerFinanzas"
                   fill
                   className="object-contain"
                 />
               </div>
-              <span className="text-2xl font-bold text-white">EcoFinanzas</span>
+              <span className="text-2xl font-bold text-white">PerFinanzas</span>
             </div>
           </div>
 
@@ -1470,7 +1470,7 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({ children }) => {
           {/* Footer */}
           <div className="mt-6 text-center">
             <p className="text-sm text-white/80">
-              © 2026 EcoFinanzas. Todos los derechos reservados.
+              © 2026 PerFinanzas. Todos los derechos reservados.
             </p>
           </div>
         </div>
@@ -2010,3 +2010,5 @@ Este archivo contiene el código completo de:
 
 Generado: 28/01/2026
 Última actualización: Contiene todos los cambios de layout, spacing y responsiveness
+
+

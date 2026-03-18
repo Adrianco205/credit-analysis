@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🌿 EcoFinanzas - Instalación del Frontend"
+echo "🌿 PerFinanzas - Instalación del Frontend"
 echo "=========================================="
 echo ""
 
@@ -53,3 +53,4 @@ echo ""
 echo "La aplicación estará disponible en:"
 echo -e "${BLUE}  http://localhost:3000${NC}"
 echo ""
+

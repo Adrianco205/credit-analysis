@@ -540,9 +540,9 @@ class AnalysesRepo:
         # En la UI este bloque representa el costo del último período pagado,
         # por lo que NO debe calcularse como acumulado histórico.
         if componentes_no_capital_periodo > 0:
-            analisis.total_intereses_seguros = componentes_no_capital_periodo
+            analisis.intereses_seguros_periodo = componentes_no_capital_periodo
         else:
-            analisis.total_intereses_seguros = Decimal("0")
+            analisis.intereses_seguros_periodo = Decimal("0")
 
         # Si el monto real pagado al banco no se pudo estimar, usar última cuota real
         if (not analisis.monto_real_pagado_banco or analisis.monto_real_pagado_banco == 0) and cuota_periodo_real > 0:
@@ -598,7 +598,7 @@ class AnalysesRepo:
                 "method": analisis.inflation_method
             },
             "intereses_seguros": {
-                "total": str(analisis.total_intereses_seguros or 0),
+                "total_periodo": str(analisis.intereses_seguros_periodo or 0),
                 "capital_amortizado": str((analisis.valor_prestado_inicial or Decimal("0")) - (analisis.saldo_capital_pesos or Decimal("0"))),
                 "monto_real_pagado": str(analisis.monto_real_pagado_banco or 0),
                 "desglose_periodo": {

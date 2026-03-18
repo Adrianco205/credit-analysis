@@ -435,6 +435,13 @@ def get_analysis_summary(
     db.commit()
     
     summary_payload = build_mortgage_summary_payload(analisis)
+
+    # Para clientes, ocultamos advertencias internas de validación y debug.
+    # Estas señales quedan disponibles solo en el endpoint administrativo.
+    client_mortgage_summary = summary_payload["mortgage_summary"]
+    if client_mortgage_summary is not None:
+        client_mortgage_summary.warnings = []
+        client_mortgage_summary.debug = {}
     
     # Sistema de amortización COMPLETO (ej: "PESOS - C. FIJA")
     sistema_completo = analisis.sistema_amortizacion or ""
@@ -452,9 +459,9 @@ def get_analysis_summary(
         limites_banco=summary_payload["limites_banco"],
         ajuste_inflacion=summary_payload["ajuste_inflacion"],
         costos_extra=summary_payload["costos_extra"],
-        mortgage_summary=summary_payload["mortgage_summary"],
-        warnings=summary_payload["warnings"],
-        debug=summary_payload["debug"],
+        mortgage_summary=client_mortgage_summary,
+        warnings=[],
+        debug={},
         tasa_cobrada_con_frech=analisis.tasa_interes_subsidiada_ea,
         seguros_actuales_mensual=analisis.seguros_total_mensual,
         ingresos_mensuales=analisis.ingresos_mensuales,
@@ -777,7 +784,7 @@ def download_proposal_pdf(
         )
     
     # Retornar como descarga
-    filename = f"propuesta_ecofinanzas_{analysis_id}.pdf"
+    filename = f"propuesta_perfinanzas_{analysis_id}.pdf"
     
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
@@ -787,3 +794,6 @@ def download_proposal_pdf(
             "Content-Length": str(len(pdf_bytes)),
         }
     )
+
+
+

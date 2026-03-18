@@ -40,7 +40,7 @@ Equipo de {settings.APP_PUBLIC_NAME}
           <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;">
             <tr>
               <td style="background:#1f6f43;padding:22px 24px;color:#ffffff;">
-                <h1 style="margin:0;font-size:22px;line-height:1.2;">EcoFinanzas</h1>
+                <h1 style="margin:0;font-size:22px;line-height:1.2;">PerFinanzas</h1>
                 <p style="margin:6px 0 0;font-size:14px;opacity:0.95;">Verificación de cuenta</p>
               </td>
             </tr>
@@ -57,7 +57,7 @@ Equipo de {settings.APP_PUBLIC_NAME}
             </tr>
             <tr>
               <td style="padding:16px 24px;background:#f9fafb;border-top:1px solid #e5e7eb;">
-                <p style="margin:0;font-size:12px;color:#6b7280;">© EcoFinanzas. Todos los derechos reservados.</p>
+                <p style="margin:0;font-size:12px;color:#6b7280;">© PerFinanzas. Todos los derechos reservados.</p>
               </td>
             </tr>
           </table>
@@ -103,7 +103,7 @@ Equipo de {settings.APP_PUBLIC_NAME}
           <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e5e7eb;">
             <tr>
               <td style="background:#1f6f43;padding:22px 24px;color:#ffffff;">
-                <h1 style="margin:0;font-size:22px;line-height:1.2;">EcoFinanzas</h1>
+                <h1 style="margin:0;font-size:22px;line-height:1.2;">PerFinanzas</h1>
                 <p style="margin:6px 0 0;font-size:14px;opacity:0.95;">Recuperación de contraseña</p>
               </td>
             </tr>
@@ -125,7 +125,7 @@ Equipo de {settings.APP_PUBLIC_NAME}
             </tr>
             <tr>
               <td style="padding:16px 24px;background:#f9fafb;border-top:1px solid #e5e7eb;">
-                <p style="margin:0;font-size:12px;color:#6b7280;">© EcoFinanzas. Todos los derechos reservados.</p>
+                <p style="margin:0;font-size:12px;color:#6b7280;">© PerFinanzas. Todos los derechos reservados.</p>
               </td>
             </tr>
           </table>
@@ -179,3 +179,5 @@ Equipo de {settings.APP_PUBLIC_NAME}
         except Exception as e:
             logger.error(f"❌ Error inesperado al enviar email de {context_name} a {to_email}: {str(e)}")
             return False
+
+

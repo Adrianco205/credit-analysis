@@ -1,10 +1,10 @@
-# 🌿 EcoFinanzas - Sistema de Diseño Visual
+# 🌿 PerFinanzas - Sistema de Diseño Visual
 
 > **Identidad visual profesional basada en verde y blanco**
 
 ## 📌 Descripción Rápida
 
-Este proyecto implementa un **sistema de diseño completo** para la plataforma EcoFinanzas usando una paleta de colores verde y blanca, garantizando coherencia visual, accesibilidad WCAG AA y escalabilidad.
+Este proyecto implementa un **sistema de diseño completo** para la plataforma PerFinanzas usando una paleta de colores verde y blanca, garantizando coherencia visual, accesibilidad WCAG AA y escalabilidad.
 
 ---
 
@@ -29,7 +29,7 @@ Blanco          #FFFFFF  ████  Base limpia
 - ✅ **DESIGN_SYSTEM.md** - Guía oficial
 - ✅ **RESUMEN_EJECUTIVO.md** - Visión general
 - ✅ **CHECKLIST_IMPLEMENTACION.md** - Estado detallado
-- ✅ **GUIA_VISUAL_ECOFINANZAS.md** - Previsualizaciones
+- ✅ **GUIA_VISUAL_PerFinanzas.md** - Previsualizaciones
 - ✅ **EJEMPLOS_CODIGO.tsx** - 10 ejemplos copy-paste
 - ✅ **INDICE_MAESTRO.md** - Índice y navegación
 
@@ -55,7 +55,7 @@ Blanco          #FFFFFF  ████  Base limpia
 
 ### 2️⃣ Eres Diseñador
 ```
-1. Abre GUIA_VISUAL_ECOFINANZAS.md (10 min)
+1. Abre GUIA_VISUAL_PerFinanzas.md (10 min)
 2. Revisa DESIGN_SYSTEM.md          (10 min)
 3. Consulta EJEMPLOS_CODIGO.tsx     (10 min)
 → ¡Comienza a diseñar!
@@ -79,7 +79,7 @@ credit-analysis/
 ├── 📄 RESUMEN_EJECUTIVO.md
 ├── 📄 CHECKLIST_IMPLEMENTACION.md
 ├── 📄 IDENTIDAD_VISUAL_RESUMEN.md
-├── 📄 GUIA_VISUAL_ECOFINANZAS.md
+├── 📄 GUIA_VISUAL_PerFinanzas.md
 │
 └── frontend/
     ├── 📄 DESIGN_SYSTEM.md              ← Guía oficial
@@ -256,7 +256,7 @@ import { Card } from '@/components/ui/card';
 → `frontend/EJEMPLOS_CODIGO.tsx`
 
 **Guía visual**
-→ `GUIA_VISUAL_ECOFINANZAS.md`
+→ `GUIA_VISUAL_PerFinanzas.md`
 
 **Estado proyecto**
 → `CHECKLIST_IMPLEMENTACION.md`
@@ -272,7 +272,7 @@ import { Card } from '@/components/ui/card';
 ```
 ┌─────────────────────────────┐
 │   🌿 Logo (gradiente eco)   │
-│   EcoFinanzas               │
+│   PerFinanzas               │
 │   Accede a tu cuenta        │
 │                              │
 │  [Identificación]          │
@@ -362,7 +362,7 @@ ESTADO GENERAL: 🎉 IMPLEMENTADO EXITOSAMENTE
 
 ## 📅 Información del Proyecto
 
-- **Nombre**: EcoFinanzas Design System
+- **Nombre**: PerFinanzas Design System
 - **Versión**: 1.0
 - **Fecha**: Enero 2026
 - **Estado**: Activo ✅
@@ -388,15 +388,16 @@ Después de revisar esta documentación, puedes:
 **Elige tu rol y comienza:**
 
 1. **Developer**: Lee `RESUMEN_EJECUTIVO.md` → `DESIGN_SYSTEM.md`
-2. **Diseñador**: Ve a `GUIA_VISUAL_ECOFINANZAS.md`
+2. **Diseñador**: Ve a `GUIA_VISUAL_PerFinanzas.md`
 3. **PM/Stakeholder**: Revisa `CHECKLIST_IMPLEMENTACION.md`
 
 ---
 
-**Bienvenido al Sistema de Diseño EcoFinanzas** 🌿
+**Bienvenido al Sistema de Diseño PerFinanzas** 🌿
 
 *Documentación completa • Componentes listos • Ejemplos incluidos*
 
 ---
 
 Para más información, consulta [INDICE_MAESTRO.md](INDICE_MAESTRO.md)
+

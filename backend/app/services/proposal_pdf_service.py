@@ -252,7 +252,7 @@ class PropuestaPDFGenerator:
         
         # Logo/Nombre de la empresa
         elementos.append(Paragraph(
-            "🏠 EcoFinanzas",
+            "🏠 PerFinanzas",
             self.styles['TituloPrincipal']
         ))
         
@@ -505,7 +505,7 @@ class PropuestaPDFGenerator:
         elementos.append(Paragraph("💰 Detalle de Honorarios por Opción", self.styles['Seccion']))
         
         elementos.append(Paragraph(
-            """Los honorarios de EcoFinanzas corresponden al 6% del total de intereses 
+            """Los honorarios de PerFinanzas corresponden al 6% del total de intereses 
             que usted dejará de pagar al banco. Solo paga si obtiene un beneficio real.""",
             self.styles['TextoNormal']
         ))
@@ -551,15 +551,15 @@ class PropuestaPDFGenerator:
         la fecha de generación.<br/><br/>
         
         <b>2. Aprobación bancaria:</b> La reducción de cuotas está sujeta a la aprobación del 
-        banco emisor del crédito. EcoFinanzas realizará las gestiones necesarias pero no 
+        banco emisor del crédito. PerFinanzas realizará las gestiones necesarias pero no 
         garantiza la aprobación.<br/><br/>
         
         <b>3. Requisitos:</b> Para proceder con la gestión, el cliente debe:<br/>
         - Demostrar ingresos iguales o superiores al mínimo requerido según la opción elegida.<br/>
         - Estar al día con los pagos del crédito.<br/>
-        - Firmar el contrato de servicios de EcoFinanzas.<br/><br/>
+        - Firmar el contrato de servicios de PerFinanzas.<br/><br/>
         
-        <b>4. Honorarios:</b> Los honorarios de EcoFinanzas corresponden al 6% del total de 
+        <b>4. Honorarios:</b> Los honorarios de PerFinanzas corresponden al 6% del total de 
         intereses ahorrados, más IVA (19%). El pago se realiza una vez el banco apruebe 
         formalmente la modificación del crédito.<br/><br/>
         
@@ -585,8 +585,8 @@ class PropuestaPDFGenerator:
         ))
         
         pie = f"""
-        <b>EcoFinanzas</b> - Optimización de Créditos Hipotecarios<br/>
-        📧 contacto@ecofinanzas.com | 📱 (+57) 300-123-4567<br/>
+        <b>PerFinanzas</b> - Optimización de Créditos Hipotecarios<br/>
+        📧 Perfinanzass@gmail.com | 📱 (+57) 300-456-7262<br/>
         Documento generado automáticamente el {datos.fecha_generacion.strftime('%d/%m/%Y %H:%M')}<br/>
         Propuesta N° {datos.numero_propuesta}
         """
@@ -607,4 +607,7 @@ def crear_generador_propuesta() -> PropuestaPDFGenerator:
 
 def generar_numero_propuesta(analisis_id: str, fecha: datetime) -> str:
     """Genera un número de propuesta único"""
-    return f"ECO-{fecha.strftime('%Y%m%d')}-{analisis_id[:8].upper()}"
+    return f"PER-{fecha.strftime('%Y%m%d')}-{analisis_id[:8].upper()}"
+
+
+

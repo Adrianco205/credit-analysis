@@ -1,4 +1,4 @@
-# ✅ CHECKLIST IMPLEMENTACIÓN - Sistema de Diseño EcoFinanzas
+# ✅ CHECKLIST IMPLEMENTACIÓN - Sistema de Diseño PerFinanzas
 
 ## 📋 Estado General: ✅ COMPLETADO 100%
 
@@ -293,7 +293,7 @@
 - [x] Checklist validación
 - [x] Referencia de archivos
 
-### Archivo: GUIA_VISUAL_ECOFINANZAS.md
+### Archivo: GUIA_VISUAL_PerFinanzas.md
 - [x] Previsualizaciones ASCII:
   - [x] Login
   - [x] Register
@@ -465,3 +465,4 @@
 ---
 
 *Este checklist se actualizará conforme se agreguen nuevos componentes.*
+

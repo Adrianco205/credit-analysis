@@ -1,8 +1,8 @@
-# 📊 RESUMEN EJECUTIVO - Implementación Sistema de Diseño EcoFinanzas
+# 📊 RESUMEN EJECUTIVO - Implementación Sistema de Diseño PerFinanzas
 
 ## 🎯 Objetivo Alcanzado
 
-Se ha implementado exitosamente una **identidad visual coherente** basada en la paleta de EcoFinanzas utilizando una paleta estrictamente verde y blanca, garantizando:
+Se ha implementado exitosamente una **identidad visual coherente** basada en la paleta de PerFinanzas utilizando una paleta estrictamente verde y blanca, garantizando:
 
 ✅ **Coherencia visual** en todos los componentes  
 ✅ **Accesibilidad** con contraste WCAG AA  
@@ -18,7 +18,7 @@ Se ha implementado exitosamente una **identidad visual coherente** basada en la 
 **Ubicación**: `frontend/app/globals.css`
 
 ```css
-/* Paleta EcoFinanzas */
+/* Paleta PerFinanzas */
 --verde-bosque: #1B5E20      /* Primario oscuro */
 --verde-hoja: #4CAF50        /* Marca */
 --verde-claro: #66BB6A       /* Hover */
@@ -55,7 +55,7 @@ Disponibles de inmediato:
 |-----------|-----------|
 | `DESIGN_SYSTEM.md` | Guía completa del sistema de diseño |
 | `IDENTIDAD_VISUAL_RESUMEN.md` | Resumen de cambios + checklist |
-| `GUIA_VISUAL_ECOFINANZAS.md` | Ejemplos visuales ASCII |
+| `GUIA_VISUAL_PerFinanzas.md` | Ejemplos visuales ASCII |
 | `EJEMPLOS_CODIGO.tsx` | 10 componentes reutilizables |
 
 ---
@@ -202,7 +202,7 @@ Estado Normal     →  text-verde-bosque
 |---------|----------|
 | `frontend/DESIGN_SYSTEM.md` | Guía completa del sistema |
 | `IDENTIDAD_VISUAL_RESUMEN.md` | Resumen y checklist |
-| `GUIA_VISUAL_ECOFINANZAS.md` | Ejemplos visuales |
+| `GUIA_VISUAL_PerFinanzas.md` | Ejemplos visuales |
 | `frontend/EJEMPLOS_CODIGO.tsx` | 10 ejemplos de código |
 
 ---
@@ -275,7 +275,7 @@ Estado Normal     →  text-verde-bosque
 
 ### Documentos Clave
 1. **Sistema de Diseño**: `frontend/DESIGN_SYSTEM.md`
-2. **Guía Visual**: `GUIA_VISUAL_ECOFINANZAS.md`
+2. **Guía Visual**: `GUIA_VISUAL_PerFinanzas.md`
 3. **Ejemplos**: `frontend/EJEMPLOS_CODIGO.tsx`
 4. **Variables CSS**: `frontend/app/globals.css`
 
@@ -286,7 +286,7 @@ Revisar documentación → Buscar en archivo → Verificar ejemplos
 
 ## ✨ Conclusión
 
-Se ha completado la **implementación exitosa del sistema de diseño EcoFinanzas**, transformando la interfaz con una paleta verde-blanca coherente, accesible y profesional. El sistema está documentado, ejemplificado y listo para escalarse a toda la aplicación.
+Se ha completado la **implementación exitosa del sistema de diseño PerFinanzas**, transformando la interfaz con una paleta verde-blanca coherente, accesible y profesional. El sistema está documentado, ejemplificado y listo para escalarse a toda la aplicación.
 
 **Status**: ✅ **COMPLETADO Y VALIDADO**
 
@@ -294,5 +294,6 @@ Se ha completado la **implementación exitosa del sistema de diseño EcoFinanzas
 
 **Fecha**: Enero 2026  
 **Versión**: 1.0  
-**Autor**: Sistema de Diseño EcoFinanzas  
+**Autor**: Sistema de Diseño PerFinanzas  
 **Próxima revisión**: Marzo 2026
+
