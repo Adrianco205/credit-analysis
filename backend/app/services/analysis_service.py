@@ -191,7 +191,7 @@ class AnalysisService:
         self.storage = storage_service or get_storage_service()
         self.calc = calculadora or crear_calculadora()
         self.uvr_engine_v2_enabled = bool(getattr(settings, "UVR_ENGINE_V2_ENABLED", False))
-        self.uvr_inflacion_anual_default = Decimal(str(getattr(settings, "UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT", 0.06)))
+        self.uvr_inflacion_anual_default = Decimal(str(getattr(settings, "UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT", 0.022)))
     
     def _serialize_for_json(self, data: dict) -> dict:
         """
@@ -231,6 +231,48 @@ class AnalysisService:
             self.documents_repo.delete(documento.id)
         except Exception as error:
             logger.warning(f"No se pudo eliminar registro de documento {documento.id}: {error}")
+
+    def _aplicar_guardia_tasa_extraida(self, extraction_result: ExtractionResult) -> None:
+        """Corrige tasas sospechosamente bajas interpretadas como E.A. cuando parecen mensuales."""
+        tasa_extraida = extraction_result.data.get("tasa_interes_cobrada_ea")
+        if tasa_extraida is None:
+            return
+
+        try:
+            tasa_decimal = Decimal(str(tasa_extraida))
+        except Exception:
+            return
+
+        # Si la tasa viene en porcentaje (ej: 7.47), la normalización posterior la convertirá.
+        # Este guard solo aplica cuando ya parece decimal y cae por debajo del rango típico de E.A.
+        if Decimal("0") < tasa_decimal < Decimal("0.04"):
+            calc_engine = getattr(self, "calc", None) or crear_calculadora()
+            tasa_ea_equivalente = calc_engine.tasa_mensual_a_ea(tasa_decimal)
+            extraction_result.data["tasa_interes_cobrada_ea"] = tasa_ea_equivalente
+            logger.info(
+                "Guardia de tasa aplicada: tasa_interes_cobrada_ea %s interpretada como mensual; convertida a E.A. %s",
+                tasa_decimal,
+                tasa_ea_equivalente,
+            )
+
+    def _resolve_ipc_anual_proyectado(self, ipc_proyectado: Decimal | float | None) -> Decimal:
+        """Convierte IPC comercial (% o decimal) a tasa anual decimal para el motor."""
+        default_ipc = Decimal("0.022")
+        if ipc_proyectado is None:
+            return default_ipc
+
+        try:
+            ipc_normalizado = Decimal(str(ipc_proyectado))
+        except Exception:
+            return default_ipc
+
+        if ipc_normalizado <= 0:
+            return default_ipc
+
+        if ipc_normalizado > 1:
+            ipc_normalizado = ipc_normalizado / Decimal("100")
+
+        return ipc_normalizado.quantize(Decimal("0.000001"))
 
     def _extract_identity_from_pdf_text(self, pdf_content: bytes) -> tuple[str | None, str | None]:
         """Extrae nombre y CC con heurísticas desde texto plano del PDF."""
@@ -428,6 +470,8 @@ class AnalysisService:
                     error_code="EXTRACTION_ERROR",
                     error_message=f"Error en extracción: {extraction_result.message}"
                 )
+
+            self._aplicar_guardia_tasa_extraida(extraction_result)
 
             nombre_pdf_detectado = str(extraction_result.data.get("nombre_titular") or "").strip()
             identificacion_pdf = extraction_result.data.get("identificacion_titular")
@@ -773,6 +817,7 @@ class AnalysisService:
         opciones: list[OpcionAbonoInput],
         usuario_id: uuid.UUID | None = None,
         valor_uvr_para_calculo: Decimal | None = None,
+        ipc_proyectado: Decimal | float | None = None,
     ) -> ProjectionGenerationResult:
         """
         Genera proyecciones de ahorro para un análisis.
@@ -814,11 +859,14 @@ class AnalysisService:
             
             # Eliminar propuestas anteriores
             self.propuestas_repo.delete_by_analisis(analisis_id)
+
+            ipc_anual_proyectado = self._resolve_ipc_anual_proyectado(ipc_proyectado)
             
             # Calcular estado actual (baseline)
             baseline = self._calculate_baseline(
                 analisis,
                 valor_uvr_para_calculo=valor_uvr_para_calculo,
+                ipc_anual_proyectado=ipc_anual_proyectado,
             )
             
             # Generar cada opción
@@ -974,6 +1022,7 @@ class AnalysisService:
         self,
         analisis: AnalisisHipotecario,
         valor_uvr_para_calculo: Decimal | None = None,
+        ipc_anual_proyectado: Decimal | None = None,
     ) -> dict:
         """Calcula el estado actual del credito (sin abono extra).
 
@@ -982,6 +1031,7 @@ class AnalysisService:
         - datos_proyeccion: copia calibrable para cerrar amortizacion del baseline
         """
         frech = analisis.beneficio_frech_mensual or Decimal("0")
+        ipc_anual_proyectado_resuelto = self._resolve_ipc_anual_proyectado(ipc_anual_proyectado)
 
         cuota_cliente = (
             analisis.valor_cuota_con_subsidio
@@ -1041,11 +1091,14 @@ class AnalysisService:
             tasa_interes_ea=analisis.tasa_interes_cobrada_ea,
             valor_prestado_inicial=analisis.valor_prestado_inicial,
             beneficio_frech=frech,
-            seguros_mensual=analisis.seguros_total_mensual or Decimal("0"),
+            tasa_seguro_vida=Decimal("0"),
+            valor_seguro_incendio_fijo=analisis.seguros_total_mensual or Decimal("0"),
+            tasa_cobertura_frech=getattr(analisis, "tasa_cobertura_frech", Decimal("0")) or Decimal("0"),
             cargos_no_amortizables_mensuales=cargos_no_amortizables,
             sistema_amortizacion=sistema_amortizacion,
             valor_uvr_actual=valor_uvr_actual,
             frech_meses_restantes=frech_meses_restantes,
+            ipc_anual_proyectado=ipc_anual_proyectado_resuelto,
         )
 
         # Datos usados para amortizacion del baseline (pueden calibrarse).
@@ -1073,9 +1126,12 @@ class AnalysisService:
                     cuota_actual=datos_visible.valor_cuota_actual,
                     abono_adicional=Decimal("0"),
                     uvr_actual=valor_uvr_actual,
-                    inflacion_anual_estimada=Decimal(str(getattr(self, "uvr_inflacion_anual_default", Decimal("0.06")))),
+                    inflacion_anual_estimada=ipc_anual_proyectado_resuelto,
                     subsidio_frech=datos_visible.beneficio_frech,
-                    seguro_mensual=datos_visible.seguros_mensual,
+                    seguro_mensual=(
+                        datos_visible.valor_seguro_incendio_fijo
+                        + (datos_visible.saldo_capital * datos_visible.tasa_seguro_vida)
+                    ).quantize(Decimal("0.01")),
                     cuota_uvr_actual=getattr(analisis, "valor_cuota_uvr", None),
                     frech_meses_restantes=datos_visible.frech_meses_restantes,
                 )
@@ -1104,71 +1160,7 @@ class AnalysisService:
                     exc,
                 )
 
-        # Para el escenario "hoy", el baseline debe respetar la referencia del analisis
-        # (cuotas_pendientes) salvo causa financiera explicita. Si la proyeccion sin abono
-        # supera las cuotas pendientes en PESOS/CAPITAL, se calibra con la cuota contractual
-        # minima necesaria para cerrar en ese horizonte.
-        sistema_normalizado = self.calc._normalizar_sistema_amortizacion(datos_proyeccion.sistema_amortizacion)
-        if (
-            sistema_normalizado == "PESOS"
-            and analisis.cuotas_pendientes
-            and proyeccion_actual.cuotas_nuevas > analisis.cuotas_pendientes
-        ):
-            cuota_objetivo = self.calc.calcular_cuota_total_objetivo(
-                saldo_capital=datos_proyeccion.saldo_capital,
-                tasa_interes_ea=datos_proyeccion.tasa_interes_ea,
-                cuotas_objetivo=analisis.cuotas_pendientes,
-                seguros_mensual=datos_proyeccion.seguros_mensual,
-                cargos_no_amortizables_mensuales=datos_proyeccion.cargos_no_amortizables_mensuales,
-            )
-
-            if cuota_objetivo > datos_proyeccion.valor_cuota_actual:
-                logger.warning(
-                    "Baseline cuotas_nuevas (%s) > cuotas_pendientes (%s). Calibrando cuota actual de %s a %s para consistencia con extracto",
-                    proyeccion_actual.cuotas_nuevas,
-                    analisis.cuotas_pendientes,
-                    datos_proyeccion.valor_cuota_actual,
-                    cuota_objetivo,
-                )
-                datos_proyeccion = replace(datos_proyeccion, valor_cuota_actual=cuota_objetivo)
-                proyeccion_actual = self.calc.calcular_proyeccion(
-                    datos=datos_proyeccion,
-                    abono_extra=Decimal("0"),
-                    numero_opcion=0,
-                    nombre_opcion="Actual",
-                )
-
-                # Ajuste fino por redondeos: incrementa cuota en pasos pequenos hasta
-                # que la proyeccion "hoy" no exceda cuotas_pendientes.
-                max_iter = 50
-                iter_count = 0
-                while (
-                    proyeccion_actual.cuotas_nuevas > analisis.cuotas_pendientes
-                    and iter_count < max_iter
-                ):
-                    iter_count += 1
-                    datos_proyeccion = replace(
-                        datos_proyeccion,
-                        valor_cuota_actual=(datos_proyeccion.valor_cuota_actual + Decimal("50.00")).quantize(Decimal("0.01")),
-                    )
-                    proyeccion_actual = self.calc.calcular_proyeccion(
-                        datos=datos_proyeccion,
-                        abono_extra=Decimal("0"),
-                        numero_opcion=0,
-                        nombre_opcion="Actual",
-                    )
-
-                if proyeccion_actual.cuotas_nuevas > analisis.cuotas_pendientes:
-                    logger.warning(
-                        "No se logro igualar cuotas baseline a cuotas_pendientes tras calibracion (%s vs %s)",
-                        proyeccion_actual.cuotas_nuevas,
-                        analisis.cuotas_pendientes,
-                    )
-
-        total_actual_simple = self.calc.calcular_total_por_pagar_simple_actual(
-            cuota_actual=datos_visible.valor_cuota_actual,
-            cuotas_pendientes=analisis.cuotas_pendientes,
-        )
+        total_actual_simple = proyeccion_actual.costo_total_proyectado_banco
 
         # Indicador comercial de relacion costo/saldo para el escenario "hoy".
         # Semantica unificada: costo total integral (cliente + FRECH) / saldo.
@@ -1186,7 +1178,7 @@ class AnalysisService:
             proyeccion_actual.costo_total_proyectado_banco,
             datos_visible.tasa_interes_ea,
             valor_uvr_actual,
-            getattr(self, "uvr_inflacion_anual_default", None),
+            ipc_anual_proyectado_resuelto,
             datos_visible.beneficio_frech,
             datos_visible.frech_meses_restantes,
         )
@@ -1202,6 +1194,7 @@ class AnalysisService:
             "cuota_actual_visible": datos_visible.valor_cuota_actual,
             "cuota_actual_proyeccion": datos_proyeccion.valor_cuota_actual,
             "cuota_base_source": cuota_base_source,
+            "ipc_anual_proyectado": ipc_anual_proyectado_resuelto,
             "datos": datos_visible,
             "datos_visible": datos_visible,
             "datos_proyeccion": datos_proyeccion,
@@ -1268,10 +1261,8 @@ class AnalysisService:
         frech: Decimal,
     ) -> Decimal:
         """
-        Estima cargos mensuales recurrentes que no amortizan capital.
-
-        Motivo: algunos extractos reportan seguros/cargos separados (ej. seguro voluntario)
-        y no siempre quedan consolidados en `seguros_total_mensual`.
+        Estima cargos mensuales recurrentes. Si no hay datos extraídos de capital/interés,
+        usa ingeniería inversa sobre la cuota teórica francesa para aislar los seguros.
         """
         def _as_decimal(value: object | None) -> Decimal:
             if isinstance(value, Decimal):
@@ -1294,10 +1285,35 @@ class AnalysisService:
             cuota_operativa = cuota_cliente + frech
 
         cargos_inferidos = Decimal("0")
+
+        # 1. Si tenemos los datos exactos del extracto
         if cuota_operativa > 0 and (capital_periodo > 0 or interes_periodo > 0):
             no_amortizable_observado = cuota_operativa - capital_periodo - interes_periodo
             if no_amortizable_observado > seguros_base:
                 cargos_inferidos = no_amortizable_observado - seguros_base
+
+        # 2. Inferencia matemática para PESOS (amortización francesa)
+        else:
+            sistema = self.calc._normalizar_sistema_amortizacion(getattr(analisis, "sistema_amortizacion", None))
+            if sistema == "PESOS":
+                tasa_mensual = self.calc.tasa_ea_a_mensual(analisis.tasa_interes_cobrada_ea or Decimal("0"))
+                cuotas_restantes = analisis.cuotas_pendientes
+
+                if (
+                    tasa_mensual > 0
+                    and cuotas_restantes
+                    and cuotas_restantes > 0
+                    and (analisis.saldo_capital_pesos or Decimal("0")) > 0
+                ):
+                    cuota_pura_teorica = self.calc.calcular_cuota_fija(
+                        capital=analisis.saldo_capital_pesos or Decimal("0"),
+                        tasa_mensual=tasa_mensual,
+                        num_cuotas=cuotas_restantes,
+                    )
+
+                    diferencia = cuota_operativa - cuota_pura_teorica
+                    if diferencia > seguros_base:
+                        cargos_inferidos = diferencia - seguros_base
 
         return max(otros_cargos, cargos_inferidos).quantize(Decimal("0.01"))
     
@@ -1357,6 +1373,7 @@ class AnalysisService:
         al motor actual sin interrumpir el flujo de negocio.
         """
         datos_visible = baseline.get("datos_visible", baseline["datos"])
+        ipc_anual_proyectado = baseline.get("ipc_anual_proyectado", self._resolve_ipc_anual_proyectado(None))
         valor_uvr_actual = datos_visible.valor_uvr_actual or analisis.valor_uvr_fecha_extracto
 
         if not valor_uvr_actual or valor_uvr_actual <= 0:
@@ -1375,9 +1392,12 @@ class AnalysisService:
                 cuota_actual=datos_visible.valor_cuota_actual,
                 abono_adicional=opcion.abono_adicional_mensual,
                 uvr_actual=valor_uvr_actual,
-                inflacion_anual_estimada=Decimal(str(getattr(self, "uvr_inflacion_anual_default", Decimal("0.06")))),
+                inflacion_anual_estimada=ipc_anual_proyectado,
                 subsidio_frech=datos_visible.beneficio_frech,
-                seguro_mensual=datos_visible.seguros_mensual,
+                seguro_mensual=(
+                    datos_visible.valor_seguro_incendio_fijo
+                    + (datos_visible.saldo_capital * datos_visible.tasa_seguro_vida)
+                ).quantize(Decimal("0.01")),
                 cuota_uvr_actual=getattr(analisis, "valor_cuota_uvr", None),
                 frech_meses_restantes=datos_visible.frech_meses_restantes,
             )
@@ -1390,7 +1410,6 @@ class AnalysisService:
             tiempo_ahorrado = TiempoAhorro.desde_meses(cuotas_reducidas)
 
             nueva_cuota = (datos_visible.valor_cuota_actual + opcion.abono_adicional_mensual).quantize(Decimal("0.01"))
-            total_simple = self.calc.calcular_total_por_pagar_simple_opcion(nueva_cuota, cuotas_nuevas)
 
             costo_total_proyectado = comparacion.escenario_con_abono.total_pagado_cliente
             total_subsidio_frech_proyectado = self.calc.calcular_flujo_frech(
@@ -1399,6 +1418,8 @@ class AnalysisService:
                 frech_meses_restantes=datos_visible.frech_meses_restantes,
             )
             costo_total_proyectado_banco = (costo_total_proyectado + total_subsidio_frech_proyectado).quantize(Decimal("0.01"))
+            
+            total_simple = costo_total_proyectado_banco
 
             if datos_visible.saldo_capital > 0:
                 veces_pagado = (costo_total_proyectado_banco / datos_visible.saldo_capital).quantize(Decimal("0.01"))
@@ -1421,7 +1442,7 @@ class AnalysisService:
                 costo_total_proyectado_banco,
                 datos_visible.tasa_interes_ea,
                 valor_uvr_actual,
-                getattr(self, "uvr_inflacion_anual_default", None),
+                ipc_anual_proyectado,
                 datos_visible.beneficio_frech,
                 datos_visible.frech_meses_restantes,
             )

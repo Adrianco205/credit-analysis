@@ -117,6 +117,12 @@ class OpcionAbonoRequest(BaseModel):
 class GenerateProjectionsRequest(BaseModel):
     """Request para generar proyecciones."""
     opciones: list[OpcionAbonoRequest] = Field(..., min_length=1, max_length=5)
+    ipc_proyectado: Optional[float] = Field(
+        None,
+        gt=0,
+        le=100,
+        description="IPC anual proyectado en porcentaje comercial (ej: 2.2, 3.5, 5.0)",
+    )
 
 
 class SelectOptionRequest(BaseModel):
@@ -543,11 +549,15 @@ def generate_projections(
         for o in request.opciones
     ]
     
-    result = service.generate_projections(
-        analisis_id=analysis_id,
-        opciones=opciones,
-        usuario_id=current_user.id
-    )
+    service_args = {
+        "analisis_id": analysis_id,
+        "opciones": opciones,
+        "usuario_id": current_user.id,
+    }
+    if request.ipc_proyectado is not None:
+        service_args["ipc_proyectado"] = request.ipc_proyectado
+
+    result = service.generate_projections(**service_args)
     
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error_message)

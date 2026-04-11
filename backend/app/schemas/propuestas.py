@@ -52,6 +52,12 @@ class GenerarProyeccionesInput(BaseModel):
         max_length=5,
         description="Lista de opciones de abono (típicamente 3)"
     )
+    ipc_proyectado: float | None = Field(
+        None,
+        gt=0,
+        le=100,
+        description="IPC anual proyectado en porcentaje comercial (ej: 2.2, 3.5, 5.0)",
+    )
     
     # Opcional: Admin puede ajustar estos valores
     ingresos_mensuales_override: Decimal | None = Field(None, gt=0)

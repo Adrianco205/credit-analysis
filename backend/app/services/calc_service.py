@@ -51,12 +51,15 @@ class DatosCredito:
     
     # Opcionales
     beneficio_frech: Decimal = Decimal("0")
-    seguros_mensual: Decimal = Decimal("0")
+    tasa_seguro_vida: Decimal = Decimal("0")
+    valor_seguro_incendio_fijo: Decimal = Decimal("0")
+    tasa_cobertura_frech: Decimal = Decimal("0")
     cargos_no_amortizables_mensuales: Decimal = Decimal("0")
     sistema_amortizacion: str = "PESOS"  # PESOS o UVR
     valor_uvr_actual: Optional[Decimal] = None
     saldo_uvr: Optional[Decimal] = None
     frech_meses_restantes: Optional[int] = None
+    ipc_anual_proyectado: Decimal = Decimal("0.022")
 
 
 @dataclass
@@ -80,6 +83,7 @@ class ResultadoAmortizacion:
     total_costos_no_amortizables: Decimal
     total_capital: Decimal
     tabla: List[FilaAmortizacion]
+    total_subsidio_frech_dinamico: Decimal = Decimal("0")
 
 
 @dataclass
@@ -185,17 +189,15 @@ class CalculadoraFinanciera:
             return "PESOS"
         return "UVR" if sistema == "UVR" else "PESOS"
 
-    def calcular_total_por_pagar_simple_actual(self, cuota_actual: Decimal, cuotas_pendientes: int) -> Decimal:
-        """Total simple para escenario actual (hoy): cuota actual x cuotas pendientes del analisis."""
-        if cuota_actual <= 0 or cuotas_pendientes <= 0:
-            return Decimal("0.00")
-        return (cuota_actual * Decimal(cuotas_pendientes)).quantize(self._precision_dinero)
-
-    def calcular_total_por_pagar_simple_opcion(self, nueva_cuota: Decimal, cuotas_nuevas: int) -> Decimal:
-        """Total simple para opcion proyectada: nueva cuota x cuotas nuevas."""
-        if nueva_cuota <= 0 or cuotas_nuevas <= 0:
-            return Decimal("0.00")
-        return (nueva_cuota * Decimal(cuotas_nuevas)).quantize(self._precision_dinero)
+    def calcular_tasa_inflacion_mensual(self, ipc_anual: Decimal) -> Decimal:
+        """Calcula la tasa de inflacion mensual efectiva."""
+        if ipc_anual <= 0:
+            return Decimal("0")
+        uno = Decimal("1")
+        exponente = Decimal("1") / Decimal("12")
+        base = uno + ipc_anual
+        tasa_mensual = Decimal(str(float(base) ** float(exponente))) - uno
+        return tasa_mensual.quantize(self._precision_tasa)
 
     def calcular_cuota_total_objetivo(
         self,
@@ -246,6 +248,7 @@ class CalculadoraFinanciera:
         beneficio_frech_mensual: Decimal,
         cuotas_proyectadas: int,
         frech_meses_restantes: int | None = None,
+        total_subsidio_frech_dinamico: Decimal | None = None,
     ) -> tuple[Decimal, Decimal, Decimal]:
         """
         Separa el costo total proyectado en dos visiones:
@@ -256,11 +259,14 @@ class CalculadoraFinanciera:
         de tope FRECH (84 meses) para evitar sobreproyecciones.
         """
         costo_cliente = total_flujo_cliente.quantize(self._precision_dinero)
-        subsidio_frech = self.calcular_flujo_frech(
-            beneficio_frech_mensual=beneficio_frech_mensual,
-            cuotas_proyectadas=cuotas_proyectadas,
-            frech_meses_restantes=frech_meses_restantes,
-        )
+        if total_subsidio_frech_dinamico is not None:
+            subsidio_frech = total_subsidio_frech_dinamico.quantize(self._precision_dinero)
+        else:
+            subsidio_frech = self.calcular_flujo_frech(
+                beneficio_frech_mensual=beneficio_frech_mensual,
+                cuotas_proyectadas=cuotas_proyectadas,
+                frech_meses_restantes=frech_meses_restantes,
+            )
         costo_banco = (costo_cliente + subsidio_frech).quantize(self._precision_dinero)
         return costo_cliente, costo_banco, subsidio_frech
 
@@ -361,11 +367,15 @@ class CalculadoraFinanciera:
         tasa_mensual: Decimal,
         cuota_fija: Decimal,
         abono_extra: Decimal = Decimal("0"),
-        seguros_mensual: Decimal = Decimal("0"),
+        tasa_seguro_vida: Decimal = Decimal("0"),
+        valor_seguro_incendio_fijo: Decimal = Decimal("0"),
         cargos_no_amortizables_mensuales: Decimal = Decimal("0"),
         sistema_amortizacion: str = "PESOS",
         valor_uvr_actual: Decimal | None = None,
-        max_cuotas: int = 600  # Límite de seguridad (50 años)
+        max_cuotas: int = 600,  # Límite de seguridad (50 años)
+        ipc_anual_proyectado: Decimal = Decimal("0.022"),
+        tasa_cobertura_frech: Decimal = Decimal("0"),
+        frech_meses_restantes: int | None = None,
     ) -> ResultadoAmortizacion:
         """
         Genera la tabla de amortización completa.
@@ -389,26 +399,54 @@ class CalculadoraFinanciera:
         saldo = saldo_inicial / factor_uvr
         cuota_fija_unidad = cuota_fija / factor_uvr
         abono_extra_unidad = abono_extra / factor_uvr
-        seguros_unidad = seguros_mensual / factor_uvr
         cargos_no_amortizables_unidad = cargos_no_amortizables_mensuales / factor_uvr
 
         total_intereses = Decimal("0")
         total_costos_no_amortizables = Decimal("0")
         total_capital = Decimal("0")
         total_pagado = Decimal("0")
+        
+        # Totales en pesos (salida)
+        total_pagado_salida = Decimal("0")
+        total_intereses_salida = Decimal("0")
+        total_costos_no_amortizables_salida = Decimal("0")
+        total_capital_salida = Decimal("0")
+        
         cuota_num = 0
+        
+        # FRECH dinámico basado en cobertura de interés (si aplica)
+        frech_meses_activos = 0
+        if frech_meses_restantes is not None:
+            try:
+                frech_meses_activos = max(0, int(frech_meses_restantes))
+            except (TypeError, ValueError):
+                frech_meses_activos = 0
+        tasa_mensual_frech = self.tasa_ea_a_mensual(tasa_cobertura_frech)
+        total_subsidio_frech_salida = Decimal("0")
+        
+        tasa_inflacion_mensual = self.calcular_tasa_inflacion_mensual(ipc_anual_proyectado) if usa_uvr else Decimal("0")
         
         while saldo > Decimal("0.01") and cuota_num < max_cuotas:
             cuota_num += 1
             saldo_inicio_mes = saldo
             
+            factor_uvr_dinamico = factor_uvr * Decimal(str(float(1 + tasa_inflacion_mensual) ** cuota_num)) if usa_uvr else Decimal("1")
+            
+            # Seguro dinámico mes a mes: vida sobre saldo + incendio fijo
+            seguro_vida_unidad_mes = (saldo * tasa_seguro_vida).quantize(self._precision_tasa)
+            seguro_incendio_unidad_mes = (valor_seguro_incendio_fijo / factor_uvr_dinamico).quantize(self._precision_tasa) if factor_uvr_dinamico > 0 else Decimal("0")
+            seguros_unidad_total = seguro_vida_unidad_mes + seguro_incendio_unidad_mes
+            
             # Interés del mes
             interes_mes = (saldo * tasa_mensual).quantize(self._precision_dinero)
+            
+            cargos_no_amortizables_unidad = (cargos_no_amortizables_mensuales / factor_uvr_dinamico).quantize(self._precision_dinero) if factor_uvr_dinamico > 0 else Decimal("0")
+            abono_extra_real = (abono_extra / factor_uvr_dinamico).quantize(self._precision_dinero) if factor_uvr_dinamico > 0 else Decimal("0")
             
             # Abono a capital = (cuota - seguros) - interés
             abono_capital_base = (
                 cuota_fija_unidad
-                - seguros_unidad
+                - seguros_unidad_total
                 - cargos_no_amortizables_unidad
                 - interes_mes
             )
@@ -416,15 +454,14 @@ class CalculadoraFinanciera:
                 abono_capital_base = Decimal("0")
             
             # Si el saldo es menor que el abono, ajustar última cuota
-            if saldo <= abono_capital_base + abono_extra_unidad:
+            if saldo <= abono_capital_base + abono_extra_real:
                 abono_capital_real = saldo
                 abono_extra_real = Decimal("0")
                 cuota_sin_seguros_real = interes_mes + saldo
-                cuota_real = cuota_sin_seguros_real + seguros_unidad + cargos_no_amortizables_unidad
+                cuota_real = cuota_sin_seguros_real + seguros_unidad_total + cargos_no_amortizables_unidad
             else:
                 abono_capital_real = abono_capital_base
-                abono_extra_real = abono_extra_unidad
-                cuota_real = cuota_fija_unidad + abono_extra_unidad
+                cuota_real = cuota_fija_unidad + abono_extra_real
             
             # Actualizar saldo
             saldo = saldo - abono_capital_real - abono_extra_real
@@ -433,42 +470,52 @@ class CalculadoraFinanciera:
             
             # Acumular totales
             total_intereses += interes_mes
-            total_costos_no_amortizables += seguros_unidad + cargos_no_amortizables_unidad
+            total_costos_no_amortizables += seguros_unidad_total + cargos_no_amortizables_unidad
             total_capital += abono_capital_real + abono_extra_real
             total_pagado += cuota_real
+
+            if tasa_mensual_frech > 0:
+                limite_frech = frech_meses_activos if frech_meses_activos > 0 else FRECH_MAX_MESES_DEFAULT
+                if cuota_num <= limite_frech:
+                    alivio_frech_mes = (saldo_inicio_mes * tasa_mensual_frech).quantize(self._precision_dinero)
+                    alivio_frech_salida = (alivio_frech_mes * factor_uvr_dinamico).quantize(self._precision_dinero)
+                    total_subsidio_frech_salida += alivio_frech_salida
             
-            # Convertir valores de iteración a pesos para salida
-            saldo_inicio_salida = (saldo_inicio_mes * factor_uvr).quantize(self._precision_dinero)
-            cuota_real_salida = (cuota_real * factor_uvr).quantize(self._precision_dinero)
-            interes_salida = (interes_mes * factor_uvr).quantize(self._precision_dinero)
-            abono_capital_salida = (abono_capital_real * factor_uvr).quantize(self._precision_dinero)
-            abono_extra_salida = (abono_extra_real * factor_uvr).quantize(self._precision_dinero)
-            saldo_salida = (saldo * factor_uvr).quantize(self._precision_dinero)
+            # Convertir valores de iteración a pesos usando factor dinámico
+            saldo_inicio_salida_val = (saldo_inicio_mes * factor_uvr_dinamico).quantize(self._precision_dinero)
+            cuota_real_salida_val = (cuota_real * factor_uvr_dinamico).quantize(self._precision_dinero)
+            interes_salida_val = (interes_mes * factor_uvr_dinamico).quantize(self._precision_dinero)
+            abono_capital_salida_val = (abono_capital_real * factor_uvr_dinamico).quantize(self._precision_dinero)
+            abono_extra_salida_val = (abono_extra_real * factor_uvr_dinamico).quantize(self._precision_dinero)
+            saldo_salida_val = (saldo * factor_uvr_dinamico).quantize(self._precision_dinero)
+            costos_no_amort_salida_val = ((seguros_unidad_total + cargos_no_amortizables_unidad) * factor_uvr_dinamico).quantize(self._precision_dinero)
+
+            total_pagado_salida += cuota_real_salida_val
+            total_intereses_salida += interes_salida_val
+            total_capital_salida += abono_capital_salida_val + abono_extra_salida_val
+            total_costos_no_amortizables_salida += costos_no_amort_salida_val
 
             # Agregar fila
             tabla.append(FilaAmortizacion(
                 numero_cuota=cuota_num,
-                saldo_inicial=saldo_inicio_salida,
-                cuota_total=cuota_real_salida,
-                interes=interes_salida,
-                abono_capital=abono_capital_salida,
-                abono_extra=abono_extra_salida,
-                saldo_final=saldo_salida
+                saldo_inicial=saldo_inicio_salida_val,
+                cuota_total=cuota_real_salida_val,
+                interes=interes_salida_val,
+                abono_capital=abono_capital_salida_val,
+                abono_extra=abono_extra_salida_val,
+                saldo_final=saldo_salida_val
             ))
-
-        total_pagado_salida = (total_pagado * factor_uvr).quantize(self._precision_dinero)
-        total_intereses_salida = (total_intereses * factor_uvr).quantize(self._precision_dinero)
-        total_costos_no_amortizables_salida = (total_costos_no_amortizables * factor_uvr).quantize(self._precision_dinero)
-        total_capital_salida = (total_capital * factor_uvr).quantize(self._precision_dinero)
         
-        return ResultadoAmortizacion(
+        resultado = ResultadoAmortizacion(
             cuotas_totales=cuota_num,
             total_pagado=total_pagado_salida,
             total_intereses=total_intereses_salida,
             total_costos_no_amortizables=total_costos_no_amortizables_salida,
             total_capital=total_capital_salida,
-            tabla=tabla
+            tabla=tabla,
+            total_subsidio_frech_dinamico=total_subsidio_frech_salida.quantize(self._precision_dinero)
         )
+        return resultado
     
     # ═══════════════════════════════════════════════════════════════════════════
     # CÁLCULO DE PROYECCIÓN CON ABONO EXTRA
@@ -505,10 +552,14 @@ class CalculadoraFinanciera:
             tasa_mensual=tasa_mensual,
             cuota_fija=datos.valor_cuota_actual,
             abono_extra=Decimal("0"),
-            seguros_mensual=datos.seguros_mensual,
+            tasa_seguro_vida=datos.tasa_seguro_vida,
+            valor_seguro_incendio_fijo=datos.valor_seguro_incendio_fijo,
             cargos_no_amortizables_mensuales=datos.cargos_no_amortizables_mensuales,
             sistema_amortizacion=datos.sistema_amortizacion,
-            valor_uvr_actual=datos.valor_uvr_actual
+            valor_uvr_actual=datos.valor_uvr_actual,
+            ipc_anual_proyectado=datos.ipc_anual_proyectado,
+            tasa_cobertura_frech=datos.tasa_cobertura_frech,
+            frech_meses_restantes=datos.frech_meses_restantes,
         )
         
         # ═══════════════════════════════════════════════════════════════════
@@ -519,29 +570,57 @@ class CalculadoraFinanciera:
             tasa_mensual=tasa_mensual,
             cuota_fija=datos.valor_cuota_actual,
             abono_extra=abono_extra,
-            seguros_mensual=datos.seguros_mensual,
+            tasa_seguro_vida=datos.tasa_seguro_vida,
+            valor_seguro_incendio_fijo=datos.valor_seguro_incendio_fijo,
             cargos_no_amortizables_mensuales=datos.cargos_no_amortizables_mensuales,
             sistema_amortizacion=datos.sistema_amortizacion,
-            valor_uvr_actual=datos.valor_uvr_actual
-        )
-
-        # Costo total proyectado del cliente: suma mes a mes de la amortizacion.
-        costo_total_proyectado, costo_total_proyectado_banco, total_subsidio_frech_proyectado = (
-            self.calcular_costo_total_proyectado(
-                total_flujo_cliente=resultado_con_abono.total_pagado,
-                beneficio_frech_mensual=datos.beneficio_frech,
-                cuotas_proyectadas=resultado_con_abono.cuotas_totales,
-                frech_meses_restantes=datos.frech_meses_restantes,
-            )
-        )
-
-        # Baseline banco para semantica comercial unificada de ahorro.
-        _, costo_total_actual_banco, _ = self.calcular_costo_total_proyectado(
-            total_flujo_cliente=resultado_actual.total_pagado,
-            beneficio_frech_mensual=datos.beneficio_frech,
-            cuotas_proyectadas=resultado_actual.cuotas_totales,
+            valor_uvr_actual=datos.valor_uvr_actual,
+            ipc_anual_proyectado=datos.ipc_anual_proyectado,
+            tasa_cobertura_frech=datos.tasa_cobertura_frech,
             frech_meses_restantes=datos.frech_meses_restantes,
         )
+
+        # Nueva cuota total (cuota base + abono extra)
+        nueva_cuota = datos.valor_cuota_actual + abono_extra
+
+        # Costo total proyectado del cliente: suma mes a mes de la amortizacion.
+        costo_total_proyectado = resultado_con_abono.total_pagado
+
+        sistema_normalizado = self._normalizar_sistema_amortizacion(datos.sistema_amortizacion)
+
+        def _resolver_subsidio_frech(total_dinamico: Decimal, cuotas_totales: int) -> Decimal:
+            if total_dinamico > 0:
+                return total_dinamico.quantize(self._precision_dinero)
+            if datos.beneficio_frech <= 0 or cuotas_totales <= 0:
+                return Decimal("0.00")
+            if sistema_normalizado == "PESOS":
+                # Fallback comercial para PESOS cuando no hay cobertura FRECH explícita.
+                return (datos.beneficio_frech * Decimal(cuotas_totales)).quantize(self._precision_dinero)
+            return self.calcular_flujo_frech(
+                beneficio_frech_mensual=datos.beneficio_frech,
+                cuotas_proyectadas=cuotas_totales,
+                frech_meses_restantes=datos.frech_meses_restantes,
+            )
+
+        total_subsidio_frech_actual = _resolver_subsidio_frech(
+            resultado_actual.total_subsidio_frech_dinamico,
+            resultado_actual.cuotas_totales,
+        )
+        total_subsidio_frech_proyectado = _resolver_subsidio_frech(
+            resultado_con_abono.total_subsidio_frech_dinamico,
+            resultado_con_abono.cuotas_totales,
+        )
+
+        # Baseline banco = flujo cliente + subsidio FRECH proyectado
+        costo_total_actual_banco = (resultado_actual.total_pagado + total_subsidio_frech_actual).quantize(
+            self._precision_dinero
+        )
+
+        # Costo proyectado banco = flujo cliente + subsidio FRECH proyectado
+        costo_total_proyectado_banco = (resultado_con_abono.total_pagado + total_subsidio_frech_proyectado).quantize(
+            self._precision_dinero
+        )
+        
         incluye_frech_en_costo_total_banco = total_subsidio_frech_proyectado > 0
         
         # ═══════════════════════════════════════════════════════════════════
@@ -560,14 +639,8 @@ class CalculadoraFinanciera:
             self._precision_dinero
         )
         
-        # Nueva cuota total (cuota base + abono extra)
-        nueva_cuota = datos.valor_cuota_actual + abono_extra
-
         # Total por pagar simple (estimacion rapida): cuota x cuotas.
-        total_por_pagar_simple = self.calcular_total_por_pagar_simple_opcion(
-            nueva_cuota=nueva_cuota,
-            cuotas_nuevas=resultado_con_abono.cuotas_totales,
-        )
+        total_por_pagar_simple = costo_total_proyectado_banco
 
         # Indicador comercial "No. Veces Pagado": relacion entre costo total
         # integral (cliente + FRECH proyectado) y saldo de capital actual.
@@ -784,7 +857,8 @@ if __name__ == "__main__":
         tasa_interes_ea=Decimal("0.0471"),  # 4.71% EA (tasa cobrada)
         valor_prestado_inicial=Decimal("45200180"),
         beneficio_frech=Decimal("183855.65"),
-        seguros_mensual=Decimal("21134"),  # Vida + Incendio + Terremoto
+        tasa_seguro_vida=Decimal("0.0006"),
+        valor_seguro_incendio_fijo=Decimal("21134"),
         sistema_amortizacion="UVR"
     )
     

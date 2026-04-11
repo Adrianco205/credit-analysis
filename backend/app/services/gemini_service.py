@@ -211,9 +211,9 @@ No lo recalcules ni lo derives de otros campos si está explícito en el documen
 - plazo_total_meses: Plazo total pactado en meses
 
 ### Cuotas
-- cuotas_pactadas: Total de cuotas pactadas
-- cuotas_pagadas: Busca "Nro. cuota a cancelar" o "Número de cuota". **IMPORTANTE**: Si el extracto dice "Nro. cuota a cancelar: X", ASUME que el número de cuotas pagadas (o transcurridas para cálculo) es X (ej: si dice 036, pon 36).
-- cuotas_pendientes: Cuotas por pagar (cuotas_pactadas - cuotas_pagadas)
+- cuotas_pactadas: Total de cuotas pactadas (ej: 180, 240, 360)
+- cuotas_pagadas: Busca "Nro. cuota a cancelar" o "Número de cuota". **IMPORTANTE**: Si el extracto dice "Nro. cuota a cancelar: X", ASUME que ese valor X es el número de cuotas transcurridas para el cálculo (ej: si dice 036, pon 36).
+- cuotas_pendientes: Cuotas restantes por pagar. Busca frases como "Plazo Restante" o calcúlalo estrictamente como (cuotas_pactadas - cuotas_pagadas). EJEMPLO: si pactadas=360 y cuota a cancelar=10, pon 350.
 - cuotas_vencidas: Cuotas en mora (si aplica)
 
 ### Tasas de Interés (como PORCENTAJE, ej: 9.53 para 9.53%)

@@ -331,8 +331,16 @@ class ApiClient {
     return response.data;
   }
 
-  public async generateProjections(analysisId: string, opciones: ProjectionRequestOption[]): Promise<ProjectionResponse[]> {
-    const response = await this.client.post<ProjectionResponse[]>(`/analyses/${analysisId}/projections`, { opciones });
+  public async generateProjections(
+    analysisId: string,
+    opciones: ProjectionRequestOption[],
+    ipcProyectado?: number
+  ): Promise<ProjectionResponse[]> {
+    const payload: { opciones: ProjectionRequestOption[]; ipc_proyectado?: number } = { opciones };
+    if (typeof ipcProyectado === 'number' && Number.isFinite(ipcProyectado) && ipcProyectado > 0) {
+      payload.ipc_proyectado = ipcProyectado;
+    }
+    const response = await this.client.post<ProjectionResponse[]>(`/analyses/${analysisId}/projections`, payload);
     return response.data;
   }
 

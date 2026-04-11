@@ -228,6 +228,12 @@ class AdminGenerateProjectionsRequest(BaseModel):
         gt=0,
         description="Valor UVR manual a usar en proyecciones cuando uvr_mode='manual'"
     )
+    ipc_proyectado: Optional[float] = Field(
+        default=None,
+        gt=0,
+        le=100,
+        description="IPC anual proyectado en porcentaje comercial (ej: 2.2, 3.5, 5.0)",
+    )
 
     @model_validator(mode="after")
     def validate_uvr_mode(self):
@@ -1152,12 +1158,16 @@ def calculate_projections_admin(
             analisis.ingresos_mensuales = request.ingresos_override
             repo.save(analisis)
     
-    result = service.generate_projections(
-        analisis_id=analysis_id,
-        opciones=opciones,
-        usuario_id=None,  # Admin puede calcular sin verificar usuario
-        valor_uvr_para_calculo=request.uvr_manual_value if request.uvr_mode == "manual" else None,
-    )
+    service_args = {
+        "analisis_id": analysis_id,
+        "opciones": opciones,
+        "usuario_id": None,  # Admin puede calcular sin verificar usuario
+        "valor_uvr_para_calculo": request.uvr_manual_value if request.uvr_mode == "manual" else None,
+    }
+    if request.ipc_proyectado is not None:
+        service_args["ipc_proyectado"] = request.ipc_proyectado
+
+    result = service.generate_projections(**service_args)
     
     if not result.success:
         raise HTTPException(status_code=400, detail=result.error_message)

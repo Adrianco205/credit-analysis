@@ -214,6 +214,7 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
   const [adminOptionValue, setAdminOptionValue] = useState('');
   const [uvrMode, setUvrMode] = useState<'extracto' | 'manual'>('extracto');
   const [uvrManualValue, setUvrManualValue] = useState('');
+  const [customIpcValue, setCustomIpcValue] = useState('2.2');
 
   const clientOptions = useMemo(() => {
     const raw = detail?.opciones_abono_preferidas || [];
@@ -231,6 +232,9 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
     if (isUvrCredit && uvrMode === 'manual' && parsePositiveDecimal(uvrManualValue) <= 0) {
       return false;
     }
+    if (isUvrCredit && parsePositiveDecimal(customIpcValue) <= 0) {
+      return false;
+    }
     if (!adminOptionEnabled) return true;
     return Number(cleanDigitsInput(adminOptionValue)) > 0;
   }, [
@@ -240,6 +244,7 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
     detail?.sistema_amortizacion,
     uvrMode,
     uvrManualValue,
+    customIpcValue,
   ]);
 
   const loadDetail = useCallback(async () => {
@@ -261,6 +266,13 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
 
   const handleCalculate = async () => {
     if (!detail) return;
+    const isUvrCredit = (detail.sistema_amortizacion || '').toLowerCase().includes('uvr');
+
+    if (isUvrCredit && parsePositiveDecimal(customIpcValue) <= 0) {
+      setError('Debes ingresar un IPC proyectado válido (ej. 2.2, 3.5 o 5.0).');
+      return;
+    }
+
     if (!canCalculate) {
       setError('Las 3 opciones del cliente deben ser mayores a cero.');
       return;
@@ -284,12 +296,12 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
     }
 
     try {
-      const isUvrCredit = (detail.sistema_amortizacion || '').toLowerCase().includes('uvr');
       const response = await apiClient.calculateAdminProjections(analysisId, {
         opciones,
         uvr_mode: isUvrCredit ? uvrMode : undefined,
         uvr_manual_value:
           isUvrCredit && uvrMode === 'manual' ? parsePositiveDecimal(uvrManualValue) : undefined,
+        ipc_proyectado: isUvrCredit ? parsePositiveDecimal(customIpcValue) : undefined,
       });
       if (Array.isArray(response)) {
         setProposal(buildLegacyProposal(detail, response));
@@ -497,6 +509,24 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
                   />
                 </div>
               )}
+
+              <div className="space-y-3 border-t border-[var(--gray-200)] pt-4">
+                <div className="max-w-sm space-y-2">
+                  <Input
+                    label="IPC proyectado (%)"
+                    inputMode="decimal"
+                    value={customIpcValue}
+                    onChange={(event) => setCustomIpcValue(cleanDecimalInput(event.target.value))}
+                    placeholder="Ej. 2.2"
+                  />
+                  <p className="text-xs text-gray-600">
+                    Selecciona siempre el IPC comercial para la proyección UVR.
+                  </p>
+                  <p className="text-xs text-gray-600">
+                    💡 Sugerencias de mercado: Suave/Bancos (2.2%) | Medio/Meta Banco de la República (3.5%) | Alto (5.0%)
+                  </p>
+                </div>
+              </div>
             </div>
           )}
 

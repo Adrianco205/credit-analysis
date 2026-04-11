@@ -559,6 +559,7 @@ export interface AdminCalculateProjectionsRequest {
   ingresos_override?: number;
   uvr_mode?: 'extracto' | 'manual';
   uvr_manual_value?: number;
+  ipc_proyectado?: number;
 }
 
 export interface AdminProjectionResponse {
