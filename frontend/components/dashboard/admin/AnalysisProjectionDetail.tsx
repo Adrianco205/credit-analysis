@@ -679,7 +679,7 @@ function InstitutionalOpportunitiesTable({
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="Total estimado a pagar al banco\n(incluye seguros proyectados)"
+        label="Total estimado a pagar al banco (aprox.)"
         leftValue={formatCop(proposal.limites_actuales.costo_total_proyectado_banco || proposal.limites_actuales.costo_total_proyectado)}
         options={opciones}
         getOptionValue={(opcion) => formatCop(opcion.costo_total_proyectado_banco || opcion.costo_total_proyectado)}

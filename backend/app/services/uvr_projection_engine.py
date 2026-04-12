@@ -39,6 +39,9 @@ class UvrProjectionInput:
     seguro_mensual: Decimal = Decimal("0")
     cuota_uvr_actual: Decimal | None = None
     frech_meses_restantes: int | None = None
+    tasa_seguro_vida: Decimal = Decimal("0")
+    valor_seguro_incendio_fijo: Decimal = Decimal("0")
+    cargos_no_amortizables_mensuales: Decimal = Decimal("0")
     max_meses_simulacion: int = DEFAULT_MAX_MESES
 
 
@@ -107,6 +110,147 @@ def inflacion_anual_a_mensual_lineal(inflacion_anual: Decimal) -> Decimal:
     return (inflacion_normalizada / Decimal("12")).quantize(PRECISION_RATE)
 
 
+def _simulate_uvr_baseline_realistic(data: UvrProjectionInput) -> UvrScenarioResult:
+    if data.saldo_inicial <= 0:
+        raise ValueError("saldo_inicial debe ser mayor a cero")
+    if data.uvr_actual <= 0:
+        raise ValueError("uvr_actual debe ser mayor a cero")
+        
+    tasa_mensual = tasa_ea_a_mensual(data.tasa_efectiva_anual)
+    inflacion_mensual = inflacion_anual_a_mensual_lineal(data.inflacion_anual_estimada)
+    
+    frech_meses_restantes = data.frech_meses_restantes if data.frech_meses_restantes is not None else DEFAULT_FRECH_MAX_MESES
+    try:
+        frech_meses_restantes = max(0, int(frech_meses_restantes))
+    except (TypeError, ValueError):
+        frech_meses_restantes = DEFAULT_FRECH_MAX_MESES
+
+    saldo_uvr = (data.saldo_inicial / data.uvr_actual)
+    uvr_mes = data.uvr_actual
+
+    # Cuota bruta del banco congelada en UVR (Solo Deuda)
+    # data.cuota_actual es el pago cliente inicial (sin frech).
+    # si hay cuota_uvr_actual explicita (deuda), la usamos.
+    if data.cuota_uvr_actual is not None and data.cuota_uvr_actual > 0:
+        cuota_fija_deuda_uvr = data.cuota_uvr_actual
+    else:
+        # Calcular cuota original de deuda restando seguros
+        cuota_bruta_inicial_pesos = data.cuota_actual + data.subsidio_frech
+        seguros_inicial = (data.saldo_inicial * data.tasa_seguro_vida) + data.valor_seguro_incendio_fijo + data.cargos_no_amortizables_mensuales
+        cuota_fija_deuda_pesos = cuota_bruta_inicial_pesos - seguros_inicial
+        if cuota_fija_deuda_pesos <= 0:
+            cuota_fija_deuda_pesos = cuota_bruta_inicial_pesos # Fallback si los seguros son mayores a la cuota
+        cuota_fija_deuda_uvr = cuota_fija_deuda_pesos / data.uvr_actual
+
+    tasa_seguro_vida_actual = data.tasa_seguro_vida
+    valor_incendio_actual = data.valor_seguro_incendio_fijo
+    
+    tabla: List[UvrMonthlyRow] = []
+    total_intereses = Decimal("0")
+    total_pagado_cliente = Decimal("0")
+    total_pagado_banco = Decimal("0")
+    total_capital = Decimal("0")
+    mes_inicio_amortizacion_significativa: int | None = None
+
+    mes = 1
+    # For baseline, we strictly simulate the exact remaining term (plazo_meses) to match bank projections.
+    max_meses = min(data.plazo_meses, data.max_meses_simulacion)
+    while mes <= max_meses:
+        # 1. Crecimiento Orgánico del UVR
+        uvr_mes = (uvr_mes * (Decimal("1") + inflacion_mensual)).quantize(PRECISION_RATE)
+        
+        # 2. Indexación y Saldo en Pesos
+        saldo_inicial_pesos = _quantize_money(saldo_uvr * uvr_mes)
+        
+        inflacion_normalizada = data.inflacion_anual_estimada / Decimal("100") if data.inflacion_anual_estimada > 1 else data.inflacion_anual_estimada
+        
+        # Seguros escalonados
+        if mes > 1 and (mes - 1) % 12 == 0:
+            valor_incendio_actual = valor_incendio_actual * (Decimal("1") + inflacion_normalizada)
+        if mes > 1 and (mes - 1) % 60 == 0:
+            tasa_seguro_vida_actual = tasa_seguro_vida_actual * Decimal("1.20")
+            
+        seguro_vida_mes = saldo_inicial_pesos * tasa_seguro_vida_actual
+        seguro_mes_total = _quantize_money(seguro_vida_mes + valor_incendio_actual)
+        cargos_no_amortizables_mes = data.cargos_no_amortizables_mensuales * Decimal(str((1 + float(inflacion_normalizada)) ** ( (mes-1) // 12 )))
+        seguros_y_cargos_mes = _quantize_money(seguro_mes_total + cargos_no_amortizables_mes)
+
+        # Intereses corrientes del mes
+        interes_mes = _quantize_money(saldo_inicial_pesos * tasa_mensual)
+
+        # 3. Cuota constante en UVR (solo deuda), creciente en pesos
+        cuota_deuda_pesos = _quantize_money(cuota_fija_deuda_uvr * uvr_mes)
+        pago_banco_bruto_pesos = _quantize_money(cuota_deuda_pesos + seguros_y_cargos_mes)
+
+        # 4. Doble Flujo de Caja (Subsidio FRECH)
+        subsidio_frech_mes = data.subsidio_frech if mes <= frech_meses_restantes else Decimal("0")
+        subsidio_frech_mes = _quantize_money(subsidio_frech_mes)
+        
+        pago_cliente_mes = _quantize_money(pago_banco_bruto_pesos - subsidio_frech_mes)
+        
+        capital_mes = _quantize_money(cuota_deuda_pesos - interes_mes)
+        
+        if capital_mes <= 0:
+            capital_mes = Decimal("0")
+            
+        # Ajuste ultima cuota
+        if capital_mes > saldo_inicial_pesos and mes == max_meses:
+            # Solo ajustar la ultima cuota si es el ultimo mes real, para evitar cortar la proyeccion antes
+            capital_mes = saldo_inicial_pesos
+            cuota_deuda_pesos = _quantize_money(capital_mes + interes_mes)
+            pago_banco_bruto_pesos = _quantize_money(cuota_deuda_pesos + seguros_y_cargos_mes)
+            pago_cliente_mes = _quantize_money(pago_banco_bruto_pesos - subsidio_frech_mes)
+        elif capital_mes > saldo_inicial_pesos:
+            # Si el componente de capital excede el saldo pero no estamos en el ultimo mes,
+            # forzar la simulacion a continuar segun plan original del banco (el saldo quedara en 0, no negativo).
+            capital_mes = saldo_inicial_pesos
+            # Seguimos cobrando la cuota proyectada para reflejar el limite bancario a plazo completo
+            
+        # Indexación inversa del capital para descontar del saldo UVR
+        capital_uvr = (capital_mes / uvr_mes) if uvr_mes > 0 else Decimal("0")
+        saldo_uvr = max(saldo_uvr - capital_uvr, Decimal("0"))
+        saldo_final_pesos = _quantize_money(max(saldo_inicial_pesos - capital_mes, Decimal("0")))
+
+        total_intereses += interes_mes
+        total_pagado_cliente += pago_cliente_mes
+        total_pagado_banco += pago_banco_bruto_pesos
+        total_capital += capital_mes
+
+        if mes_inicio_amortizacion_significativa is None and capital_mes >= interes_mes:
+            mes_inicio_amortizacion_significativa = mes
+
+        tabla.append(
+            UvrMonthlyRow(
+                mes=mes,
+                uvr_mes=uvr_mes,
+                saldo_inicial_pesos=saldo_inicial_pesos,
+                interes_mes=interes_mes,
+                capital_mes=capital_mes,
+                seguro_mes=seguros_y_cargos_mes,
+                subsidio_frech_mes=subsidio_frech_mes,
+                pago_cliente_mes=pago_cliente_mes,
+                pago_banco_mes=pago_banco_bruto_pesos,
+                saldo_final_pesos=saldo_final_pesos,
+            )
+        )
+        mes += 1
+
+    saldo_final = _quantize_money(saldo_uvr * uvr_mes)
+    terminado = saldo_final <= EPSILON_BALANCE
+
+    return UvrScenarioResult(
+        meses_totales=len(tabla),
+        total_pagado_cliente=_quantize_money(total_pagado_cliente),
+        total_pagado_banco=_quantize_money(total_pagado_banco),
+        intereses_totales=_quantize_money(total_intereses),
+        capital_total_amortizado=_quantize_money(total_capital),
+        saldo_final_pesos=_quantize_money(max(saldo_final, Decimal("0"))),
+        mes_inicio_amortizacion_significativa=mes_inicio_amortizacion_significativa,
+        terminado=terminado,
+        tabla=tabla,
+    )
+
+
 def simulate_uvr_scenario(
     data: UvrProjectionInput,
     abono_adicional_override: Decimal | None = None,
@@ -137,6 +281,9 @@ def simulate_uvr_scenario(
     abono_adicional = data.abono_adicional if abono_adicional_override is None else abono_adicional_override
     if abono_adicional < 0:
         raise ValueError("abono_adicional no puede ser negativo")
+
+    if abono_adicional == Decimal("0"):
+        return _simulate_uvr_baseline_realistic(data)
 
     tasa_mensual = tasa_ea_a_mensual(data.tasa_efectiva_anual)
     tasa_mensual_subsidiada = (
