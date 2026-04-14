@@ -10,6 +10,7 @@ passlib[bcrypt]==1.7.4
 bcrypt==4.0.1  # <-- ES VITAL QUE SEA ESTA VERSIÓN
 python-multipart==0.0.9
 email-validator==2.2.0
+google-cloud-storage>=2.14.0
 apscheduler==3.10.4
 pypdf[crypto]==6.6.2  # Para manejo completo de PDFs (lectura, desencriptación, escritura)
 reportlab==4.2.5  # Generación de PDFs de propuestas

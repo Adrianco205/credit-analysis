@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "PerFinanzas"
     SMTP_FROM_EMAIL: str
 
+    GCS_BUCKET_NAME: str
+
     APP_PUBLIC_NAME: str = "PerFinanzas"
     FRONTEND_BASE_URL: str = "http://localhost:3000"
     
@@ -26,10 +28,10 @@ class Settings(BaseSettings):
     # INDICADORES FINANCIEROS
     # ---------------------------------------------------------------------------
     
-    # Banco de la República (opcional - para API autenticada)
+    # Banco de la Repï¿½blica (opcional - para API autenticada)
     BANREP_API_KEY: Optional[str] = None
     
-    # Google Gemini (para extracción de PDFs)
+    # Google Gemini (para extracciï¿½n de PDFs)
     GEMINI_API_KEY: Optional[str] = None
     GEMINI_MODEL: str = "gemini-3-flash-preview"
 
@@ -45,7 +47,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     
     # ---------------------------------------------------------------------------
-    # CONFIGURACIÓN DE NEGOCIO
+    # CONFIGURACIï¿½N DE NEGOCIO
     # ---------------------------------------------------------------------------
     
     # Honorarios
@@ -54,7 +56,7 @@ class Settings(BaseSettings):
     PORCENTAJE_IVA: float = 0.19  # 19% IVA Colombia
     
     # Ley 546/99 - Capacidad de pago
-    PORCENTAJE_INGRESO_MINIMO: float = 0.30  # Cuota máxima 30% del ingreso
+    PORCENTAJE_INGRESO_MINIMO: float = 0.30  # Cuota mï¿½xima 30% del ingreso
     
     # Cache de indicadores
     INDICADORES_CACHE_TTL_HORAS: int = 12
