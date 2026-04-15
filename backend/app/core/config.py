@@ -19,8 +19,6 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "PerFinanzas"
     SMTP_FROM_EMAIL: str
 
-    GCS_BUCKET_NAME: str
-
     APP_PUBLIC_NAME: str = "PerFinanzas"
     FRONTEND_BASE_URL: str = "http://localhost:3000"
     
@@ -40,11 +38,8 @@ class Settings(BaseSettings):
     UVR_ENGINE_V2_ENABLED: bool = False
     UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT: float = 0.06
     
-    # AWS S3 (para almacenamiento de documentos)
-    AWS_ACCESS_KEY_ID: Optional[str] = None
-    AWS_SECRET_ACCESS_KEY: Optional[str] = None
-    AWS_S3_BUCKET: str = "perfinanzas-documents"
-    AWS_REGION: str = "us-east-1"
+    # Google Cloud Storage (para almacenamiento de documentos)
+    GCS_BUCKET_NAME: str = "perfinanzas-documentos"
     
     # ---------------------------------------------------------------------------
     # CONFIGURACI�N DE NEGOCIO
@@ -60,6 +55,10 @@ class Settings(BaseSettings):
     
     # Cache de indicadores
     INDICADORES_CACHE_TTL_HORAS: int = 12
+
+    # Credenciales de Google Cloud
+    GOOGLE_APPLICATION_CREDENTIALS: str | None = None
+    GOOGLE_CLOUD_PROJECT: str | None = None
 
     class Config:
         env_file = ".env"

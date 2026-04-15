@@ -37,7 +37,7 @@ from app.services.gemini_service import (
     get_gemini_service,
     map_extraction_to_analysis
 )
-from app.services.pdf_service import LocalStorageService, get_storage_service
+from app.services.pdf_service import GCSService, get_storage_service
 from app.services.pdf_service import PdfService
 from app.services.calc_service import (
     CalculadoraFinanciera, 
@@ -180,7 +180,7 @@ class AnalysisService:
         self,
         db: Session,
         gemini_service: GeminiService | None = None,
-        storage_service: LocalStorageService | None = None,
+        storage_service: GCSService | None = None,
         calculadora: CalculadoraFinanciera | None = None
     ):
         self.db = db

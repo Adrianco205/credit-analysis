@@ -1,13 +1,13 @@
 """
-PDF Service - Manejo de archivos PDF para PerFinanzas
-=====================================================
+PDF Service - Manejo de archivos PDF para PerFinanzas (GCS Integration)
+=======================================================================
 
 Funcionalidades:
 - Detección de encriptación (contraseña)
-- Desencriptación con pypdf (sucesor de PyPDF2)
-- Guardado de PDF sin contraseña
-- Extracción básica de texto
-- Validación de contenido de crédito hipotecario
+- Desencriptación con pypdf
+- Extracción básica de texto y validación de contenido
+- Almacenamiento seguro en Google Cloud Storage (Bucket: perfinanzas-documentos)
+- Generación de URLs firmadas para descarga
 - Cálculo de checksum SHA-256
 """
 
@@ -15,15 +15,16 @@ import hashlib
 import io
 import logging
 import os
-import tempfile
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
-from pathlib import Path
-from typing import BinaryIO, Optional, Tuple
+from typing import BinaryIO, Optional, Tuple, List
 
+from google.cloud import storage
 from pypdf import PdfReader, PdfWriter
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +79,7 @@ class PDFSaveResult:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SERVICIO PRINCIPAL
+# SERVICIO DE PROCESAMIENTO PDF
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class PdfService:
@@ -95,15 +96,7 @@ class PdfService:
     
     @staticmethod
     def is_pdf_encrypted(file_stream: BinaryIO) -> bool:
-        """
-        Detecta si un PDF está protegido con contraseña usando pypdf.
-        
-        Args:
-            file_stream: Stream del archivo PDF
-            
-        Returns:
-            bool: True si el PDF está encriptado, False en caso contrario
-        """
+        """Detecta si un PDF está protegido con contraseña."""
         try:
             file_stream.seek(0)
             content = file_stream.read()
@@ -123,17 +116,7 @@ class PdfService:
         check_keywords: bool = True,
         max_size_mb: Optional[float] = None
     ) -> PDFValidationResult:
-        """
-        Valida un PDF completamente: formato, tamaño, encriptación, contenido.
-        
-        Args:
-            file_stream: Stream del archivo PDF
-            check_keywords: Si validar keywords de crédito hipotecario
-            max_size_mb: Tamaño máximo en MB (usa default si None)
-            
-        Returns:
-            PDFValidationResult con todos los detalles
-        """
+        """Valida un PDF completamente: formato, tamaño, encriptación, contenido."""
         max_size = (max_size_mb or PdfService.MAX_FILE_SIZE_MB) * 1024 * 1024
         
         try:
@@ -229,23 +212,12 @@ class PdfService:
         file_stream: BinaryIO, 
         password: str
     ) -> PDFDecryptionResult:
-        """
-        Desencripta un PDF y retorna el contenido sin contraseña.
-        Usa pypdf con soporte de criptografía.
-        
-        Args:
-            file_stream: Stream del archivo PDF encriptado
-            password: Contraseña para desencriptar
-            
-        Returns:
-            PDFDecryptionResult con el contenido desencriptado si exitoso
-        """
+        """Desencripta un PDF y retorna el contenido sin contraseña."""
         try:
             file_stream.seek(0)
             content = file_stream.read()
             file_stream.seek(0)
             
-            # Leer PDF encriptado
             reader = PdfReader(io.BytesIO(content))
             
             if not reader.is_encrypted:
@@ -257,10 +229,8 @@ class PdfService:
                     page_count=len(reader.pages)
                 )
             
-            # Intentar desencriptar
             decrypt_result = reader.decrypt(password)
             
-            # decrypt() retorna 0 si falla, 1 si es user password, 2 si es owner password
             if decrypt_result == 0:
                 return PDFDecryptionResult(
                     success=False,
@@ -268,10 +238,8 @@ class PdfService:
                     message="Contraseña incorrecta"
                 )
             
-            # Verificar que se puede leer
             try:
                 page_count = len(reader.pages)
-                # Intentar acceder a una página para confirmar
                 _ = reader.pages[0]
             except Exception as e:
                 return PDFDecryptionResult(
@@ -280,12 +248,10 @@ class PdfService:
                     message=f"PDF desencriptado pero corrupto: {str(e)}"
                 )
             
-            # Crear PDF sin encriptación
             writer = PdfWriter()
             for page in reader.pages:
                 writer.add_page(page)
             
-            # Guardar a buffer
             output_buffer = io.BytesIO()
             writer.write(output_buffer)
             output_buffer.seek(0)
@@ -310,47 +276,24 @@ class PdfService:
     
     @staticmethod
     def calculate_checksum(file_stream: BinaryIO) -> str:
-        """
-        Calcula el hash SHA-256 del archivo para verificar integridad.
-        
-        Args:
-            file_stream: Stream del archivo
-            
-        Returns:
-            str: Hash SHA-256 hexadecimal
-        """
+        """Calcula el hash SHA-256 del archivo para verificar integridad."""
         file_stream.seek(0)
         sha256_hash = hashlib.sha256()
-        
-        # Leer en chunks para archivos grandes
         for chunk in iter(lambda: file_stream.read(8192), b""):
             sha256_hash.update(chunk)
-        
         file_stream.seek(0)
         return sha256_hash.hexdigest()
     
     @staticmethod
     def extract_text_basic(file_stream: BinaryIO, password: str | None = None) -> str:
-        """
-        Extrae texto básico del PDF usando pypdf.
-        Útil para validación rápida antes de enviar a Gemini.
-        
-        Args:
-            file_stream: Stream del archivo PDF
-            password: Contraseña si el PDF está protegido
-            
-        Returns:
-            str: Texto extraído del PDF
-        """
+        """Extrae texto básico del PDF. Útil para validación antes de Gemini."""
         try:
             file_stream.seek(0)
             reader = PdfReader(file_stream)
             
-            # Si está encriptado, intentar desencriptar
             if reader.is_encrypted and password:
                 reader.decrypt(password)
             
-            # Extraer texto de todas las páginas
             text_parts = []
             for page in reader.pages:
                 text = page.extract_text()
@@ -367,16 +310,7 @@ class PdfService:
     
     @staticmethod
     def validate_credit_analysis_keywords(text: str) -> Tuple[bool, float]:
-        """
-        Valida que el texto contenga palabras clave de un análisis de crédito.
-        
-        Args:
-            text: Texto extraído del PDF
-            
-        Returns:
-            Tuple[bool, float]: (es_válido, score_confianza)
-        """
-        # Palabras clave que debe contener un análisis de crédito
+        """Valida que el texto contenga palabras clave de un análisis de crédito."""
         keywords = [
             "crédito", "credito", "préstamo", "prestamo", "cuota",
             "capital", "interés", "interes", "saldo", "desembolso",
@@ -386,209 +320,120 @@ class PdfService:
         text_lower = text.lower()
         matches = sum(1 for keyword in keywords if keyword in text_lower)
         
-        # Score de confianza basado en matches
         confidence_score = min(matches / len(keywords), 1.0)
-        
-        # Se considera válido si tiene al menos 30% de las keywords
         is_valid = confidence_score >= 0.3
         
         return is_valid, confidence_score
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SERVICIO DE ALMACENAMIENTO LOCAL
+# SERVICIO DE ALMACENAMIENTO GCS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class LocalStorageService:
+class GCSService:
     """
-    Servicio para almacenar PDFs localmente.
-    Sustituye temporalmente a S3 durante desarrollo.
-    
-    Estructura de carpetas:
-    - uploads/
-      - pdfs/
-        - {user_id}/
-          - {document_id}.pdf
+    Servicio para almacenar y gestionar PDFs en Google Cloud Storage.
     """
     
-    def __init__(self, base_path: Optional[str] = None):
-        """
-        Inicializa el servicio de almacenamiento local.
-        
-        Args:
-            base_path: Ruta base para almacenamiento. 
-                      Por defecto usa 'uploads' en el directorio del proyecto.
-        """
-        if base_path:
-            self.base_path = Path(base_path)
-        else:
-            # Usar directorio 'uploads' relativo al backend
-            self.base_path = Path(__file__).parent.parent.parent / "uploads"
-        
-        self.pdfs_path = self.base_path / "pdfs"
-        
-        # Crear directorios si no existen
-        self._ensure_directories()
-    
-    def _ensure_directories(self) -> None:
-        """Crea la estructura de directorios necesaria."""
-        self.pdfs_path.mkdir(parents=True, exist_ok=True)
-        
-        # Crear .gitignore para no subir PDFs al repo
-        gitignore_path = self.base_path / ".gitignore"
-        if not gitignore_path.exists():
-            gitignore_path.write_text("# Ignorar todos los archivos subidos\n*\n!.gitignore\n")
-    
-    def _get_user_folder(self, user_id: str) -> Path:
-        """Obtiene o crea la carpeta del usuario."""
-        user_folder = self.pdfs_path / user_id
-        user_folder.mkdir(parents=True, exist_ok=True)
-        return user_folder
-    
+    def __init__(self):
+        # Asume automáticamente la identidad de la VM que configuramos
+        self.client = storage.Client()
+        self.bucket_name = settings.GCS_BUCKET_NAME
+        self.bucket = self.client.bucket(self.bucket_name)
+
     def save_pdf(
-        self,
-        content: bytes,
-        user_id: str,
-        original_filename: str,
+        self, 
+        content: bytes, 
+        user_id: str, 
+        original_filename: str, 
         document_id: Optional[str] = None
     ) -> PDFSaveResult:
-        """
-        Guarda un PDF en el sistema de archivos local.
-        
-        Args:
-            content: Contenido del PDF en bytes
-            user_id: ID del usuario (para organización)
-            original_filename: Nombre original del archivo
-            document_id: ID del documento (genera uno si no se proporciona)
-            
-        Returns:
-            PDFSaveResult con la ruta del archivo guardado
-        """
+        """Guarda el archivo en GCS y retorna la metadata requerida."""
         try:
             # Generar ID si no se proporcionó
             if not document_id:
                 document_id = str(uuid.uuid4())
             
-            # Crear carpeta del usuario
-            user_folder = self._get_user_folder(user_id)
+            # Generar ruta única: usuarios/{user_id}/{document_id}.pdf
+            file_extension = original_filename.split('.')[-1] if '.' in original_filename else 'pdf'
+            blob_name = f"usuarios/{user_id}/{document_id}.{file_extension}"
             
-            # Nombre del archivo: {document_id}_{original_name_sanitized}.pdf
-            safe_name = self._sanitize_filename(original_filename)
-            filename = f"{document_id}_{safe_name}"
-            if not filename.endswith('.pdf'):
-                filename += '.pdf'
+            blob = self.bucket.blob(blob_name)
+            blob.upload_from_string(content, content_type="application/pdf")
             
-            file_path = user_folder / filename
-            
-            # Guardar archivo
-            file_path.write_bytes(content)
-            
-            # Calcular checksum del archivo guardado
             checksum = hashlib.sha256(content).hexdigest()
-            
-            # Ruta relativa para almacenar en BD
-            relative_path = f"pdfs/{user_id}/{filename}"
-            
-            logger.info(f"PDF guardado exitosamente: {relative_path}")
+            logger.info(f"PDF guardado exitosamente en GCS: {blob_name}")
             
             return PDFSaveResult(
                 success=True,
-                message="PDF guardado exitosamente",
-                file_path=relative_path,
+                message='Upload a GCS exitoso',
+                file_path=blob_name,  # Esto se guarda como s3_key en tu DB
                 file_size_bytes=len(content),
                 checksum=checksum
             )
-            
         except Exception as e:
-            logger.error(f"Error al guardar PDF: {str(e)}")
+            logger.error(f"Error al guardar PDF en GCS: {str(e)}")
             return PDFSaveResult(
                 success=False,
                 message=f"Error al guardar el archivo: {str(e)}"
             )
-    
-    def get_pdf(self, relative_path: str) -> Optional[bytes]:
-        """
-        Obtiene el contenido de un PDF almacenado.
-        
-        Args:
-            relative_path: Ruta relativa del archivo (como se guardó en BD)
-            
-        Returns:
-            Contenido del PDF en bytes o None si no existe
-        """
+
+    def generate_presigned_url(self, blob_name: str, expiration_minutes: int = 15) -> Optional[str]:
+        """Genera una URL temporal para descarga directa."""
         try:
-            file_path = self.base_path / relative_path
-            
-            if not file_path.exists():
-                logger.warning(f"PDF no encontrado: {relative_path}")
+            blob = self.bucket.blob(blob_name)
+            if not blob.exists():
                 return None
-            
-            return file_path.read_bytes()
-            
+                
+            url = blob.generate_signed_url(
+                version="v4",
+                expiration=timedelta(minutes=expiration_minutes),
+                method="GET"
+            )
+            return url
         except Exception as e:
-            logger.error(f"Error al leer PDF: {str(e)}")
+            logger.error(f"Error al generar URL firmada: {str(e)}")
             return None
-    
-    def delete_pdf(self, relative_path: str) -> bool:
-        """
-        Elimina un PDF almacenado.
-        
-        Args:
-            relative_path: Ruta relativa del archivo
-            
-        Returns:
-            True si se eliminó exitosamente
-        """
+
+    def get_pdf(self, blob_name: str) -> Optional[bytes]:
+        """Descarga el PDF a memoria (Útil para enviarlo a Gemini)."""
         try:
-            file_path = self.base_path / relative_path
-            
-            if file_path.exists():
-                file_path.unlink()
-                logger.info(f"PDF eliminado: {relative_path}")
-                return True
-            
-            return False
-            
+            blob = self.bucket.blob(blob_name)
+            if not blob.exists():
+                logger.warning(f"PDF no encontrado en GCS: {blob_name}")
+                return None
+            return blob.download_as_bytes()
         except Exception as e:
-            logger.error(f"Error al eliminar PDF: {str(e)}")
+            logger.error(f"Error al leer PDF de GCS: {str(e)}")
+            return None
+            
+    def delete_pdf(self, blob_name: str) -> bool:
+        """Elimina el archivo del bucket."""
+        try:
+            blob = self.bucket.blob(blob_name)
+            if blob.exists():
+                blob.delete()
+                logger.info(f"PDF eliminado de GCS: {blob_name}")
+                return True
             return False
-    
-    def pdf_exists(self, relative_path: str) -> bool:
-        """Verifica si un PDF existe."""
-        file_path = self.base_path / relative_path
-        return file_path.exists()
-    
-    def get_absolute_path(self, relative_path: str) -> Optional[Path]:
-        """Obtiene la ruta absoluta de un PDF."""
-        file_path = self.base_path / relative_path
-        if file_path.exists():
-            return file_path
-        return None
-    
-    def list_user_pdfs(self, user_id: str) -> list[str]:
-        """Lista todos los PDFs de un usuario."""
-        user_folder = self.pdfs_path / user_id
-        if not user_folder.exists():
+        except Exception as e:
+            logger.error(f"Error al eliminar PDF de GCS: {str(e)}")
+            return False
+
+    def pdf_exists(self, blob_name: str) -> bool:
+        """Verifica si un PDF existe en GCS."""
+        blob = self.bucket.blob(blob_name)
+        return blob.exists()
+        
+    def list_user_pdfs(self, user_id: str) -> List[str]:
+        """Lista todos los PDFs de un usuario en GCS."""
+        try:
+            prefix = f"usuarios/{user_id}/"
+            blobs = self.bucket.list_blobs(prefix=prefix)
+            return [blob.name for blob in blobs if blob.name.endswith('.pdf')]
+        except Exception as e:
+            logger.error(f"Error al listar PDFs de GCS: {str(e)}")
             return []
-        
-        return [
-            f"pdfs/{user_id}/{f.name}" 
-            for f in user_folder.glob("*.pdf")
-        ]
-    
-    @staticmethod
-    def _sanitize_filename(filename: str) -> str:
-        """Limpia el nombre de archivo para uso seguro."""
-        # Remover caracteres peligrosos
-        safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.")
-        sanitized = "".join(c if c in safe_chars else "_" for c in filename)
-        
-        # Limitar longitud
-        if len(sanitized) > 100:
-            name, ext = os.path.splitext(sanitized)
-            sanitized = name[:95] + ext
-        
-        return sanitized or "document.pdf"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -600,23 +445,13 @@ def process_pdf_upload(
     original_filename: str,
     user_id: str,
     password: Optional[str] = None,
-    storage_service: Optional[LocalStorageService] = None
+    storage_service: Optional[GCSService] = None
 ) -> Tuple[PDFValidationResult, Optional[PDFSaveResult]]:
     """
-    Procesa una subida de PDF completa: valida, desencripta si necesario, y guarda.
-    
-    Args:
-        file_content: Contenido del archivo
-        original_filename: Nombre original
-        user_id: ID del usuario
-        password: Contraseña si el PDF está encriptado
-        storage_service: Servicio de almacenamiento (crea uno por defecto)
-        
-    Returns:
-        Tuple de (resultado_validacion, resultado_guardado)
+    Procesa una subida de PDF completa: valida, desencripta si necesario, y guarda en GCS.
     """
     pdf_service = PdfService()
-    storage = storage_service or LocalStorageService()
+    storage = storage_service or get_storage_service()
     
     file_stream = io.BytesIO(file_content)
     
@@ -638,20 +473,18 @@ def process_pdf_upload(
         decrypt_result = pdf_service.decrypt_pdf(file_stream, password)
         
         if not decrypt_result.success:
-            # Actualizar resultado de validación con error de contraseña
             validation_result.is_valid = False
             validation_result.status = decrypt_result.status
             validation_result.message = decrypt_result.message
             return validation_result, None
         
-        # Usar contenido desencriptado
         content_to_save = decrypt_result.decrypted_content
         validation_result.status = PDFStatus.DECRYPTED
         validation_result.message = "PDF desencriptado y guardado sin contraseña"
         validation_result.page_count = decrypt_result.page_count
         validation_result.is_encrypted = False
     
-    # Paso 3: Guardar PDF
+    # Paso 3: Guardar PDF en Google Cloud Storage
     save_result = storage.save_pdf(
         content=content_to_save,
         user_id=user_id,
@@ -665,13 +498,11 @@ def process_pdf_upload(
 
 
 # Instancia global del servicio de almacenamiento
-_storage_service: Optional[LocalStorageService] = None
+_storage_service: Optional[GCSService] = None
 
-
-def get_storage_service() -> LocalStorageService:
-    """Obtiene la instancia global del servicio de almacenamiento."""
+def get_storage_service() -> GCSService:
+    """Obtiene la instancia global del servicio de almacenamiento GCS."""
     global _storage_service
     if _storage_service is None:
-        _storage_service = LocalStorageService()
+        _storage_service = GCSService()
     return _storage_service
-

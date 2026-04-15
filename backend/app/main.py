@@ -16,6 +16,8 @@ from app.core.exceptions import (
 )
 
 
+from app.core.config import settings
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- Al iniciar la aplicación ---
@@ -37,10 +39,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Configurar CORS
+# Configurar CORS restrictivo para producción basado en variables de entorno.
+# Solo habilita localhost cuando el frontend configurado también es local.
+origins = [settings.FRONTEND_BASE_URL]
+
+if "localhost" in settings.FRONTEND_BASE_URL or "127.0.0.1" in settings.FRONTEND_BASE_URL:
+    origins.extend(["http://localhost:3000", "http://127.0.0.1:3000"])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios permitidos
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

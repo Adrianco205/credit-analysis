@@ -7,11 +7,15 @@
 # ─────────────────────────────────────────────────────────────────────────────────
 .env
 .env.local
+.envanterior
+.env*
 .env.*.local
 .env.development
 .env.production
 *.env
 !.env.example
+backend/adc.json
+adc.json
 
 # ─────────────────────────────────────────────────────────────────────────────────
 # PYTHON
