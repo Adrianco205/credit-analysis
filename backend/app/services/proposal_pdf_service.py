@@ -505,7 +505,7 @@ class PropuestaPDFGenerator:
         elementos.append(Paragraph("💰 Detalle de Honorarios por Opción", self.styles['Seccion']))
         
         elementos.append(Paragraph(
-            """Los honorarios de PerFinanzas corresponden al 6% del total de intereses 
+            """Los honorarios de PerFinanzas corresponden al 5% del saldo del crédito
             que usted dejará de pagar al banco. Solo paga si obtiene un beneficio real.""",
             self.styles['TextoNormal']
         ))
@@ -519,7 +519,7 @@ class PropuestaPDFGenerator:
             data = [
                 ['Abono extra mensual:', f"${op.abono_extra_mensual:,.0f} COP"],
                 ['Intereses que dejará de pagar:', f"${op.intereses_ahorrados:,.0f} COP"],
-                ['Honorarios (6%):', f"${op.honorarios:,.0f} COP"],
+                ['Honorarios (5%):', f"${op.honorarios:,.0f} COP"],
                 ['IVA (19%):', f"${(op.honorarios_con_iva - op.honorarios):,.0f} COP"],
                 ['Total honorarios con IVA:', f"${op.honorarios_con_iva:,.0f} COP"],
             ]
@@ -559,7 +559,7 @@ class PropuestaPDFGenerator:
         - Estar al día con los pagos del crédito.<br/>
         - Firmar el contrato de servicios de PerFinanzas.<br/><br/>
         
-        <b>4. Honorarios:</b> Los honorarios de PerFinanzas corresponden al 6% del total de 
+        <b>4. Honorarios:</b> Los honorarios de PerFinanzas corresponden al 5% del saldo de capital
         intereses ahorrados, más IVA (19%). El pago se realiza una vez el banco apruebe 
         formalmente la modificación del crédito.<br/><br/>
         

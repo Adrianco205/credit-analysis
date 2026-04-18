@@ -46,7 +46,7 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     
     # Honorarios
-    PORCENTAJE_HONORARIOS: float = 0.06  # 6% del ahorro
+    PORCENTAJE_HONORARIOS: float = 0.05  # 5% del saldo del crédito
     TARIFA_MINIMA_HONORARIOS: float = 500000  # $500,000 COP
     PORCENTAJE_IVA: float = 0.19  # 19% IVA Colombia
     

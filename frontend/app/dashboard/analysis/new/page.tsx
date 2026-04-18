@@ -69,6 +69,7 @@ export default function CreditAnalysisUploadPage() {
     const [processing, setProcessing] = useState(false);
     const [analysisId, setAnalysisId] = useState<string | null>(null);
     const [summaryData, setSummaryData] = useState<AnalysisSummary | null>(null);
+    const [summaryLoadError, setSummaryLoadError] = useState('');
     const [monthlyDuplicateWarning, setMonthlyDuplicateWarning] = useState(false);
     const [showContactModal, setShowContactModal] = useState(false);
     const [showIdentityMismatchModal, setShowIdentityMismatchModal] = useState(false);
@@ -374,7 +375,24 @@ export default function CreditAnalysisUploadPage() {
             setPdfPasswordError('');
         }
 
+        const loadSummaryForAnalysis = async (targetAnalysisId: string) => {
+            try {
+                setSummaryLoadError('');
+                const summary = await apiClient.getAnalysisSummary(targetAnalysisId);
+                setSummaryData(summary);
+                return summary;
+            } catch (sumErr) {
+                console.warn("Could not fetch summary immediately:", sumErr);
+                setSummaryData(null);
+                setSummaryLoadError(getErrorMessage(sumErr));
+                return null;
+            }
+        };
+
         setUploading(true);
+        setSummaryData(null);
+        setSummaryLoadError('');
+        setAnalysisId(null);
         try {
             // 1. Upload Document
             const uploadRes = await apiClient.uploadDocument(
@@ -446,22 +464,18 @@ export default function CreditAnalysisUploadPage() {
             }
 
             // 4. Fetch Detail Summary
-            let fetchedSummary: AnalysisSummary | null = null;
-            try {
-                fetchedSummary = await apiClient.getAnalysisSummary(createdAnalysisId);
-            } catch (sumErr) {
-                console.warn("Could not fetch summary immediately:", sumErr);
-                // We proceed anyway, maybe show a "Generated" state without full summary or retry
-            }
+            const fetchedSummary = await loadSummaryForAnalysis(createdAnalysisId);
 
             await completeLoadingOverlay();
 
-            if (fetchedSummary) {
-                setSummaryData(fetchedSummary);
-            }
             setAnalysisId(createdAnalysisId);
             setStep(3);
-            toast.success("¡Análisis creado exitosamente!");
+
+            if (fetchedSummary) {
+                toast.success("¡Análisis creado exitosamente!");
+            } else {
+                toast.warning('El análisis se creó, pero no pudimos cargar el resumen todavía. Puedes reintentar desde esta pantalla.');
+            }
 
         } catch (err: unknown) {
             resetLoadingOverlay();
@@ -489,6 +503,25 @@ export default function CreditAnalysisUploadPage() {
             }
         } finally {
             setUploading(false);
+            setProcessing(false);
+        }
+    };
+
+    const handleRetrySummary = async () => {
+        if (!analysisId) return;
+
+        setProcessing(true);
+        try {
+            setSummaryLoadError('');
+            const summary = await apiClient.getAnalysisSummary(analysisId);
+            setSummaryData(summary);
+            toast.success('Resumen cargado correctamente.');
+        } catch (err) {
+            const message = getErrorMessage(err);
+            setSummaryData(null);
+            setSummaryLoadError(message);
+            toast.error(message);
+        } finally {
             setProcessing(false);
         }
     };
@@ -830,7 +863,7 @@ export default function CreditAnalysisUploadPage() {
                     </div>
                  </Card>
 
-                 {summaryData && (
+                 {summaryData ? (
                      <div className="space-y-4">
                          {summaryData.mortgage_summary?.sections?.map((section) => (
                             <Card key={section.key}>
@@ -871,6 +904,33 @@ export default function CreditAnalysisUploadPage() {
                              <span><strong>Fecha Extracto:</strong> {summaryData.fecha_extracto || 'N/A'}</span>
                          </div>
                      </div>
+                 ) : (
+                    <Card className="border-yellow-200 bg-yellow-50">
+                        <div className="p-4 space-y-3">
+                            <p className="text-sm text-yellow-900 font-medium">
+                                El análisis se completó, pero el resumen no está disponible temporalmente.
+                            </p>
+                            <p className="text-xs text-yellow-800">
+                                {summaryLoadError || 'Puedes reintentar en unos segundos o abrirlo desde el historial.'}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                                <Button
+                                    variant="secondary"
+                                    onClick={handleRetrySummary}
+                                    isLoading={processing}
+                                    disabled={processing}
+                                >
+                                    Reintentar cargar resumen
+                                </Button>
+                                <Link href={`/dashboard/analysis/${analysisId}/summary`}>
+                                    <Button variant="primary">Abrir resumen</Button>
+                                </Link>
+                                <Link href="/dashboard/historial">
+                                    <Button variant="ghost">Ir al historial</Button>
+                                </Link>
+                            </div>
+                        </div>
+                    </Card>
                  )}
 
                  </div>

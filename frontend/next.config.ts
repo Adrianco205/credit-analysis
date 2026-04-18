@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
-// Inside Docker: backend:8000 | Outside Docker: localhost:8001
-const BACKEND_URL = process.env.INTERNAL_API_URL || 'http://127.0.0.1:8001';
+// Inside Docker: backend:8000 | Outside Docker (desarrollo local): localhost:8001
+const BACKEND_URL =
+  process.env.INTERNAL_API_URL ||
+  (process.env.NODE_ENV === 'development' ? 'http://127.0.0.1:8001' : 'http://backend:8000');
 
 const nextConfig: NextConfig = {
   turbopack: {

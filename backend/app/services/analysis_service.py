@@ -1430,7 +1430,7 @@ class AnalysisService:
             if baseline_total_banco is None:
                 baseline_total_banco = comparacion.escenario_original.total_pagado_banco
             ahorro_intereses = (baseline_total_banco - costo_total_proyectado_banco).quantize(Decimal("0.01"))
-            honorarios = self.calc.calcular_honorarios(ahorro_intereses)
+            honorarios = self.calc.calcular_honorarios(datos_visible.saldo_capital)
             honorarios_con_iva = self.calc.calcular_honorarios_con_iva(honorarios)
             ingreso_minimo = self.calc.calcular_ingreso_minimo(nueva_cuota)
 

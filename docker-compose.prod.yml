@@ -1,7 +1,7 @@
 # docker-compose.prod.yml
 services:
   db:
-    image: postgres:16
+    image: us-central1-docker.pkg.dev/${GOOGLE_CLOUD_PROJECT}/perfinanzas-repo/db:latest
     container_name: credit_analysis_db
     restart: always
     environment:
@@ -11,7 +11,6 @@ services:
     # Eliminados los ports para no exponer la BD local de la VM hacia internet
     volumes:
       - credit_pgdata:/var/lib/postgresql/data
-      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d credit_analysis_db"]
       interval: 5s
@@ -27,7 +26,7 @@ services:
       db:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     # IMPORTANTE: Eliminados los volumes ./backend:/app para proteger el código fuente
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
 
@@ -36,7 +35,7 @@ services:
     container_name: credit_analysis_frontend
     restart: always
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       INTERNAL_API_URL: http://backend:8000
     depends_on:

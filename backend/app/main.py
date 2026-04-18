@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,10 +33,16 @@ async def lifespan(app: FastAPI):
     scheduler.shutdown()
 
 
+# Leer el entorno (por defecto 'production' para máxima seguridad)
+ENV = os.getenv("ENV", "production")
+
 app = FastAPI(
     title="PerFinanzas Credit Analysis API",
     description="API para análisis de créditos hipotecarios con IA",
     version="1.0.0",
+    docs_url=None if ENV == "production" else "/docs",
+    redoc_url=None if ENV == "production" else "/redoc",
+    openapi_url=None if ENV == "production" else "/openapi.json",
     lifespan=lifespan
 )
 

@@ -392,6 +392,12 @@ def _split_full_name(full_name: str) -> tuple[str, str | None, str | None]:
     return " ".join(parts[:-2]), parts[-2], parts[-1]
 
 
+def _normalize_identity_value(value: str | None) -> str:
+    if not value:
+        return ""
+    return value.replace(".", "").replace("-", "").replace(" ", "").strip()
+
+
 @router.post("/clients/upload-analysis", response_model=AdminCreateClientAnalysisResponse, status_code=status.HTTP_201_CREATED)
 async def upload_client_analysis_for_admin(
     customer_full_name: str = Form(..., min_length=3, max_length=200),
@@ -439,6 +445,23 @@ async def upload_client_analysis_for_admin(
             status_code=409,
             detail="La cédula y el correo pertenecen a clientes diferentes",
         )
+
+    if user_by_email:
+        stored_id = _normalize_identity_value(user_by_email.identificacion)
+        incoming_id = _normalize_identity_value(normalized_id)
+        if stored_id and incoming_id and stored_id != incoming_id:
+            raise HTTPException(
+                status_code=409,
+                detail="El correo ya está asociado a otra cédula",
+            )
+
+    if user_by_id:
+        stored_email = (user_by_id.email or "").strip().lower()
+        if stored_email and stored_email != normalized_email:
+            raise HTTPException(
+                status_code=409,
+                detail="La cédula ya está asociada a otro correo",
+            )
 
     customer_user = user_by_id or user_by_email
 
@@ -672,11 +695,33 @@ async def create_manual_projection_analysis(
         raise HTTPException(status_code=400, detail="El banco seleccionado no es válido")
 
     users_repo = UsersRepo(db)
-    customer_user = users_repo.get_by_email(normalized_email)
-    if customer_user is None:
-        existing_by_id = users_repo.get_by_identificacion(normalized_id)
-        if existing_by_id:
-            customer_user = existing_by_id
+    user_by_id = users_repo.get_by_identificacion(normalized_id)
+    user_by_email = users_repo.get_by_email(normalized_email)
+
+    if user_by_id and user_by_email and user_by_id.id != user_by_email.id:
+        raise HTTPException(
+            status_code=409,
+            detail="La cédula y el correo pertenecen a clientes diferentes",
+        )
+
+    if user_by_email:
+        stored_id = _normalize_identity_value(user_by_email.identificacion)
+        incoming_id = _normalize_identity_value(normalized_id)
+        if stored_id and incoming_id and stored_id != incoming_id:
+            raise HTTPException(
+                status_code=409,
+                detail="El correo ya está asociado a otra cédula",
+            )
+
+    if user_by_id:
+        stored_email = (user_by_id.email or "").strip().lower()
+        if stored_email and stored_email != normalized_email:
+            raise HTTPException(
+                status_code=409,
+                detail="La cédula ya está asociada a otro correo",
+            )
+
+    customer_user = user_by_id or user_by_email
 
     if customer_user is None:
         nombres, primer_apellido, segundo_apellido = _split_full_name(normalized_name)
@@ -694,16 +739,21 @@ async def create_manual_projection_analysis(
         db.add(customer_user)
         db.flush()
     else:
-        updated = False
-        if not customer_user.identificacion:
-            customer_user.identificacion = normalized_id
-            updated = True
-        if not customer_user.telefono:
-            customer_user.telefono = normalized_phone
-            updated = True
-        if updated:
-            db.add(customer_user)
-            db.flush()
+        nombres, primer_apellido, segundo_apellido = _split_full_name(normalized_name)
+        customer_user.nombres = nombres
+        customer_user.primer_apellido = primer_apellido
+        customer_user.segundo_apellido = segundo_apellido
+        customer_user.identificacion = normalized_id
+        customer_user.email = normalized_email
+        customer_user.telefono = normalized_phone
+        if customer_user.status != "ACTIVE":
+            customer_user.status = "INVITED"
+            customer_user.email_verificado = False
+            customer_user.password_hash = None
+        db.add(customer_user)
+        db.flush()
+
+    users_repo.ensure_role_assignment(customer_user.id, "CLIENT")
 
     pdf_service = PdfService()
     storage_service = get_storage_service()

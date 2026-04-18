@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # CONSTANTES
 # ═══════════════════════════════════════════════════════════════════════════════
 
-PORCENTAJE_HONORARIOS = Decimal("0.06")  # 6% del ahorro
+PORCENTAJE_HONORARIOS = Decimal("0.05")  # 5% del saldo del crédito
 PORCENTAJE_IVA = Decimal("0.19")  # 19% IVA Colombia
 TARIFA_MINIMA_HONORARIOS = Decimal("500000")  # $500,000 COP mínimo
 PORCENTAJE_INGRESO_MINIMO = Decimal("0.30")  # 30% de la cuota (Ley 546/99)
@@ -652,9 +652,9 @@ class CalculadoraFinanciera:
             veces_pagado = Decimal("0")
         
         # ═══════════════════════════════════════════════════════════════════
-        # HONORARIOS (6% del ahorro o tarifa mínima)
+        # HONORARIOS (5% del saldo capital actual o tarifa mínima)
         # ═══════════════════════════════════════════════════════════════════
-        honorarios = self.calcular_honorarios(ahorro_intereses)
+        honorarios = self.calcular_honorarios(datos.saldo_capital)
         honorarios_con_iva = self.calcular_honorarios_con_iva(honorarios)
         
         # ═══════════════════════════════════════════════════════════════════
@@ -792,13 +792,13 @@ class CalculadoraFinanciera:
     # HONORARIOS Y REQUISITOS
     # ═══════════════════════════════════════════════════════════════════════════
     
-    def calcular_honorarios(self, ahorro_total: Decimal) -> Decimal:
+    def calcular_honorarios(self, saldo_capital: Decimal) -> Decimal:
         """
-        Calcula honorarios: 6% del ahorro o tarifa mínima.
+        Calcula honorarios: 5% del saldo capital o tarifa mínima.
         
-        Regla: max(ahorro * 0.06, TARIFA_MINIMA)
+        Regla: max(saldo_capital * 0.05, TARIFA_MINIMA)
         """
-        honorarios = ahorro_total * PORCENTAJE_HONORARIOS
+        honorarios = saldo_capital * PORCENTAJE_HONORARIOS
         return max(honorarios, TARIFA_MINIMA_HONORARIOS).quantize(self._precision_dinero)
     
     def calcular_honorarios_con_iva(self, honorarios: Decimal) -> Decimal:
@@ -891,7 +891,7 @@ if __name__ == "__main__":
         print(f"Tiempo ahorrado: {p.tiempo_ahorrado}")
         print(f"Ahorro en intereses: ${p.valor_ahorrado_intereses:,.0f}")
         print(f"Veces pagado: {p.veces_pagado}")
-        print(f"Honorarios (6%): ${p.honorarios:,.0f}")
+        print(f"Honorarios (5%): ${p.honorarios:,.0f}")
         print(f"Honorarios + IVA: ${p.honorarios_con_iva:,.0f}")
         print(f"Ingreso mínimo requerido: ${p.ingreso_minimo_requerido:,.0f}")
 

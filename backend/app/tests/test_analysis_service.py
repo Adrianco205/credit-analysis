@@ -194,22 +194,22 @@ class TestCalculadoraProyecciones:
         assert resultado.valor_ahorrado_intereses == 0
     
     def test_calcular_honorarios(self):
-        """Calcula honorarios (6% del ahorro)."""
+        """Calcula honorarios (5% del saldo)."""
         calc = crear_calculadora()
         
-        ahorro = Decimal("50000000")
-        honorarios = calc.calcular_honorarios(ahorro)
+        saldo = Decimal("50000000")
+        honorarios = calc.calcular_honorarios(saldo)
         
-        expected = ahorro * Decimal("0.06")
+        expected = saldo * Decimal("0.05")
         assert honorarios == expected
     
     def test_calcular_honorarios_minimo(self):
         """Honorarios no bajan del mínimo."""
         calc = crear_calculadora()
         
-        # Ahorro muy bajo
-        ahorro = Decimal("1000000")  # 6% = $60,000, menor al mínimo
-        honorarios = calc.calcular_honorarios(ahorro)
+        # Saldo muy bajo
+        saldo = Decimal("1000000")  # 5% = $50,000, menor al mínimo
+        honorarios = calc.calcular_honorarios(saldo)
         
         # Debe aplicar tarifa mínima
         assert honorarios >= Decimal("500000")

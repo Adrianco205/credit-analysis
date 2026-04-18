@@ -195,7 +195,21 @@ export default function AdminAnalysesPage() {
 
   const handleCopyAnalysisId = async (analysisId: string) => {
     try {
-      await navigator.clipboard.writeText(analysisId);
+      let copied = false;
+
+      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(analysisId);
+        copied = true;
+      }
+
+      if (!copied) {
+        copied = fallbackCopyToClipboard(analysisId);
+      }
+
+      if (!copied) {
+        throw new Error('clipboard_unavailable');
+      }
+
       setCopiedId(analysisId);
       setTimeout(() => setCopiedId((current) => (current === analysisId ? null : current)), 1500);
     } catch {
@@ -543,6 +557,28 @@ function normalizeText(value?: string) {
   if (!value) return undefined;
   const clean = value.trim();
   return clean.length > 0 ? clean : undefined;
+}
+
+function fallbackCopyToClipboard(value: string): boolean {
+  if (typeof document === 'undefined') return false;
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
 }
 
 function getStatusBadge(status: string) {

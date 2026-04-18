@@ -67,7 +67,7 @@ class PropuestaAhorro(Base):
     # ═══════════════════════════════════════════════════════════════════
     # HONORARIOS Y REQUISITOS
     # ═══════════════════════════════════════════════════════════════════
-    honorarios_calculados: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # 6% del ahorro
+    honorarios_calculados: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # 5% del saldo del crédito
     honorarios_con_iva: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # Honorarios + 19% IVA
     ingreso_minimo_requerido: Mapped[Decimal | None] = mapped_column(Numeric(15, 2))  # 30% de nueva cuota
     

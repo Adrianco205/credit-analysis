@@ -340,19 +340,28 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
     setPreviewingPdf(true);
     setError('');
 
+    const previewWindow = window.open('', '_blank');
+    if (!previewWindow) {
+      setError('No se pudo abrir la vista previa. Verifica si el navegador bloqueó la ventana emergente.');
+      setPreviewingPdf(false);
+      return;
+    }
+
+    previewWindow.opener = null;
+    previewWindow.document.title = 'Vista previa de propuesta';
+    previewWindow.document.body.innerHTML =
+      '<div style="font-family: sans-serif; padding: 16px;">Cargando vista previa del PDF...</div>';
+
     try {
       const blob = await apiClient.downloadAdminProposalPdf(analysisId);
       const url = window.URL.createObjectURL(blob);
-      const previewWindow = window.open(url, '_blank', 'noopener,noreferrer');
-
-      if (!previewWindow) {
-        setError('No se pudo abrir la vista previa. Verifica si el navegador bloqueó la ventana emergente.');
-      }
+      previewWindow.location.href = url;
 
       setTimeout(() => {
         window.URL.revokeObjectURL(url);
       }, 60000);
     } catch (err: unknown) {
+      previewWindow.close();
       setError(getErrorMessage(err, 'No se pudo abrir la vista previa del PDF.'));
     } finally {
       setPreviewingPdf(false);
@@ -754,9 +763,9 @@ function InstitutionalOpportunitiesTable({
 
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="HONORARIOS 6% o TARIFA MÍNIMA"
+        label="HONORARIOS 5% o TARIFA MÍNIMA"
         options={opciones}
-        getOptionValue={() => 'HONORARIOS 6% o TARIFA MÍNIMA'}
+        getOptionValue={() => 'HONORARIOS 5% o TARIFA MÍNIMA'}
         valueTone="fees"
         labelTone="info"
         isBlockStart
@@ -765,16 +774,8 @@ function InstitutionalOpportunitiesTable({
         gridTemplateColumns={gridTemplateColumns}
         label="Valor Honorarios"
         options={opciones}
-        getOptionValue={(opcion) => formatCop(opcion.honorarios_con_iva)}
+        getOptionValue={(opcion) => formatCop(opcion.honorarios_calculados)}
         valueTone="fees"
-      />
-      <OpportunityRow
-        gridTemplateColumns={gridTemplateColumns}
-        label=""
-        options={opciones}
-        getOptionValue={() => 'Estos costos incluyen IVA del 19%'}
-        valueTone="fees"
-        textSize="xs"
         isBlockEnd
       />
 

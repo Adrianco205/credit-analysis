@@ -20,9 +20,9 @@ export const metadata: Metadata = {
   },
   description: "Plataforma de análisis financiero y crédito hipotecario",
   icons: {
-    icon: "/assets/brand/favicon-rounded.svg?v=2",
-    shortcut: "/assets/brand/favicon-rounded.svg?v=2",
-    apple: "/assets/brand/logo.png?v=2",
+    icon: "/assets/brand/favicon-rounded.svg?v=6",
+    shortcut: "/assets/brand/favicon-rounded.svg?v=6",
+    apple: "/assets/brand/logo.png?v=6",
   },
 };
 

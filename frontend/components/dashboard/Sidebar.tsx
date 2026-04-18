@@ -12,6 +12,14 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+interface SidebarLink {
+  href: string;
+  label: string;
+  icon: typeof Home;
+  disabled?: boolean;
+  disabledReason?: string;
+}
+
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -61,13 +69,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const showAdminFinancialIndicators = false;
 
-  const links = userRole === 'ADMIN'
+  const links: SidebarLink[] = userRole === 'ADMIN'
     ? [
         { href: '/dashboard', label: 'Inicio', icon: Home },
         { href: '/dashboard/admin/clientes/subir-analisis', label: 'Subir análisis de clientes', icon: FileText },
         { href: '/dashboard/admin/analyses', label: 'Ver historial de análisis', icon: History },
         { href: '/dashboard/admin/proyecciones', label: 'Generar proyecciones', icon: Sparkles },
-        { href: '/dashboard/admin/proyeccion-manual', label: 'Proyección manual', icon: FileText },
+        {
+          href: '/dashboard/admin/proyeccion-manual',
+          label: 'Proyección manual',
+          icon: FileText,
+          disabled: true,
+          disabledReason: 'Próximamente',
+        },
         ...(showAdminFinancialIndicators
           ? [{ href: '/dashboard/admin/indicadores-financieros', label: 'Indicadores Financieros', icon: ChartColumn }]
           : []),
@@ -127,10 +141,29 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         <nav className="flex-1 py-6 px-4 space-y-2">
           {links.map((link) => {
             const Icon = link.icon;
+            const isDisabled = Boolean(link.disabled);
             const isHomeLink = link.href === '/dashboard';
             const isActive = isHomeLink
               ? pathname === '/dashboard'
               : pathname === link.href || pathname.startsWith(`${link.href}/`);
+
+            if (isDisabled) {
+              return (
+                <button
+                  key={link.href}
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  title={link.disabledReason || 'No disponible'}
+                  className="w-full flex items-center gap-4 px-4 py-3 rounded-lg text-[var(--verde-suave)]/60 bg-white/5 cursor-not-allowed"
+                >
+                  <Icon size={20} />
+                  <span>{link.label}</span>
+                  <span className="ml-auto text-[10px] uppercase tracking-wide">{link.disabledReason || 'No disponible'}</span>
+                </button>
+              );
+            }
+
             return (
               <Link 
                 key={link.href}

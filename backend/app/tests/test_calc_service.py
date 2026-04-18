@@ -492,18 +492,18 @@ class TestProyeccion:
 class TestHonorarios:
     """Tests para cálculo de honorarios"""
     
-    def test_honorarios_6_porciento(self, calculadora):
-        """Honorarios = 6% del ahorro"""
-        ahorro = Decimal("100000000")  # 100 millones
-        honorarios = calculadora.calcular_honorarios(ahorro)
+    def test_honorarios_5_porciento(self, calculadora):
+        """Honorarios = 5% del saldo"""
+        saldo = Decimal("100000000")  # 100 millones
+        honorarios = calculadora.calcular_honorarios(saldo)
         
-        esperado = ahorro * PORCENTAJE_HONORARIOS
+        esperado = saldo * PORCENTAJE_HONORARIOS
         assert honorarios == esperado.quantize(Decimal("0.01"))
     
     def test_honorarios_minimo(self, calculadora):
         """Honorarios no pueden ser menor que tarifa mínima"""
-        ahorro_bajo = Decimal("1000000")  # 1 millón (6% = 60,000)
-        honorarios = calculadora.calcular_honorarios(ahorro_bajo)
+        saldo_bajo = Decimal("1000000")  # 1 millón (5% = 50,000)
+        honorarios = calculadora.calcular_honorarios(saldo_bajo)
         
         # Debe aplicar tarifa mínima
         assert honorarios == TARIFA_MINIMA_HONORARIOS
