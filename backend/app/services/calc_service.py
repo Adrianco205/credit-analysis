@@ -129,6 +129,9 @@ class ResultadoProyeccion:
     total_intereses_proyectados: Decimal
     total_seguros_proyectados: Decimal
     valor_ahorrado_intereses: Decimal
+    ahorro_seguros_proyectado: Decimal
+    reduccion_frech_proyectado: Decimal
+    ahorro_total_cliente: Decimal
     ahorro_total_proyectado: Decimal
     veces_pagado: Decimal
     
@@ -593,9 +596,9 @@ class CalculadoraFinanciera:
                 return total_dinamico.quantize(self._precision_dinero)
             if datos.beneficio_frech <= 0 or cuotas_totales <= 0:
                 return Decimal("0.00")
-            if sistema_normalizado == "PESOS":
-                # Fallback comercial para PESOS cuando no hay cobertura FRECH explícita.
-                return (datos.beneficio_frech * Decimal(cuotas_totales)).quantize(self._precision_dinero)
+            # If frech_meses_restantes is None but we have a beneficio, the upstream
+            # normalizer should block it. We no longer silently assume 84 months or
+            # multiply by total installments.
             return self.calcular_flujo_frech(
                 beneficio_frech_mensual=datos.beneficio_frech,
                 cuotas_proyectadas=cuotas_totales,
@@ -627,17 +630,20 @@ class CalculadoraFinanciera:
         # CÁLCULOS DE AHORRO
         # ═══════════════════════════════════════════════════════════════════
         
-        cuotas_reducidas = datos.cuotas_pendientes - resultado_con_abono.cuotas_totales
+        # cuotas_reducidas goes against the realistic baseline, not against
+        # cuotas_pendientes which is just an extract field.
+        cuotas_reducidas = resultado_actual.cuotas_totales - resultado_con_abono.cuotas_totales
         if cuotas_reducidas < 0:
             cuotas_reducidas = 0
         tiempo_ahorrado = TiempoAhorro.desde_meses(cuotas_reducidas)
         tiempo_restante = TiempoAhorro.desde_meses(resultado_con_abono.cuotas_totales)
         
-        # Semantica solicitada: ahorro visible = baseline banco - costo banco opcion.
-        ahorro_intereses = (costo_total_actual_banco - costo_total_proyectado_banco).quantize(self._precision_dinero)
-        ahorro_total_proyectado = (resultado_actual.total_pagado - resultado_con_abono.total_pagado).quantize(
-            self._precision_dinero
-        )
+        # Ahorros desagregados
+        ahorro_intereses = (resultado_actual.total_intereses - resultado_con_abono.total_intereses).quantize(self._precision_dinero)
+        ahorro_seguros = (resultado_actual.total_costos_no_amortizables - resultado_con_abono.total_costos_no_amortizables).quantize(self._precision_dinero)
+        reduccion_frech = (total_subsidio_frech_actual - total_subsidio_frech_proyectado).quantize(self._precision_dinero)
+        ahorro_total_cliente = (resultado_actual.total_pagado - resultado_con_abono.total_pagado).quantize(self._precision_dinero)
+        ahorro_total_proyectado = ahorro_total_cliente
         
         # Total por pagar simple (estimacion rapida): cuota x cuotas.
         total_por_pagar_simple = costo_total_proyectado_banco
@@ -680,6 +686,9 @@ class CalculadoraFinanciera:
             total_intereses_proyectados=resultado_con_abono.total_intereses,
             total_seguros_proyectados=resultado_con_abono.total_costos_no_amortizables,
             valor_ahorrado_intereses=ahorro_intereses,
+            ahorro_seguros_proyectado=ahorro_seguros,
+            reduccion_frech_proyectado=reduccion_frech,
+            ahorro_total_cliente=ahorro_total_cliente,
             ahorro_total_proyectado=ahorro_total_proyectado,
             veces_pagado=veces_pagado,
             honorarios=honorarios,

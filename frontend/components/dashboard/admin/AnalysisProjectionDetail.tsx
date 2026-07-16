@@ -7,6 +7,7 @@ import { AlertTriangle, ArrowLeft, Plus, Sparkles } from 'lucide-react';
 import { apiClient } from '@/lib/api-client';
 import type {
   AdminAnalysisDetailResponse,
+  AdminCalculateProjectionsRequest,
   AdminProjectionOptionRequest,
   AdminProjectionResponse,
   ProposalOptionResponse,
@@ -83,6 +84,18 @@ function monthsToTime(months?: number | null): ProjectionTimeResponse {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === 'object' && error && 'response' in error) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const data = response?.data;
+    if (typeof data === 'object' && data && 'detail' in data) {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === 'object' && detail && 'message' in detail) {
+        const message = (detail as { message?: unknown }).message;
+        if (typeof message === 'string' && message.trim()) return message;
+      }
+      if (typeof detail === 'string' && detail.trim()) return detail;
+    }
+  }
   if (typeof error === 'object' && error && 'message' in error) {
     const message = (error as { message?: unknown }).message;
     if (typeof message === 'string' && message.trim().length > 0) {
@@ -90,6 +103,21 @@ function getErrorMessage(error: unknown, fallback: string) {
     }
   }
   return fallback;
+}
+
+function getReasonCode(error: unknown): string | null {
+  if (typeof error === 'object' && error && 'response' in error) {
+    const response = (error as { response?: { data?: unknown } }).response;
+    const data = response?.data;
+    if (typeof data === 'object' && data && 'detail' in data) {
+      const detail = (data as { detail?: unknown }).detail;
+      if (typeof detail === 'object' && detail && 'reason_code' in detail) {
+        const rc = (detail as { reason_code?: unknown }).reason_code;
+        if (typeof rc === 'string' && rc.trim()) return rc;
+      }
+    }
+  }
+  return null;
 }
 
 function buildLegacyProposal(
@@ -206,6 +234,7 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
   const [previewingPdf, setPreviewingPdf] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState('');
+  const [reasonCode, setReasonCode] = useState<string | null>(null);
 
   const [detail, setDetail] = useState<AdminAnalysisDetailResponse | null>(null);
   const [proposal, setProposal] = useState<PropuestaCompletaResponse | null>(null);
@@ -280,35 +309,48 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
 
     setCalculating(true);
     setError('');
-
-    const opciones: AdminProjectionOptionRequest[] = [
-      { numero_opcion: 1, abono_adicional_mensual: clientOptions[0], nombre_opcion: '1a Elección' },
-      { numero_opcion: 2, abono_adicional_mensual: clientOptions[1], nombre_opcion: '2a Elección' },
-      { numero_opcion: 3, abono_adicional_mensual: clientOptions[2], nombre_opcion: '3a Elección' },
-    ];
-
-    if (adminOptionEnabled && Number(cleanDigitsInput(adminOptionValue)) > 0) {
-      opciones.push({
-        numero_opcion: 4,
-        abono_adicional_mensual: Number(cleanDigitsInput(adminOptionValue)),
-        nombre_opcion: 'Recomendada',
-      });
-    }
+    setReasonCode(null);
+    // A failed recalculation must not leave an earlier proposal exportable.
+    setProposal(null);
 
     try {
-      const response = await apiClient.calculateAdminProjections(analysisId, {
+      const opciones: AdminProjectionOptionRequest[] = clientOptions.map((value, index) => ({
+        numero_opcion: index + 1,
+        abono_adicional_mensual: value,
+        nombre_opcion: `Opción ${index + 1}`,
+      }));
+
+      if (adminOptionEnabled) {
+        const adminValue = Number(cleanDigitsInput(adminOptionValue));
+        if (adminValue > 0) {
+          opciones.push({
+            numero_opcion: opciones.length + 1,
+            abono_adicional_mensual: adminValue,
+            nombre_opcion: 'Recomendada',
+          });
+        }
+      }
+
+      const requestPayload: AdminCalculateProjectionsRequest = {
         opciones,
         uvr_mode: isUvrCredit ? uvrMode : undefined,
-        uvr_manual_value:
-          isUvrCredit && uvrMode === 'manual' ? parsePositiveDecimal(uvrManualValue) : undefined,
+        uvr_manual_value: isUvrCredit && uvrMode === 'manual' ? parsePositiveDecimal(uvrManualValue) : undefined,
         ipc_proyectado: isUvrCredit ? parsePositiveDecimal(customIpcValue) : undefined,
-      });
+      };
+
+      const response = await apiClient.calculateAdminProjections(analysisId, requestPayload);
+
+      // The backend can return either a full PropuestaCompletaResponse or an array of AdminProjectionResponse
       if (Array.isArray(response)) {
-        setProposal(buildLegacyProposal(detail, response));
+        // Legacy format: array of projections — wrap into PropuestaCompletaResponse
+        const legacyProposal = buildLegacyProposal(detail, response as AdminProjectionResponse[]);
+        setProposal(legacyProposal);
       } else {
-        setProposal(response);
+        // Full proposal format
+        setProposal(response as PropuestaCompletaResponse);
       }
     } catch (err: unknown) {
+      setReasonCode(getReasonCode(err));
       setError(getErrorMessage(err, 'No se pudieron calcular las proyecciones.'));
     } finally {
       setCalculating(false);
@@ -376,7 +418,7 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
     );
   }
 
-  if (error && !detail) {
+  if (error && !detail && !reasonCode) {
     return (
       <Card className="border border-red-200 bg-red-50">
         <div className="p-6 flex items-center gap-3 text-red-700">
@@ -404,16 +446,59 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
         </CardHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-          <SummaryCard label="Saldo actual" value={formatCop(detail.saldo_capital_pesos)} />
+          <SummaryCard label="Cliente" value={detail.usuario_nombre || detail.nombre_titular_extracto || 'N/A'} />
+          <SummaryCard label="Banco" value={detail.banco_nombre || 'N/A'} />
           <SummaryCard
-            label="Tasa"
+            label="Sistema"
+            value={detail.sistema_amortizacion
+              ? detail.sistema_amortizacion.toUpperCase()
+              : 'N/A'}
+          />
+          <SummaryCard
+            label="Tasa Cobrada"
             value={detail.tasa_interes_cobrada_ea !== undefined && detail.tasa_interes_cobrada_ea !== null
               ? `${(Number(detail.tasa_interes_cobrada_ea) * 100).toFixed(2)}% EA`
               : 'N/A'}
           />
-          <SummaryCard label="Banco" value={detail.banco_nombre || 'N/A'} />
-          <SummaryCard label="Cliente" value={detail.usuario_nombre || detail.nombre_titular_extracto || 'N/A'} />
         </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
+          <SummaryCard label="Saldo Capital" value={formatCop(detail.saldo_capital_pesos)} />
+          <SummaryCard label="Cuotas Pendientes" value={String(detail.cuotas_pendientes ?? 'N/A')} />
+          <SummaryCard
+            label="Cuota con Seguros"
+            value={formatCop(detail.valor_cuota_con_seguros)}
+          />
+          <SummaryCard
+            label="Seguros Mensuales"
+            value={Number(detail.seguros_total_mensual || 0) > 0
+              ? formatCop(detail.seguros_total_mensual)
+              : 'N/A'}
+          />
+        </div>
+
+        {(detail.sistema_amortizacion || '').toLowerCase().includes('uvr') && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <SummaryCard
+              label="Saldo UVR"
+              value={detail.saldo_capital_uvr != null
+                ? formatUvr(detail.saldo_capital_uvr)
+                : 'N/A'}
+            />
+            <SummaryCard
+              label="Valor UVR (Extracto)"
+              value={detail.valor_uvr_fecha_extracto != null
+                ? formatUvr(detail.valor_uvr_fecha_extracto)
+                : 'N/A'}
+            />
+            <SummaryCard
+              label="Beneficio FRECH"
+              value={Number(detail.beneficio_frech_mensual || 0) > 0
+                ? formatCop(detail.beneficio_frech_mensual)
+                : 'Sin FRECH'}
+            />
+          </div>
+        )}
       </Card>
 
       <Card>
@@ -423,16 +508,30 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
         </CardHeader>
 
         {error && (
-          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-center gap-2">
-            <AlertTriangle size={16} />
-            <span>{error}</span>
+          <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="text-red-600 mt-0.5" size={20} />
+              <div>
+                <h3 className="text-sm font-semibold text-red-800">
+                  {reasonCode === 'PARTIAL_PAYMENT_DETECTED' ? 'Pago Parcial Detectado' :
+                   reasonCode === 'OVERDUE_SNAPSHOT' ? 'Extracto en Mora' :
+                   reasonCode === 'UNSUPPORTED_UVR_PRODUCT' ? 'Producto UVR no soportado' :
+                   reasonCode === 'AMORTIZATION_INFEASIBLE' ? 'Amortización Inviable' :
+                   reasonCode === 'UVR_PROJECTION_INFEASIBLE' ? 'Proyección UVR Inviable' :
+                   'Error de Cálculo'}
+                </h3>
+                <p className="mt-1 text-sm text-red-700">{error}</p>
+                {reasonCode && (
+                  <p className="mt-2 text-xs text-red-600 font-mono">Código de diagnóstico: {reasonCode}</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Input
-              label="Opción 1 (Cliente)"
               inputMode="numeric"
               value={formatDigitsInput(String(clientOptions[0] || ''))}
               disabled
@@ -706,26 +805,53 @@ function InstitutionalOpportunitiesTable({
 
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label="Valor Ahorrado en Intereses"
+        label="Ahorro Neto en Intereses"
         options={opciones}
         getOptionValue={(opcion) => formatCop(opcion.valor_ahorrado_intereses)}
         valueTone="benefit"
         isBlockStart
       />
+      
+      {opciones.some(o => o.ahorro_seguros_proyectado && o.ahorro_seguros_proyectado > 0) && (
+        <OpportunityRow
+          gridTemplateColumns={gridTemplateColumns}
+          label="Ahorro en Seguros"
+          options={opciones}
+          getOptionValue={(opcion) => formatCop(opcion.ahorro_seguros_proyectado || 0)}
+          valueTone="benefit"
+        />
+      )}
+
+      {opciones.some(o => o.reduccion_frech_proyectado && o.reduccion_frech_proyectado > 0) && (
+        <OpportunityRow
+          gridTemplateColumns={gridTemplateColumns}
+          label="Reducción del subsidio FRECH por menor plazo"
+          options={opciones}
+          getOptionValue={(opcion) => {
+            const val = opcion.reduccion_frech_proyectado || 0;
+            return val > 0 ? `-${formatCop(val)}` : formatCop(0);
+          }}
+          valueTone="fees"
+          textSize="sm"
+        />
+      )}
+
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
-        label=""
+        label="Ahorro Total Cliente"
         options={opciones}
-        getOptionValue={() => 'Calculado como: Total actual banco - Total proyectado banco opción'}
+        getOptionValue={(opcion) => formatCop(opcion.ahorro_total_cliente || opcion.valor_ahorrado_intereses)}
         valueTone="benefit"
-        textSize="xs"
+        isBlockEnd
       />
+
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
         label="Cuotas Reducidas"
         options={opciones}
         getOptionValue={(opcion) => String(opcion.cuotas_reducidas || 0)}
         valueTone="benefit"
+        isBlockStart
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
@@ -744,7 +870,19 @@ function InstitutionalOpportunitiesTable({
           options={opciones}
           getOptionValue={() => ''}
           leftVariant="base"
-          isBlockStart={!showSeguros}
+          isBlockStart={!showSeguros && !frechActivo}
+        />
+      )}
+
+      {frechActivo && (
+        <OpportunityRow
+          gridTemplateColumns={gridTemplateColumns}
+          label="Beneficio FRECH mensual"
+          leftValue={formatCop(beneficioFrechMensual)}
+          options={opciones}
+          getOptionValue={() => ''}
+          leftVariant="base"
+          isBlockStart={!showTasa}
         />
       )}
 

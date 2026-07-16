@@ -123,6 +123,9 @@ class ProyeccionOpcionResponse(BaseModel):
     cuotas_reducidas: int
     tiempo_ahorrado: TiempoAhorrado
     valor_ahorrado_intereses: Decimal
+    ahorro_seguros_proyectado: Decimal | None = None
+    reduccion_frech_proyectado: Decimal | None = None
+    ahorro_total_cliente: Decimal | None = None
     
     # Veces pagado
     veces_pagado: Decimal  # 1.95, 1.83, 1.72

@@ -225,16 +225,16 @@ No lo recalcules ni lo derives de otros campos si está explícito en el documen
 ### Valores en Pesos Colombianos (solo números, sin símbolos)
 - valor_prestado_inicial: Monto inicial del préstamo / Valor del desembolso
 - valor_cuota_sin_seguros: Cuota sin incluir seguros
-- valor_cuota_con_seguros: Cuota total incluyendo seguros (buscar "Valor a pagar")
+- valor_cuota_con_seguros: Cuota contractual COMPLETA incluyendo seguros. ¡OJO! NO uses siempre "Valor a pagar" si el extracto muestra pagos parciales recientes o movimientos. En créditos UVR, si el "Valor a Pagar" es muy inferior a la suma matemática de intereses + seguros, es solo un remanente. En UVR, la cuota contractual completa de deuda DEBE reconstruirse sumando ("Movimiento de interés corriente en UVR" + "Movimiento de capital en UVR") multiplicado por el "Valor UVR", más los seguros.
 - beneficio_frech_mensual: Valor mensual del subsidio FRECH
 - valor_cuota_con_subsidio: Cuota que paga el cliente (con FRECH aplicado)
-- saldo_capital_pesos: **PRIORIDAD CRÍTICA**: Busca explícitamente "Saldo a la fecha en que se generó el extracto", "Saldo a la fecha" o "Saldo Capital". Usa EXACTAMENTE el valor que aparece en pesos. **NO** re-calcules este valor multiplicando UVR si el valor en pesos está explícito.
+- saldo_capital_pesos: Para créditos UVR, NUNCA uses el "Saldo a la fecha en que se generó el extracto" de la cabecera como saldo de capital, ya que incluye intereses y seguros, inflando la proyección. El saldo de capital real en UVR SIEMPRE debe ser calculado matemáticamente como: "Saldo de capital en UVR" × "Valor de la unidad UVR".
 - total_por_pagar: Total adeudado (capital + intereses pendientes)
 
 ### Valores UVR (OBLIGATORIOS si el crédito es en UVR)
 - saldo_capital_uvr: Saldo de capital en UVR
 - valor_uvr_fecha_extracto: Valor del UVR a la fecha del extracto
-- valor_cuota_uvr: Valor de la cuota en UVR
+- valor_cuota_uvr: Valor COMPLETO de la cuota en UVR (Capital + Intereses). Si el campo "Valor cuota en UVR" solo muestra el capital pendiente por un pago parcial, debes calcular la cuota completa sumando "Movimiento de interés corriente en UVR" + "Movimiento de capital en UVR" (o capital pendiente de la cuota).
 - variacion_uvr_pesos: Valor en pesos del concepto "+ Variación UVR" (obligatorio para sistema "BAJA UVR" si aparece)
 
 ### Componentes del Período (Del pago actual/última cuota)
@@ -305,6 +305,22 @@ Responde ÚNICAMENTE con un JSON válido con esta estructura:
   "notas": "Extracto de Bancolombia con crédito VIS en UVR"
 }
 ```
+
+### ESTRUCTURA FINANCIERA ADICIONAL (OBLIGATORIA CUANDO LA EVIDENCIA EXISTA)
+Ademas de los campos legacy, incluye `contractual_installment`, `next_payment`,
+`period_movements`, `overdue_information`, `partial_payment_information` y
+`source_map`. Cada importe contractual debe tener `value`, `source_label` y
+`confidence` (0 a 1). `contractual_installment` separa `debt_pesos`,
+`debt_uvr`, `insurance`, `client_total` y `bank_total`.
+
+`next_payment` debe incluir `is_contractual: false` salvo evidencia expresa.
+Cada elemento de `period_movements` debe usar uno de: INSTALLMENT_PAYMENT,
+EXTRA_PRINCIPAL, ADVANCE_PAYMENT, INSURANCE, INTEREST, FRECH u OVERDUE, y
+conservar monto, capital, interes, seguro y descripcion cuando existan.
+
+Un pago aplicado, abono extra, pago anticipado, cuota vencida o saldo pendiente
+NUNCA reemplaza la cuota contractual. Si no hay evidencia suficiente, devuelve
+null, agrega una advertencia y marca pago parcial cuando aplique.
 
 ## REGLAS IMPORTANTES
 1. Si un campo NO aparece en el documento, inclúyelo en "campos_no_encontrados" y NO lo incluyas en el JSON principal
@@ -1170,6 +1186,7 @@ def map_extraction_to_analysis(
         "cuotas_pactadas": data.get("cuotas_pactadas"),
         "cuotas_pagadas": data.get("cuotas_pagadas"),
         "cuotas_pendientes": data.get("cuotas_pendientes"),
+        "cuotas_vencidas": data.get("cuotas_vencidas"),
         
         # Tasas (ya convertidas a decimal)
         "tasa_interes_pactada_ea": data.get("tasa_interes_pactada_ea"),
@@ -1188,6 +1205,7 @@ def map_extraction_to_analysis(
         # UVR
         "saldo_capital_uvr": data.get("saldo_capital_uvr"),
         "valor_uvr_fecha_extracto": data.get("valor_uvr_fecha_extracto"),
+        "valor_cuota_uvr": data.get("valor_cuota_uvr"),
         
         # Seguros
         "seguro_vida": data.get("seguro_vida"),

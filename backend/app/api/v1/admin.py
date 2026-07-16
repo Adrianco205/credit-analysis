@@ -203,6 +203,13 @@ class AdminUpdateAnalysisRequest(BaseModel):
     intereses_corrientes_periodo: Decimal | None = Field(None, ge=0)
     intereses_mora: Decimal | None = Field(None, ge=0)
     otros_cargos: Decimal | None = Field(None, ge=0)
+    valor_cuota_uvr: Decimal | None = Field(None, gt=0)
+    valor_uvr_fecha_extracto: Decimal | None = Field(None, gt=0)
+    seguros_total_mensual: Decimal | None = Field(None, ge=0)
+    beneficio_frech_mensual: Decimal | None = Field(None, ge=0)
+    frech_meses_restantes: int | None = Field(None, ge=0)
+    cuotas_vencidas: int | None = Field(None, ge=0)
+    override_reason: str | None = Field(None, min_length=3, max_length=500)
 
     @model_validator(mode="after")
     def normalize_interest_rates(self):
@@ -1138,17 +1145,28 @@ def update_analysis_admin(
     # Actualizar campos proporcionados
     update_data = request.model_dump(exclude_none=True)
     campos_manuales_actualizados: list[str] = []
+    override_audit = list(analisis.manual_overrides_json or [])
 
     campos_no_manual = {"ingresos_mensuales", "capacidad_pago_max", "tipo_contrato_laboral", "opciones_abono_preferidas"}
     for field, value in update_data.items():
-        if hasattr(analisis, field):
+        if field != "override_reason" and hasattr(analisis, field):
+            previous_value = getattr(analisis, field)
             setattr(analisis, field, value)
             if field not in campos_no_manual:
                 campos_manuales_actualizados.append(field)
+                override_audit.append({
+                    "field": field,
+                    "before": str(previous_value) if previous_value is not None else None,
+                    "after": str(value),
+                    "actor_id": str(admin.id),
+                    "reason": request.override_reason or "Corrección administrativa",
+                    "at": datetime.utcnow().isoformat(),
+                })
 
     if campos_manuales_actualizados:
         existentes = analisis.campos_manuales or []
         analisis.campos_manuales = list(set(existentes + campos_manuales_actualizados))
+        analisis.manual_overrides_json = override_audit
     
     # Recalcular campos derivados
     repo.calculate_derived_fields(analisis)
@@ -1220,7 +1238,15 @@ def calculate_projections_admin(
     result = service.generate_projections(**service_args)
     
     if not result.success:
-        raise HTTPException(status_code=400, detail=result.error_message)
+        raise HTTPException(
+            status_code=422 if result.reason_code else 400,
+            detail={
+                "status": "MANUAL_REVIEW_REQUIRED" if result.reason_code else "CALCULATION_ERROR",
+                "reason_code": result.reason_code,
+                "message": result.error_message,
+                "projection_available": False,
+            },
+        )
     
     return [ProjectionAdminResponse.model_validate(p) for p in result.propuestas]
 
@@ -1266,6 +1292,27 @@ def download_admin_proposal_pdf(
     analisis = analyses_repo.get_by_id(analysis_id)
     if not analisis:
         raise HTTPException(status_code=404, detail="Análisis no encontrado")
+
+    # Never issue a document based on a movement/overdue amount interpreted as
+    # a contractual quota. The calculation endpoint applies the same guard.
+    from app.services.credit_snapshot_service import (
+        ProjectionValidationError,
+        normalize_credit_snapshot,
+        validate_projection_snapshot,
+    )
+    try:
+        snapshot = normalize_credit_snapshot(analisis)
+        validate_projection_snapshot(snapshot, analisis.tasa_interes_cobrada_ea)
+    except ProjectionValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "MANUAL_REVIEW_REQUIRED",
+                "reason_code": exc.status.value,
+                "message": str(exc),
+                "projection_available": False,
+            },
+        )
 
     propuestas_repo = PropuestasRepo(db)
     propuestas = propuestas_repo.list_by_analisis(analysis_id)

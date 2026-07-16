@@ -153,6 +153,9 @@ class AnalisisHipotecario(Base):
     computed_summary_json: Mapped[dict | None] = mapped_column(JSONB)  # Resumen calculado con fórmulas
     missing_fields_json: Mapped[list | None] = mapped_column(JSONB)  # Campos no encontrados
     confidence_map_json: Mapped[dict | None] = mapped_column(JSONB)  # Confianza por campo
+    normalized_snapshot_json: Mapped[dict | None] = mapped_column(JSONB)  # Snapshot canónico auditable
+    projection_validation_status: Mapped[str | None] = mapped_column(String(40))
+    manual_overrides_json: Mapped[list | None] = mapped_column(JSONB)  # campo, antes, despues, actor, fecha, motivo
     inflation_method: Mapped[str | None] = mapped_column(String(50))  # uvr_calculation, direct_difference, manual
     is_total_paid_estimated: Mapped[bool] = mapped_column(Boolean, server_default=text("true"))
     

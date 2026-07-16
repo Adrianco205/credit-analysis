@@ -14,9 +14,10 @@ import uuid
 import io
 import re
 import unicodedata
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -50,6 +51,13 @@ from app.services.uvr_projection_engine import (
     UvrProjectionInput,
     compare_uvr_scenarios,
     simulate_uvr_scenario,
+)
+from app.services.pesos_projection_engine import PesosProjectionInput, simulate_pesos
+from app.services.credit_snapshot_service import (
+    ProjectionStatus,
+    ProjectionValidationError,
+    normalize_credit_snapshot,
+    validate_projection_snapshot,
 )
 from app.core.config import settings
 
@@ -147,6 +155,7 @@ class ProjectionGenerationResult:
     success: bool
     propuestas: list[PropuestaAhorro] | None = None
     error_message: str | None = None
+    reason_code: str | None = None
 
 
 @dataclass
@@ -190,7 +199,7 @@ class AnalysisService:
         self.gemini = gemini_service or get_gemini_service()
         self.storage = storage_service or get_storage_service()
         self.calc = calculadora or crear_calculadora()
-        self.uvr_engine_v2_enabled = bool(getattr(settings, "UVR_ENGINE_V2_ENABLED", False))
+        self.uvr_engine_v2_enabled = bool(getattr(settings, "UVR_ENGINE_V3_ENABLED", False)) or bool(getattr(settings, "UVR_ENGINE_V2_ENABLED", False))
         self.uvr_inflacion_anual_default = Decimal(str(getattr(settings, "UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT", 0.022)))
     
     def _serialize_for_json(self, data: dict) -> dict:
@@ -857,6 +866,26 @@ class AnalysisService:
                     error_message="El análisis no tiene los datos mínimos requeridos para generar proyecciones"
                 )
             
+            # Reconcile the extract before deleting valid proposals or simulating.
+            # Ambiguous movements must be reviewed, not converted into a quota.
+            try:
+                snapshot = normalize_credit_snapshot(analisis)
+                validate_projection_snapshot(snapshot, analisis.tasa_interes_cobrada_ea)
+            except ProjectionValidationError as exc:
+                # Persist the audit trail even when projection is blocked.
+                analisis.normalized_snapshot_json = self._serialize_for_json(asdict(snapshot))
+                analisis.projection_validation_status = exc.status.value
+                self.analyses_repo.save(analisis)
+                self.db.commit()
+                return ProjectionGenerationResult(
+                    success=False,
+                    error_message=str(exc),
+                    reason_code=exc.status.value,
+                )
+
+            analisis.normalized_snapshot_json = self._serialize_for_json(asdict(snapshot))
+            analisis.projection_validation_status = "VALID"
+
             # Eliminar propuestas anteriores
             self.propuestas_repo.delete_by_analisis(analisis_id)
 
@@ -1114,10 +1143,42 @@ class AnalysisService:
             nombre_opcion="Actual"
         )
 
+        if sistema_amortizacion == "PESOS" and bool(getattr(settings, "PESOS_ENGINE_V2_ENABLED", False)):
+            try:
+                snapshot = normalize_credit_snapshot(analisis)
+                validate_projection_snapshot(snapshot, datos_visible.tasa_interes_ea)
+                pesos_payload = PesosProjectionInput(
+                    principal_balance=datos_visible.saldo_capital,
+                    annual_rate=datos_visible.tasa_interes_ea,
+                    contractual_debt_installment=snapshot.contractual_debt_installment,
+                    insurance_monthly=snapshot.insurance_total,
+                    non_amortizable_charges=snapshot.non_amortizable_charges,
+                    frech_monthly=snapshot.frech_monthly,
+                    frech_remaining_months=snapshot.frech_remaining_months,
+                    remaining_term=snapshot.remaining_term,
+                    extra_payment=Decimal("0"),
+                )
+                pesos_result = simulate_pesos(pesos_payload)
+                proyeccion_actual = SimpleNamespace(
+                    cuotas_nuevas=pesos_result.months,
+                    costo_total_proyectado=pesos_result.total_client_payment,
+                    costo_total_proyectado_banco=pesos_result.total_bank_flow,
+                    total_subsidio_frech_proyectado=pesos_result.total_frech,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Fallo PESOS engine V2 baseline. analisis_id=%s error=%s",
+                    getattr(analisis, "id", None),
+                    exc,
+                )
+                raise exc
+
         # Consistencia UVR: baseline con el mismo enfoque del engine V2 para
         # evitar que baseline y opciones provengan de motores distintos.
         if sistema_amortizacion == "UVR" and bool(getattr(self, "uvr_engine_v2_enabled", False)) and valor_uvr_actual and valor_uvr_actual > 0:
             try:
+                snapshot = normalize_credit_snapshot(analisis)
+                validate_projection_snapshot(snapshot, datos_visible.tasa_interes_ea)
                 payload_baseline = UvrProjectionInput(
                     saldo_inicial=datos_visible.saldo_capital,
                     tasa_efectiva_anual=datos_visible.tasa_interes_ea,
@@ -1128,22 +1189,19 @@ class AnalysisService:
                     uvr_actual=valor_uvr_actual,
                     inflacion_anual_estimada=ipc_anual_proyectado_resuelto,
                     subsidio_frech=datos_visible.beneficio_frech,
-                    seguro_mensual=(
-                        datos_visible.valor_seguro_incendio_fijo
-                        + (datos_visible.saldo_capital * datos_visible.tasa_seguro_vida)
-                    ).quantize(Decimal("0.01")),
-                    cuota_uvr_actual=getattr(analisis, "valor_cuota_uvr", None),
+                    seguro_mensual=Decimal("0"),
+                    cuota_deuda_pesos=snapshot.contractual_debt_installment,
+                    cuota_deuda_uvr=snapshot.contractual_installment_uvr,
+                    cuota_uvr_actual=snapshot.contractual_installment_uvr,
+                    valor_seguro_incendio_fijo=snapshot.insurance_total,
+                    pago_inicial_especial=snapshot.current_installment_remaining or Decimal("0"),
                     frech_meses_restantes=datos_visible.frech_meses_restantes,
                 )
 
                 baseline_uvr = simulate_uvr_scenario(payload_baseline, abono_adicional_override=Decimal("0"))
                 costo_total_proyectado = baseline_uvr.total_pagado_cliente
-                total_subsidio_frech_proyectado = self.calc.calcular_flujo_frech(
-                    beneficio_frech_mensual=datos_visible.beneficio_frech,
-                    cuotas_proyectadas=baseline_uvr.meses_totales,
-                    frech_meses_restantes=datos_visible.frech_meses_restantes,
-                )
-                costo_total_proyectado_banco = (costo_total_proyectado + total_subsidio_frech_proyectado).quantize(Decimal("0.01"))
+                total_subsidio_frech_proyectado = baseline_uvr.total_frech
+                costo_total_proyectado_banco = baseline_uvr.total_pagado_banco
 
                 proyeccion_actual = replace(
                     proyeccion_actual,
@@ -1155,10 +1213,11 @@ class AnalysisService:
                 )
             except Exception as exc:
                 logger.exception(
-                    "Fallo baseline UVR V2; se conserva baseline clasico. analisis_id=%s error=%s",
+                    "Fallo baseline UVR V2. analisis_id=%s error=%s",
                     getattr(analisis, "id", None),
                     exc,
                 )
+                raise exc
 
         total_actual_simple = proyeccion_actual.costo_total_proyectado_banco
 
@@ -1325,6 +1384,67 @@ class AnalysisService:
     ) -> dict:
         """Calcula la proyección para una opción específica de abono."""
         sistema_normalizado = self.calc._normalizar_sistema_amortizacion(analisis.sistema_amortizacion)
+        if sistema_normalizado == "PESOS" and bool(getattr(settings, "PESOS_ENGINE_V2_ENABLED", False)):
+            try:
+                snapshot = normalize_credit_snapshot(analisis)
+                validate_projection_snapshot(snapshot, baseline["datos_visible"].tasa_interes_ea)
+                pesos_payload = PesosProjectionInput(
+                    principal_balance=baseline["datos_visible"].saldo_capital,
+                    annual_rate=baseline["datos_visible"].tasa_interes_ea,
+                    contractual_debt_installment=snapshot.contractual_debt_installment,
+                    insurance_monthly=snapshot.insurance_total,
+                    non_amortizable_charges=snapshot.non_amortizable_charges,
+                    frech_monthly=snapshot.frech_monthly,
+                    frech_remaining_months=snapshot.frech_remaining_months,
+                    remaining_term=snapshot.remaining_term,
+                    extra_payment=opcion.abono_adicional_mensual,
+                )
+                pesos_result = simulate_pesos(pesos_payload)
+                nueva_cuota = (baseline["cuota_actual_visible"] + opcion.abono_adicional_mensual).quantize(Decimal("0.01"))
+                costo_total_proyectado = pesos_result.total_client_payment
+                total_subsidio_frech_proyectado = pesos_result.total_frech
+                costo_total_proyectado_banco = pesos_result.total_bank_flow
+                total_simple = costo_total_proyectado_banco
+
+                if baseline["datos_visible"].saldo_capital > 0:
+                    veces_pagado = (costo_total_proyectado_banco / baseline["datos_visible"].saldo_capital).quantize(Decimal("0.01"))
+                else:
+                    veces_pagado = Decimal("0")
+
+                baseline_total_banco = baseline.get("costo_total_proyectado_banco")
+                ahorro_intereses = (baseline_total_banco - costo_total_proyectado_banco).quantize(Decimal("0.01"))
+                honorarios = self.calc.calcular_honorarios(baseline["datos_visible"].saldo_capital)
+                honorarios_con_iva = self.calc.calcular_honorarios_con_iva(honorarios)
+                ingreso_minimo = self.calc.calcular_ingreso_minimo(nueva_cuota)
+
+                return {
+                    "cuotas_nuevas": pesos_result.months,
+                    "tiempo_restante_anios": pesos_result.months // 12,
+                    "tiempo_restante_meses": pesos_result.months % 12,
+                    "cuotas_reducidas": max(0, baseline["datos_visible"].cuotas_pendientes - pesos_result.months),
+                    "tiempo_ahorrado_anios": max(0, (baseline["datos_visible"].cuotas_pendientes - pesos_result.months) // 12),
+                    "tiempo_ahorrado_meses": max(0, (baseline["datos_visible"].cuotas_pendientes - pesos_result.months) % 12),
+                    "nuevo_valor_cuota": nueva_cuota,
+                    "total_por_pagar_aprox": total_simple,
+                    "total_por_pagar_simple": total_simple,
+                    "costo_total_proyectado": costo_total_proyectado,
+                    "costo_total_proyectado_banco": costo_total_proyectado_banco,
+                    "total_subsidio_frech_proyectado": total_subsidio_frech_proyectado,
+                    "valor_ahorrado_intereses": ahorro_intereses,
+                    "veces_pagado": veces_pagado,
+                    "honorarios_calculados": honorarios,
+                    "honorarios_con_iva": honorarios_con_iva,
+                    "ingreso_minimo_requerido": ingreso_minimo,
+                }
+            except Exception as exc:
+                logger.exception(
+                    "Fallo PESOS engine V2 en opcion %s; bloqueando proyeccion. analisis_id=%s error=%s",
+                    opcion.numero_opcion,
+                    getattr(analisis, "id", None),
+                    exc,
+                )
+                raise exc
+
         if sistema_normalizado == "UVR" and bool(getattr(self, "uvr_engine_v2_enabled", False)):
             resultado_uvr = self._calculate_projection_for_option_uvr_engine(analisis, opcion, baseline)
             if resultado_uvr is not None:
@@ -1384,6 +1504,8 @@ class AnalysisService:
             return None
 
         try:
+            snapshot = normalize_credit_snapshot(analisis)
+            validate_projection_snapshot(snapshot, datos_visible.tasa_interes_ea)
             payload = UvrProjectionInput(
                 saldo_inicial=datos_visible.saldo_capital,
                 tasa_efectiva_anual=datos_visible.tasa_interes_ea,
@@ -1394,11 +1516,12 @@ class AnalysisService:
                 uvr_actual=valor_uvr_actual,
                 inflacion_anual_estimada=ipc_anual_proyectado,
                 subsidio_frech=datos_visible.beneficio_frech,
-                seguro_mensual=(
-                    datos_visible.valor_seguro_incendio_fijo
-                    + (datos_visible.saldo_capital * datos_visible.tasa_seguro_vida)
-                ).quantize(Decimal("0.01")),
-                cuota_uvr_actual=getattr(analisis, "valor_cuota_uvr", None),
+                seguro_mensual=Decimal("0"),
+                cuota_deuda_pesos=snapshot.contractual_debt_installment,
+                cuota_deuda_uvr=snapshot.contractual_installment_uvr,
+                cuota_uvr_actual=snapshot.contractual_installment_uvr,
+                valor_seguro_incendio_fijo=snapshot.insurance_total,
+                pago_inicial_especial=snapshot.current_installment_remaining or Decimal("0"),
                 frech_meses_restantes=datos_visible.frech_meses_restantes,
             )
 
@@ -1406,18 +1529,14 @@ class AnalysisService:
 
             cuotas_nuevas = comparacion.escenario_con_abono.meses_totales
             tiempo_restante = TiempoAhorro.desde_meses(cuotas_nuevas)
-            cuotas_reducidas = max(0, datos_visible.cuotas_pendientes - cuotas_nuevas)
+            cuotas_reducidas = comparacion.meses_reducidos
             tiempo_ahorrado = TiempoAhorro.desde_meses(cuotas_reducidas)
 
             nueva_cuota = (datos_visible.valor_cuota_actual + opcion.abono_adicional_mensual).quantize(Decimal("0.01"))
 
             costo_total_proyectado = comparacion.escenario_con_abono.total_pagado_cliente
-            total_subsidio_frech_proyectado = self.calc.calcular_flujo_frech(
-                beneficio_frech_mensual=datos_visible.beneficio_frech,
-                cuotas_proyectadas=cuotas_nuevas,
-                frech_meses_restantes=datos_visible.frech_meses_restantes,
-            )
-            costo_total_proyectado_banco = (costo_total_proyectado + total_subsidio_frech_proyectado).quantize(Decimal("0.01"))
+            total_subsidio_frech_proyectado = comparacion.escenario_con_abono.total_frech
+            costo_total_proyectado_banco = comparacion.escenario_con_abono.total_pagado_banco
             
             total_simple = costo_total_proyectado_banco
 
@@ -1426,10 +1545,11 @@ class AnalysisService:
             else:
                 veces_pagado = Decimal("0")
 
-            baseline_total_banco = baseline.get("costo_total_proyectado_banco")
-            if baseline_total_banco is None:
-                baseline_total_banco = comparacion.escenario_original.total_pagado_banco
-            ahorro_intereses = (baseline_total_banco - costo_total_proyectado_banco).quantize(Decimal("0.01"))
+            ahorro_intereses = comparacion.ahorro_intereses_real
+            ahorro_seguros = comparacion.ahorro_seguros
+            reduccion_frech = comparacion.reduccion_frech
+            ahorro_total_cliente = comparacion.ahorro_total_cliente
+            
             honorarios = self.calc.calcular_honorarios(datos_visible.saldo_capital)
             honorarios_con_iva = self.calc.calcular_honorarios_con_iva(honorarios)
             ingreso_minimo = self.calc.calcular_ingreso_minimo(nueva_cuota)
@@ -1461,6 +1581,9 @@ class AnalysisService:
                 "costo_total_proyectado_banco": costo_total_proyectado_banco,
                 "total_subsidio_frech_proyectado": total_subsidio_frech_proyectado,
                 "valor_ahorrado_intereses": ahorro_intereses,
+                "ahorro_seguros_proyectado": ahorro_seguros,
+                "reduccion_frech_proyectado": reduccion_frech,
+                "ahorro_total_cliente": ahorro_total_cliente,
                 "veces_pagado": veces_pagado,
                 "honorarios_calculados": honorarios,
                 "honorarios_con_iva": honorarios_con_iva,
@@ -1468,12 +1591,12 @@ class AnalysisService:
             }
         except Exception as exc:
             logger.exception(
-                "Fallo UVR engine V2 en opcion %s; aplicando fallback clasico. analisis_id=%s error=%s",
+                "Fallo UVR engine V2 en opcion %s; bloqueando proyeccion. analisis_id=%s error=%s",
                 opcion.numero_opcion,
                 getattr(analisis, "id", None),
                 exc,
             )
-            return None
+            raise exc
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

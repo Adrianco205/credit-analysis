@@ -767,6 +767,9 @@ def download_proposal_pdf(
             costo_total_proyectado_banco=p.costo_total_proyectado_banco or p.costo_total_proyectado,
             veces_pagado=p.veces_pagado,
             cuotas_reducidas=p.cuotas_reducidas or 0,
+            ahorro_seguros=p.ahorro_seguros_proyectado,
+            reduccion_frech=p.reduccion_frech_proyectado,
+            ahorro_total_cliente=p.ahorro_total_cliente
         )
         opciones.append(opcion)
     

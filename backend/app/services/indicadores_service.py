@@ -221,6 +221,77 @@ class BaseProvider:
         raise NotImplementedError
 
 
+class LaRepublicaUVRProvider(BaseProvider):
+    name = "LA_REPUBLICA"
+
+    def __init__(self, service: "IndicadoresFinancierosService"):
+        self.service = service
+
+    async def fetch_records(
+        self,
+        indicator_key: str,
+        fecha_inicio: date,
+        fecha_fin: date,
+    ) -> List[Dict[str, Any]]:
+        if indicator_key.lower() != "uvr":
+            return []
+
+        url = "https://www.larepublica.co/indicadores-economicos/bancos/uvr"
+        client = await self.service._get_client()
+        try:
+            # Añadimos un user agent que imita un navegador para evitar bloqueos
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
+            response = await client.get(url, headers=headers)
+            if response.status_code != 200:
+                raise RuntimeError(f"HTTP {response.status_code} descargando La Republica")
+            
+            html = response.text
+            import re
+            from decimal import Decimal
+            
+            # Buscar la estructura mostrada en el DOM: <span class="nameIndicator">UVR</span>\s*<span>$ 415,76</span>
+            match = re.search(r'<span[^>]*class="nameIndicator"[^>]*>\s*UVR\s*</span>\s*<span[^>]*>\s*\$\s*([\d,\.]+)\s*</span>', html, re.I)
+            if not match:
+                # Fallback: buscar un span genérico o un data-price si la estructura cambia
+                match_fallback = re.search(r'<span[^>]*class="(?:priceIndicator|price)"[^>]*>\s*\$\s*([\d,\.]+)\s*</span>', html, re.I)
+                if match_fallback:
+                    val_str = match_fallback.group(1).replace('.', '').replace(',', '.')
+                else:
+                    # Último recurso: buscar cualquier valor que empiece por $ 4XX,XX (UVR típico)
+                    fallback_match = re.search(r'\$\s*(4\d{2}),(\d{2,4})', html)
+                    if fallback_match:
+                        val_str = f"{fallback_match.group(1)}.{fallback_match.group(2)}"
+                    else:
+                        raise RuntimeError("No se encontró el valor UVR en el HTML de La República")
+            else:
+                val_str = match.group(1).replace('.', '').replace(',', '.')
+                
+            valor = Decimal(val_str)
+            
+            # La Republica retorna el valor actual, así que usamos la fecha de hoy
+            from datetime import date
+            hoy = date.today()
+            
+            self.service.log_provider_debug(
+                provider=self.name,
+                indicator_key=indicator_key,
+                status=200,
+                records_found=1,
+                sample_data=[{"fecha": hoy, "valor": valor}]
+            )
+            return [{"fecha": hoy, "valor": valor}]
+            
+        except Exception as exc:
+            self.service.log_provider_debug(
+                provider=self.name,
+                indicator_key=indicator_key,
+                status=0,
+                records_found=0,
+                error=str(exc)
+            )
+            raise
+
+
 class BanRepSeriesProvider(BaseProvider):
     name = "BANREP_API"
 
@@ -702,6 +773,7 @@ class IndicadoresFinancierosService:
         self._providers: List[BaseProvider] = [
             BanRepFilesProvider(self),
             BanRepSeriesProvider(self),
+            LaRepublicaUVRProvider(self),
         ]
 
     async def _get_client(self) -> httpx.AsyncClient:

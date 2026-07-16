@@ -1,4 +1,5 @@
 import os
+from fastapi.responses import JSONResponse
 from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -70,3 +71,17 @@ app.add_exception_handler(Exception, generic_exception_handler)
 
 # Registrar routers
 app.include_router(api_router, prefix="/api/v1")
+
+
+@app.get("/health/version", include_in_schema=False)
+def health_version():
+    """Deployment diagnostics; no customer or financial data is exposed."""
+    return JSONResponse({
+        "status": "ok",
+        "api_version": app.version,
+        "git_sha": settings.GIT_SHA or os.getenv("GIT_SHA", "unknown"),
+        "image_digest": settings.IMAGE_DIGEST or os.getenv("IMAGE_DIGEST", "unknown"),
+        "projection_model_version": settings.PROJECTION_MODEL_VERSION,
+        "uvr_engine_v3_enabled": settings.UVR_ENGINE_V3_ENABLED,
+        "pesos_engine_v2_enabled": settings.PESOS_ENGINE_V2_ENABLED,
+    })

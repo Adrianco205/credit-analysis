@@ -19,7 +19,9 @@ def _build_input(abono: Decimal) -> UvrProjectionInput:
         uvr_actual=Decimal("376.1794"),
         inflacion_anual_estimada=Decimal("0.06"),
         subsidio_frech=Decimal("201270"),
-        seguro_mensual=Decimal("46384.35"),
+        seguro_mensual=Decimal("0"),
+        cuota_deuda_uvr=Decimal("1268.5427"),
+        valor_seguro_incendio_fijo=Decimal("46384.35"),
     )
 
 
@@ -79,7 +81,9 @@ def test_cuota_uvr_actual_treats_insurance_as_non_debt_component():
         uvr_actual=Decimal("376.1794"),
         inflacion_anual_estimada=Decimal("0.06"),
         subsidio_frech=Decimal("183855.65"),
-        seguro_mensual=Decimal("21134"),
+        seguro_mensual=Decimal("0"),
+        cuota_deuda_uvr=Decimal("1391.45"),
+        valor_seguro_incendio_fijo=Decimal("21134"),
         cuota_uvr_actual=Decimal("1391.45"),
         frech_meses_restantes=36,
     )
@@ -89,7 +93,7 @@ def test_cuota_uvr_actual_treats_insurance_as_non_debt_component():
         UvrProjectionInput(
             **{
                 **base.__dict__,
-                "seguro_mensual": Decimal("0"),
+                "valor_seguro_incendio_fijo": Decimal("0"),
             }
         )
     )
@@ -109,7 +113,9 @@ def test_without_cuota_uvr_insurance_reduces_debt_component():
         uvr_actual=Decimal("376.1794"),
         inflacion_anual_estimada=Decimal("0.06"),
         subsidio_frech=Decimal("183855.65"),
-        seguro_mensual=Decimal("21134"),
+        seguro_mensual=Decimal("0"),
+        cuota_deuda_uvr=Decimal("1391.45"),
+        valor_seguro_incendio_fijo=Decimal("21134"),
         cuota_uvr_actual=None,
         frech_meses_restantes=36,
     )
@@ -119,7 +125,7 @@ def test_without_cuota_uvr_insurance_reduces_debt_component():
         UvrProjectionInput(
             **{
                 **base.__dict__,
-                "seguro_mensual": Decimal("0"),
+                "valor_seguro_incendio_fijo": Decimal("0"),
             }
         )
     )

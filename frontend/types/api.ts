@@ -214,6 +214,13 @@ export interface UpdateManualFieldsRequest {
   intereses_corrientes_periodo?: number;
   intereses_mora?: number;
   otros_cargos?: number;
+  valor_cuota_uvr?: number;
+  valor_uvr_fecha_extracto?: number;
+  seguros_total_mensual?: number;
+  beneficio_frech_mensual?: number;
+  frech_meses_restantes?: number;
+  cuotas_vencidas?: number;
+  override_reason?: string;
 }
 
 export interface ProjectionRequestOption {
@@ -240,6 +247,9 @@ export interface ProjectionResponse {
   costo_total_proyectado_banco?: number | null;
   total_subsidio_frech_proyectado?: number | null;
   valor_ahorrado_intereses?: number | null;
+  ahorro_seguros_proyectado?: number | null;
+  reduccion_frech_proyectado?: number | null;
+  ahorro_total_cliente?: number | null;
   veces_pagado?: number | null;
   honorarios_calculados?: number | null;
   honorarios_con_iva?: number | null;
@@ -525,6 +535,9 @@ export interface ProposalOptionResponse {
   cuotas_reducidas: number;
   tiempo_ahorrado: ProjectionTimeResponse;
   valor_ahorrado_intereses: number;
+  ahorro_seguros_proyectado?: number | null;
+  reduccion_frech_proyectado?: number | null;
+  ahorro_total_cliente?: number | null;
   veces_pagado: number;
   honorarios_calculados: number;
   honorarios_con_iva: number;
@@ -581,6 +594,9 @@ export interface AdminProjectionResponse {
   costo_total_proyectado_banco?: number | null;
   total_subsidio_frech_proyectado?: number | null;
   valor_ahorrado_intereses?: number | null;
+  ahorro_seguros_proyectado?: number | null;
+  reduccion_frech_proyectado?: number | null;
+  ahorro_total_cliente?: number | null;
   veces_pagado?: number | null;
   honorarios_calculados?: number | null;
   honorarios_con_iva?: number | null;

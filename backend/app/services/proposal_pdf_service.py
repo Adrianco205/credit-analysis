@@ -78,6 +78,9 @@ class OpcionAhorro:
     costo_total_proyectado_banco: Optional[Decimal] = None
     veces_pagado: Optional[Decimal] = None
     cuotas_reducidas: int = 0
+    ahorro_seguros: Optional[Decimal] = None
+    reduccion_frech: Optional[Decimal] = None
+    ahorro_total_cliente: Optional[Decimal] = None
 
 
 @dataclass
@@ -428,7 +431,7 @@ class PropuestaPDFGenerator:
         data.append(row_veces)
         
         # Valor ahorrado en intereses
-        row_intereses = ['Valor Ahorrado en Intereses', '-']
+        row_intereses = ['Ahorro Neto en Intereses', '-']
         for op in opciones:
             row_intereses.append(f"${op.intereses_ahorrados:,.0f}")
         data.append(row_intereses)
@@ -438,6 +441,30 @@ class PropuestaPDFGenerator:
         for op in opciones:
             row_cuotas_reducidas.append(str(op.cuotas_reducidas))
         data.append(row_cuotas_reducidas)
+
+        # Ahorro en seguros
+        if any(op.ahorro_seguros is not None and op.ahorro_seguros > 0 for op in opciones):
+            row_seguros = ['Ahorro en Seguros', '-']
+            for op in opciones:
+                val = op.ahorro_seguros or Decimal('0')
+                row_seguros.append(f"${val:,.0f}")
+            data.append(row_seguros)
+            
+        # Pérdida FRECH
+        if any(op.reduccion_frech is not None and op.reduccion_frech > 0 for op in opciones):
+            row_frech = ['Reducción del subsidio FRECH por menor plazo', '-']
+            for op in opciones:
+                val = op.reduccion_frech or Decimal('0')
+                row_frech.append(f"${val:,.0f}")
+            data.append(row_frech)
+            
+        # Ahorro Total Cliente
+        if any(op.ahorro_total_cliente is not None for op in opciones):
+            row_total = ['Ahorro Total Cliente', '-']
+            for op in opciones:
+                val = op.ahorro_total_cliente or op.intereses_ahorrados
+                row_total.append(f"${val:,.0f}")
+            data.append(row_total)
 
         # Tiempo ahorrado
         row_ahorro_tiempo = ['Tiempo Ahorrado', '-']

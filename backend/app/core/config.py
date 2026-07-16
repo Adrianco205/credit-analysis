@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # Feature flags
     ENABLE_TEST_ENDPOINTS: bool = False
     UVR_ENGINE_V2_ENABLED: bool = False
+    UVR_ENGINE_V3_ENABLED: bool = True
+    PESOS_ENGINE_V2_ENABLED: bool = True
+    PROJECTION_MODEL_VERSION: str = "2026.07.canonical-v1"
+    GIT_SHA: str | None = None
+    IMAGE_DIGEST: str | None = None
     UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT: float = 0.06
     
     # Google Cloud Storage (para almacenamiento de documentos)
