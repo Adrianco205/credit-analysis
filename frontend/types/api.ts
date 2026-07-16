@@ -215,9 +215,7 @@ export interface UpdateManualFieldsRequest {
   intereses_mora?: number;
   otros_cargos?: number;
   valor_cuota_uvr?: number;
-  valor_uvr_fecha_extracto?: number;
   seguros_total_mensual?: number;
-  beneficio_frech_mensual?: number;
   frech_meses_restantes?: number;
   cuotas_vencidas?: number;
   override_reason?: string;
