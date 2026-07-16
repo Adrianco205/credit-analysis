@@ -131,3 +131,24 @@ def test_without_cuota_uvr_insurance_reduces_debt_component():
     )
 
     assert with_insurance.meses_totales >= without_insurance.meses_totales
+
+
+def test_negative_amortization_short_circuits_as_impagable():
+    result = simulate_uvr_scenario(
+        UvrProjectionInput(
+            saldo_inicial=Decimal("10000000"),
+            tasa_efectiva_anual=Decimal("0.20"),
+            plazo_meses=240,
+            cuota_actual=Decimal("50000"),
+            abono_adicional=Decimal("0"),
+            uvr_actual=Decimal("400"),
+            inflacion_anual_estimada=Decimal("0.06"),
+            subsidio_frech=Decimal("0"),
+            seguro_mensual=Decimal("0"),
+        )
+    )
+
+    assert result.es_impagable is True
+    assert result.terminado is False
+    assert result.meses_totales == 0
+    assert result.tabla == []

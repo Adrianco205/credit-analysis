@@ -176,6 +176,7 @@ class AdminAnalysisDetail(BaseModel):
     costo_total_proyectado_banco: Decimal | None
     total_subsidio_frech_proyectado: Decimal | None
     veces_pagado_actual: Decimal | None
+    es_impagable: bool = False
     total_pagado_fecha: Decimal | None
     total_frech_recibido: Decimal | None
     ajuste_inflacion_pesos: Decimal | None
@@ -978,6 +979,7 @@ def get_analysis_admin(
         # Fuente de verdad para "Límites hoy": proyección financiera mes a mes (abono = 0).
         service = get_analysis_service(db)
         baseline = service._calculate_baseline(analisis)
+        es_impagable = bool(baseline.get("es_impagable", False))
         total_por_pagar_proyectado = baseline.get("total_actual")
         costo_total_proyectado = baseline.get("costo_total_proyectado")
         costo_total_proyectado_banco = baseline.get("costo_total_proyectado_banco")
@@ -986,8 +988,9 @@ def get_analysis_admin(
         veces_pagado_actual = baseline.get("veces_pagado_actual")
     except Exception as exc:
         logger.warning("No se pudo calcular baseline proyectado para admin detail %s: %s", analysis_id, exc)
+        es_impagable = False
 
-    if veces_pagado_actual is None:
+    if not es_impagable and veces_pagado_actual is None:
         veces_pagado_actual = (
             (analisis.total_por_pagar / analisis.saldo_capital_pesos).quantize(Decimal("0.01"))
             if analisis.total_por_pagar is not None and analisis.saldo_capital_pesos and analisis.saldo_capital_pesos > 0
@@ -1040,6 +1043,7 @@ def get_analysis_admin(
         costo_total_proyectado_banco=costo_total_proyectado_banco,
         total_subsidio_frech_proyectado=total_subsidio_frech_proyectado,
         veces_pagado_actual=veces_pagado_actual,
+        es_impagable=es_impagable,
         total_pagado_fecha=analisis.total_pagado_fecha,
         total_frech_recibido=analisis.total_frech_recibido,
         ajuste_inflacion_pesos=analisis.ajuste_inflacion_pesos,

@@ -71,6 +71,21 @@ function toTimeDescription(time?: ProjectionTimeResponse | null) {
   return time.descripcion || `${time.anios || 0} años, ${time.meses || 0} meses`;
 }
 
+function describeProjectionTime(time?: ProjectionTimeResponse | null, isImpagable?: boolean | null) {
+  if (isImpagable) return 'Crédito impagable';
+  return toTimeDescription(time);
+}
+
+function formatProjectionCop(value: number | null | undefined, isImpagable?: boolean | null) {
+  if (isImpagable) return 'N/A';
+  return formatCop(value);
+}
+
+function formatProjectionTimesPaid(value: number | null | undefined, isImpagable?: boolean | null) {
+  if (isImpagable) return 'N/A';
+  return formatTimesPaid(value);
+}
+
 function monthsToTime(months?: number | null): ProjectionTimeResponse {
   const safeMonths = Math.max(0, Number(months || 0));
   const anios = Math.floor(safeMonths / 12);
@@ -182,6 +197,7 @@ function buildLegacyProposal(
       abono_adicional_mensual: Number(item.abono_adicional_mensual || 0),
       cuotas_nuevas: Number(item.cuotas_nuevas || 0),
       tiempo_restante: monthsToTime((item.tiempo_restante_anios || 0) * 12 + (item.tiempo_restante_meses || 0)),
+      es_impagable: Boolean(item.es_impagable),
       nuevo_valor_cuota: Number(item.nuevo_valor_cuota || 0),
       total_por_pagar_aprox: totalSimpleFinal,
       total_por_pagar_simple: totalSimpleFinal,
@@ -212,6 +228,7 @@ function buildLegacyProposal(
       tiempo_pendiente: monthsToTime(cuotasPendientes),
       abono_adicional_cuota: 0,
       valor_cuota: cuotaActual,
+      es_impagable: Boolean(detail.es_impagable),
       total_por_pagar_aprox: totalPagarSimple,
       total_por_pagar_simple: totalPagarSimple,
       costo_total_proyectado: costoTotalProyectado,
@@ -731,9 +748,18 @@ function InstitutionalOpportunitiesTable({
   const showTasa = esUvr && tasaRaw !== null && Number(tasaRaw) > 0;
   const segurosActuales = Number(proposal.seguros_actuales || 0);
   const showSeguros = segurosActuales > 0;
+  const isImpagable = Boolean(
+    proposal.limites_actuales.es_impagable || opciones.some((opcion) => opcion.es_impagable)
+  );
 
   return (
     <div className="min-w-[980px] rounded-xl border border-[var(--gray-200)] bg-white overflow-hidden">
+      {isImpagable && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex items-center gap-2">
+          <AlertTriangle size={16} />
+          <span>Crédito impagable: la cuota no cubre interés y cargos, por lo que no se proyecta un vencimiento real.</span>
+        </div>
+      )}
       <div className="grid" style={{ gridTemplateColumns }}>
         <HeaderLeftCell title="LÍMITES CON EL BANCO HOY" />
         {opciones.map((opcion) => (
@@ -758,15 +784,15 @@ function InstitutionalOpportunitiesTable({
         label="Cuotas Pendientes"
         leftValue={String(proposal.limites_actuales.cuotas_pendientes || 0)}
         options={opciones}
-        getOptionValue={(opcion) => String(opcion.cuotas_nuevas || 0)}
+        getOptionValue={(opcion) => (opcion.es_impagable ? 'N/A' : String(opcion.cuotas_nuevas || 0))}
         leftVariant="base"
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
         label="Tiempo Pendiente"
-        leftValue={toTimeDescription(proposal.limites_actuales.tiempo_pendiente)}
+        leftValue={describeProjectionTime(proposal.limites_actuales.tiempo_pendiente, proposal.limites_actuales.es_impagable)}
         options={opciones}
-        getOptionValue={(opcion) => toTimeDescription(opcion.tiempo_restante)}
+        getOptionValue={(opcion) => describeProjectionTime(opcion.tiempo_restante, opcion.es_impagable)}
         leftVariant="base"
       />
       <OpportunityRow
@@ -788,17 +814,17 @@ function InstitutionalOpportunitiesTable({
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
         label="Total estimado a pagar al banco (aprox.)"
-        leftValue={formatCop(proposal.limites_actuales.costo_total_proyectado_banco || proposal.limites_actuales.costo_total_proyectado)}
+        leftValue={formatProjectionCop(proposal.limites_actuales.costo_total_proyectado_banco || proposal.limites_actuales.costo_total_proyectado, proposal.limites_actuales.es_impagable)}
         options={opciones}
-        getOptionValue={(opcion) => formatCop(opcion.costo_total_proyectado_banco || opcion.costo_total_proyectado)}
+        getOptionValue={(opcion) => formatProjectionCop(opcion.costo_total_proyectado_banco || opcion.costo_total_proyectado, opcion.es_impagable)}
         leftVariant="base"
       />
       <OpportunityRow
         gridTemplateColumns={gridTemplateColumns}
         label="No. Veces Pagado (sobre costo banco)"
-        leftValue={formatTimesPaid(proposal.limites_actuales.veces_pagado)}
+        leftValue={formatProjectionTimesPaid(proposal.limites_actuales.veces_pagado, proposal.limites_actuales.es_impagable)}
         options={opciones}
-        getOptionValue={(opcion) => formatTimesPaid(opcion.veces_pagado)}
+        getOptionValue={(opcion) => formatProjectionTimesPaid(opcion.veces_pagado, opcion.es_impagable)}
         leftVariant="base"
         isBlockEnd
       />
@@ -807,7 +833,7 @@ function InstitutionalOpportunitiesTable({
         gridTemplateColumns={gridTemplateColumns}
         label="Ahorro Neto en Intereses"
         options={opciones}
-        getOptionValue={(opcion) => formatCop(opcion.valor_ahorrado_intereses)}
+        getOptionValue={(opcion) => formatProjectionCop(opcion.valor_ahorrado_intereses, opcion.es_impagable)}
         valueTone="benefit"
         isBlockStart
       />
@@ -849,7 +875,7 @@ function InstitutionalOpportunitiesTable({
         gridTemplateColumns={gridTemplateColumns}
         label="Cuotas Reducidas"
         options={opciones}
-        getOptionValue={(opcion) => String(opcion.cuotas_reducidas || 0)}
+        getOptionValue={(opcion) => (opcion.es_impagable ? 'N/A' : String(opcion.cuotas_reducidas || 0))}
         valueTone="benefit"
         isBlockStart
       />
@@ -857,7 +883,7 @@ function InstitutionalOpportunitiesTable({
         gridTemplateColumns={gridTemplateColumns}
         label="Tiempo Ahorrado"
         options={opciones}
-        getOptionValue={(opcion) => toTimeDescription(opcion.tiempo_ahorrado)}
+        getOptionValue={(opcion) => describeProjectionTime(opcion.tiempo_ahorrado, opcion.es_impagable)}
         valueTone="benefit"
         isBlockEnd
       />

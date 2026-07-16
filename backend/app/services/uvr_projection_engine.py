@@ -88,6 +88,7 @@ class UvrScenarioResult:
     mes_inicio_amortizacion_significativa: int | None
     terminado: bool
     tabla: List[UvrMonthlyRow]
+    es_impagable: bool = False
 
 
 @dataclass(frozen=True)
@@ -206,6 +207,20 @@ def simulate_uvr_scenario(
     # ----- Initial state ---------------------------------------------------
     saldo_uvr = data.saldo_inicial / data.uvr_actual
     uvr_mes = data.uvr_actual  # first month uses this value as-is
+
+    if _is_negative_amortization_first_month(data, abono_adicional):
+        return UvrScenarioResult(
+            meses_totales=0,
+            total_pagado_cliente=Decimal("0.00"),
+            total_pagado_banco=Decimal("0.00"),
+            intereses_totales=Decimal("0.00"),
+            capital_total_amortizado=Decimal("0.00"),
+            saldo_final_pesos=_quantize_money(data.saldo_inicial),
+            mes_inicio_amortizacion_significativa=None,
+            terminado=False,
+            es_impagable=True,
+            tabla=[],
+        )
 
     tabla: List[UvrMonthlyRow] = []
     total_intereses = Decimal("0")
@@ -336,6 +351,7 @@ def simulate_uvr_scenario(
         saldo_final_pesos=_quantize_money(max(saldo_final, Decimal("0"))),
         mes_inicio_amortizacion_significativa=mes_inicio_amortizacion_significativa,
         terminado=terminado,
+        es_impagable=False,
         tabla=tabla,
     )
 

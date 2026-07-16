@@ -110,6 +110,7 @@ class ProyeccionOpcionResponse(BaseModel):
     # Tiempo restante con esta opción
     cuotas_nuevas: int
     tiempo_restante: TiempoAhorrado
+    es_impagable: bool = False
     
     # Dinero
     nuevo_valor_cuota: Decimal  # Cuota actual + Abono adicional
@@ -151,6 +152,7 @@ class LimitesActualesResponse(BaseModel):
     tiempo_pendiente: TiempoAhorrado
     abono_adicional_cuota: Decimal  # Actualmente $0
     valor_cuota: Decimal
+    es_impagable: bool = False
     total_por_pagar_aprox: Decimal  # Estimado simple: cuota x cuotas pendientes
     total_por_pagar_simple: Decimal | None = None  # Alias de compatibilidad
     costo_total_proyectado: Decimal | None = None

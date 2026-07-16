@@ -476,6 +476,7 @@ export interface AdminAnalysisDetailResponse {
   costo_total_proyectado_banco?: number | null;
   total_subsidio_frech_proyectado?: number | null;
   veces_pagado_actual?: number | null;
+  es_impagable?: boolean | null;
   ingresos_mensuales?: number | null;
   capacidad_pago_max?: number | null;
   opciones_abono_preferidas?: number[] | null;
@@ -511,6 +512,7 @@ export interface ProposalCurrentLimitsResponse {
   tiempo_pendiente: ProjectionTimeResponse;
   abono_adicional_cuota: number;
   valor_cuota: number;
+  es_impagable?: boolean | null;
   total_por_pagar_aprox: number;
   total_por_pagar_simple: number;
   costo_total_proyectado: number;
@@ -526,6 +528,7 @@ export interface ProposalOptionResponse {
   abono_adicional_mensual: number;
   cuotas_nuevas: number;
   tiempo_restante: ProjectionTimeResponse;
+  es_impagable?: boolean | null;
   nuevo_valor_cuota: number;
   total_por_pagar_aprox: number;
   total_por_pagar_simple: number;
@@ -584,6 +587,7 @@ export interface AdminProjectionResponse {
   cuotas_nuevas?: number | null;
   tiempo_restante_anios?: number | null;
   tiempo_restante_meses?: number | null;
+  es_impagable?: boolean | null;
   cuotas_reducidas?: number | null;
   tiempo_ahorrado_anios?: number | null;
   tiempo_ahorrado_meses?: number | null;
