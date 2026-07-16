@@ -70,6 +70,7 @@ class UvrScenarioResult:
     mes_inicio_amortizacion_significativa: int | None
     terminado: bool
     tabla: List[UvrMonthlyRow]
+    es_impagable: bool = False
 
 
 @dataclass(frozen=True)
@@ -89,6 +90,33 @@ class UvrComparisonResult:
 
 def _quantize_money(value: Decimal) -> Decimal:
     return value.quantize(PRECISION_MONEY, rounding=ROUND_HALF_UP)
+
+
+def _is_negative_amortization_first_month(data: UvrProjectionInput, abono_adicional: Decimal) -> bool:
+    """Detecta si la primera cuota ya no alcanza para amortizar capital."""
+    tasa_mensual = tasa_ea_a_mensual(data.tasa_efectiva_anual)
+    inflacion_mensual = inflacion_anual_a_mensual_lineal(data.inflacion_anual_estimada)
+    uvr_mes = (data.uvr_actual * (Decimal("1") + inflacion_mensual)).quantize(PRECISION_RATE)
+
+    saldo_inicial_pesos = _quantize_money((data.saldo_inicial / data.uvr_actual) * uvr_mes)
+
+    if data.cuota_uvr_actual is not None and data.cuota_uvr_actual > 0:
+        cuota_deuda_pesos = _quantize_money(data.cuota_uvr_actual * uvr_mes)
+    else:
+        cuota_bruta_inicial_pesos = data.cuota_actual + data.subsidio_frech
+        seguros_inicial = (
+            (data.saldo_inicial * data.tasa_seguro_vida)
+            + data.valor_seguro_incendio_fijo
+            + data.cargos_no_amortizables_mensuales
+        )
+        cuota_fija_deuda_pesos = cuota_bruta_inicial_pesos - seguros_inicial
+        if cuota_fija_deuda_pesos <= 0:
+            cuota_fija_deuda_pesos = cuota_bruta_inicial_pesos
+        cuota_deuda_pesos = _quantize_money(cuota_fija_deuda_pesos * (uvr_mes / data.uvr_actual))
+
+    interes_mes = _quantize_money(saldo_inicial_pesos * tasa_mensual)
+    capital_mes = _quantize_money(cuota_deuda_pesos + abono_adicional - interes_mes)
+    return capital_mes <= 0
 
 
 def tasa_ea_a_mensual(tasa_efectiva_anual: Decimal) -> Decimal:
@@ -127,6 +155,20 @@ def _simulate_uvr_baseline_realistic(data: UvrProjectionInput) -> UvrScenarioRes
 
     saldo_uvr = (data.saldo_inicial / data.uvr_actual)
     uvr_mes = data.uvr_actual
+
+    if _is_negative_amortization_first_month(data, Decimal("0")):
+        return UvrScenarioResult(
+            meses_totales=0,
+            total_pagado_cliente=Decimal("0.00"),
+            total_pagado_banco=Decimal("0.00"),
+            intereses_totales=Decimal("0.00"),
+            capital_total_amortizado=Decimal("0.00"),
+            saldo_final_pesos=_quantize_money(data.saldo_inicial),
+            mes_inicio_amortizacion_significativa=None,
+            terminado=False,
+            es_impagable=True,
+            tabla=[],
+        )
 
     # Cuota bruta del banco congelada en UVR (Solo Deuda)
     # data.cuota_actual es el pago cliente inicial (sin frech).
@@ -247,6 +289,7 @@ def _simulate_uvr_baseline_realistic(data: UvrProjectionInput) -> UvrScenarioRes
         saldo_final_pesos=_quantize_money(max(saldo_final, Decimal("0"))),
         mes_inicio_amortizacion_significativa=mes_inicio_amortizacion_significativa,
         terminado=terminado,
+        es_impagable=False,
         tabla=tabla,
     )
 
@@ -307,6 +350,20 @@ def simulate_uvr_scenario(
 
     saldo_uvr = (data.saldo_inicial / data.uvr_actual)
     uvr_mes = data.uvr_actual
+
+    if _is_negative_amortization_first_month(data, abono_adicional):
+        return UvrScenarioResult(
+            meses_totales=0,
+            total_pagado_cliente=Decimal("0.00"),
+            total_pagado_banco=Decimal("0.00"),
+            intereses_totales=Decimal("0.00"),
+            capital_total_amortizado=Decimal("0.00"),
+            saldo_final_pesos=_quantize_money(data.saldo_inicial),
+            mes_inicio_amortizacion_significativa=None,
+            terminado=False,
+            es_impagable=True,
+            tabla=[],
+        )
 
     tabla: List[UvrMonthlyRow] = []
     total_intereses = Decimal("0")
@@ -404,6 +461,7 @@ def simulate_uvr_scenario(
         saldo_final_pesos=_quantize_money(max(saldo_final, Decimal("0"))),
         mes_inicio_amortizacion_significativa=mes_inicio_amortizacion_significativa,
         terminado=terminado,
+        es_impagable=False,
         tabla=tabla,
     )
 
