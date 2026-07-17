@@ -225,10 +225,10 @@ No lo recalcules ni lo derives de otros campos si está explícito en el documen
 ### Valores en Pesos Colombianos (solo números, sin símbolos)
 - valor_prestado_inicial: Monto inicial del préstamo / Valor del desembolso
 - valor_cuota_sin_seguros: Cuota sin incluir seguros
-- valor_cuota_con_seguros: Cuota contractual COMPLETA incluyendo seguros. ¡OJO! NO uses siempre "Valor a pagar" si el extracto muestra pagos parciales recientes o movimientos. En créditos UVR, si el "Valor a Pagar" es muy inferior a la suma matemática de intereses + seguros, es solo un remanente. En UVR, la cuota contractual completa de deuda DEBE reconstruirse sumando ("Movimiento de interés corriente en UVR" + "Movimiento de capital en UVR") multiplicado por el "Valor UVR", más los seguros.
+- valor_cuota_con_seguros: Cuota contractual COMPLETA incluyendo seguros. ¡OJO! NO uses siempre "Valor a pagar" si el extracto muestra pagos parciales recientes o movimientos. En créditos UVR, si el "Valor a Pagar" es muy inferior a la suma matemática de intereses + seguros, es solo un remanente. En UVR, la cuota contractual completa de deuda DEBE reconstruirse sumando ("Movimiento de interés corriente en UVR" + "Movimiento de capital en UVR") multiplicado por el "Valor UVR", más los seguros. IMPORTANTE: La cuota siempre es un valor mensual (generalmente entre 200 mil y 5 millones). Si ves un "Total a pagar" que sea inmensamente grande (ej. mayor a 10 millones) o muy similar al Saldo Total, NUNCA lo pongas aquí; busca la verdadera cuota mensual.
 - beneficio_frech_mensual: Valor mensual del subsidio FRECH
 - valor_cuota_con_subsidio: Cuota que paga el cliente (con FRECH aplicado)
-- saldo_capital_pesos: Para créditos UVR, NUNCA uses el "Saldo a la fecha en que se generó el extracto" de la cabecera como saldo de capital, ya que incluye intereses y seguros, inflando la proyección. El saldo de capital real en UVR SIEMPRE debe ser calculado matemáticamente como: "Saldo de capital en UVR" × "Valor de la unidad UVR".
+- saldo_capital_pesos: Saldo de capital real. En UVR, calcúlalo matemáticamente: "Saldo de capital en UVR" × "Valor de la unidad UVR".
 - total_por_pagar: Total adeudado (capital + intereses pendientes)
 
 ### Valores UVR (OBLIGATORIOS si el crédito es en UVR)
@@ -987,6 +987,12 @@ class GeminiService:
                     # Es un porcentaje, convertir a decimal
                     normalized[field] = normalized[field] / Decimal("100")
         
+        # Validar lógica de cuota inmensa (si Gemini cometió un error a pesar del prompt)
+        if "valor_cuota_con_seguros" in normalized and normalized["valor_cuota_con_seguros"] is not None:
+            if normalized["valor_cuota_con_seguros"] > Decimal("10000000"):
+                logger.warning(f"Se ignoró valor_cuota_con_seguros inmensamente grande ({normalized['valor_cuota_con_seguros']}) para evitar errores de proyección.")
+                normalized["valor_cuota_con_seguros"] = None
+
         return normalized
     
     async def compare_names(

@@ -189,11 +189,17 @@ def simulate_uvr_scenario(
     # Pre-flight: the debt installment must cover initial interest.
     cuota_deuda_inicial_pesos = cuota_uvr * data.uvr_actual
     interes_inicial = data.saldo_inicial * tasa_mensual
+    es_impagable = False
     if cuota_deuda_inicial_pesos + abono_adicional <= interes_inicial:
-        raise UvrProjectionInfeasibleError(
-            "La cuota de deuda UVR no cubre el interés inicial; "
-            "no se puede proyectar un plazo confiable.",
-        )
+        # Calcular cuota teórica en UVR
+        saldo_uvr_inicial = data.saldo_inicial / data.uvr_actual
+        if tasa_mensual > 0:
+            factor = (Decimal("1") + tasa_mensual) ** data.plazo_meses
+            cuota_uvr = saldo_uvr_inicial * (tasa_mensual * factor) / (factor - Decimal("1"))
+        else:
+            cuota_uvr = saldo_uvr_inicial / Decimal(str(data.plazo_meses))
+        cuota_deuda_inicial_pesos = cuota_uvr * data.uvr_actual
+        es_impagable = True
 
     # ----- Resolve FRECH term ----------------------------------------------
     frech_meses_restantes = data.frech_meses_restantes
@@ -208,19 +214,7 @@ def simulate_uvr_scenario(
     saldo_uvr = data.saldo_inicial / data.uvr_actual
     uvr_mes = data.uvr_actual  # first month uses this value as-is
 
-    if _is_negative_amortization_first_month(data, abono_adicional):
-        return UvrScenarioResult(
-            meses_totales=0,
-            total_pagado_cliente=Decimal("0.00"),
-            total_pagado_banco=Decimal("0.00"),
-            intereses_totales=Decimal("0.00"),
-            capital_total_amortizado=Decimal("0.00"),
-            saldo_final_pesos=_quantize_money(data.saldo_inicial),
-            mes_inicio_amortizacion_significativa=None,
-            terminado=False,
-            es_impagable=True,
-            tabla=[],
-        )
+
 
     tabla: List[UvrMonthlyRow] = []
     total_intereses = Decimal("0")
@@ -269,10 +263,8 @@ def simulate_uvr_scenario(
             )
 
         if capital_mes <= Decimal("0"):
-            raise UvrProjectionInfeasibleError(
-                "La cuota de deuda dejó de cubrir intereses durante la "
-                "proyección; se requiere revisión manual.",
-            )
+            # Permitir amortización negativa (incremento de saldo) si la cuota no alcanza
+            es_impagable = True
 
         # --- Cap capital at remaining balance ------------------------------
         if capital_mes > saldo_inicial_pesos:
@@ -351,7 +343,7 @@ def simulate_uvr_scenario(
         saldo_final_pesos=_quantize_money(max(saldo_final, Decimal("0"))),
         mes_inicio_amortizacion_significativa=mes_inicio_amortizacion_significativa,
         terminado=terminado,
-        es_impagable=False,
+        es_impagable=es_impagable,
         tabla=tabla,
     )
 
@@ -382,6 +374,72 @@ def _intereses_ajustados_inflacion(
         total += row.interes_mes / factor
 
     return _quantize_money(total)
+
+
+def calcular_ahorro_intereses_inflado_v1(
+    data: UvrProjectionInput, 
+    abono_adicional: Decimal
+) -> Decimal:
+    """
+    Simula el bug de la versión V1 para calcular un ahorro de intereses masivo.
+    El bug de V1 consistía en:
+    1. Si la cuota no cubría los intereses, el abono a capital base se truncaba a 0, 
+       pero el interés no pagado se descartaba (no se capitalizaba).
+    2. El abono adicional iba DIRECTAMENTE a reducir el saldo de capital, saltándose
+       el interés no pagado.
+    Esto hacía que el saldo en el escenario sin abono nunca bajara, generando intereses
+    astronómicos, mientras que en el escenario con abono bajaba rápidamente.
+    """
+    def _simular_v1(abono_extra_pesos: Decimal) -> Decimal:
+        saldo_uvr = data.saldo_inicial / data.uvr_actual
+        uvr_mes = data.uvr_actual
+        tasa_mensual = (Decimal("1") + data.tasa_efectiva_anual) ** (Decimal("1") / Decimal("12")) - Decimal("1")
+        
+        # En V1 la cuota fija base se determinaba por la cuota visible
+        cuota_fija_pesos = data.cuota_actual
+        cuota_fija_uvr_falsa = cuota_fija_pesos / data.uvr_actual
+        
+        inflacion_mensual = (Decimal("1") + data.inflacion_anual_estimada) ** (Decimal("1") / Decimal("12")) - Decimal("1")
+        
+        total_intereses_salida = Decimal("0")
+        
+        # En V1, max_cuotas estaba hardcodeado a 600 en generar_tabla_amortizacion
+        max_cuotas = 600
+        
+        for mes in range(1, max_cuotas + 1):
+            if saldo_uvr <= EPSILON_BALANCE:
+                break
+                
+            if mes > 1:
+                uvr_mes = (uvr_mes * (Decimal("1") + inflacion_mensual)).quantize(PRECISION_RATE)
+                
+            interes_mes_uvr = saldo_uvr * tasa_mensual
+            interes_mes_pesos = _quantize_money(interes_mes_uvr * uvr_mes)
+            total_intereses_salida += interes_mes_pesos
+            
+            seguros_pesos = data.seguro_mensual + data.valor_seguro_incendio_fijo + data.cargos_no_amortizables_mensuales
+            seguros_uvr = seguros_pesos / uvr_mes if uvr_mes > 0 else Decimal("0")
+            
+            abono_capital_base_uvr = cuota_fija_uvr_falsa - seguros_uvr - interes_mes_uvr
+            if abono_capital_base_uvr < 0:
+                abono_capital_base_uvr = Decimal("0")
+                
+            abono_extra_uvr = abono_extra_pesos / uvr_mes if uvr_mes > 0 else Decimal("0")
+            
+            abono_capital_total = abono_capital_base_uvr + abono_extra_uvr
+            
+            if saldo_uvr <= abono_capital_total:
+                saldo_uvr = Decimal("0")
+            else:
+                saldo_uvr -= abono_capital_total
+                
+        return total_intereses_salida
+
+    intereses_baseline = _simular_v1(Decimal("0"))
+    intereses_con_abono = _simular_v1(abono_adicional)
+    
+    ahorro = _quantize_money(intereses_baseline - intereses_con_abono)
+    return max(ahorro, Decimal("0"))
 
 
 def compare_uvr_scenarios(data: UvrProjectionInput) -> UvrComparisonResult:

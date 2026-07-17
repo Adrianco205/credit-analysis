@@ -72,18 +72,16 @@ function toTimeDescription(time?: ProjectionTimeResponse | null) {
 }
 
 function describeProjectionTime(time?: ProjectionTimeResponse | null, isImpagable?: boolean | null) {
-  if (isImpagable) return 'Crédito impagable';
   return toTimeDescription(time);
 }
 
 function formatProjectionCop(value: number | null | undefined, isImpagable?: boolean | null) {
-  if (isImpagable) return 'N/A';
   return formatCop(value);
 }
 
 function formatProjectionTimesPaid(value: number | null | undefined, isImpagable?: boolean | null) {
-  if (isImpagable) return 'N/A';
-  return formatTimesPaid(value);
+  if (value == null) return '0,00';
+  return value.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function monthsToTime(months?: number | null): ProjectionTimeResponse {
@@ -121,14 +119,19 @@ function getErrorMessage(error: unknown, fallback: string) {
 }
 
 function getReasonCode(error: unknown): string | null {
-  if (typeof error === 'object' && error && 'response' in error) {
-    const response = (error as { response?: { data?: unknown } }).response;
-    const data = response?.data;
-    if (typeof data === 'object' && data && 'detail' in data) {
-      const detail = (data as { detail?: unknown }).detail;
-      if (typeof detail === 'object' && detail && 'reason_code' in detail) {
-        const rc = (detail as { reason_code?: unknown }).reason_code;
-        if (typeof rc === 'string' && rc.trim()) return rc;
+  if (typeof error === 'object' && error !== null) {
+    if ('reason_code' in error && typeof (error as any).reason_code === 'string') {
+      return (error as any).reason_code;
+    }
+    if ('response' in error) {
+      const response = (error as { response?: { data?: unknown } }).response;
+      const data = response?.data;
+      if (typeof data === 'object' && data && 'detail' in data) {
+        const detail = (data as { detail?: unknown }).detail;
+        if (typeof detail === 'object' && detail && 'reason_code' in detail) {
+          const rc = (detail as { reason_code?: unknown }).reason_code;
+          if (typeof rc === 'string' && rc.trim()) return rc;
+        }
       }
     }
   }
@@ -546,6 +549,22 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
           </div>
         )}
 
+        {proposal?.limites_actuales.es_impagable && !error && (
+          <div className="mb-4 rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="text-yellow-600 mt-0.5" size={20} />
+              <div>
+                <h3 className="text-sm font-semibold text-yellow-800">
+                  Amortización Negativa Detectada (Posible Período de Gracia)
+                </h3>
+                <p className="mt-1 text-sm text-yellow-700">
+                  La cuota original no cubre los intereses. Se ha calculado y utilizado una Cuota Teórica para poder generar la proyección. Puedes revisar el valor en la tabla (Cuota actual a cancelar).
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Input
@@ -784,7 +803,7 @@ function InstitutionalOpportunitiesTable({
         label="Cuotas Pendientes"
         leftValue={String(proposal.limites_actuales.cuotas_pendientes || 0)}
         options={opciones}
-        getOptionValue={(opcion) => (opcion.es_impagable ? 'N/A' : String(opcion.cuotas_nuevas || 0))}
+        getOptionValue={(opcion) => String(opcion.cuotas_nuevas || 0)}
         leftVariant="base"
       />
       <OpportunityRow
@@ -875,7 +894,7 @@ function InstitutionalOpportunitiesTable({
         gridTemplateColumns={gridTemplateColumns}
         label="Cuotas Reducidas"
         options={opciones}
-        getOptionValue={(opcion) => (opcion.es_impagable ? 'N/A' : String(opcion.cuotas_reducidas || 0))}
+        getOptionValue={(opcion) => String(opcion.cuotas_reducidas || 0)}
         valueTone="benefit"
         isBlockStart
       />
@@ -938,7 +957,7 @@ function InstitutionalOpportunitiesTable({
         gridTemplateColumns={gridTemplateColumns}
         label="Valor Honorarios"
         options={opciones}
-        getOptionValue={(opcion) => formatCop(opcion.honorarios_calculados)}
+        getOptionValue={(opcion) => formatCop(opcion.honorarios_con_iva)}
         valueTone="fees"
         isBlockEnd
       />

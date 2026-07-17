@@ -39,6 +39,7 @@ class PesosProjectionResult:
     principal_amortized: Decimal
     remaining_balance: Decimal
     terminated: bool
+    es_impagable: bool = False
 
 
 def simulate_pesos(data: PesosProjectionInput) -> PesosProjectionResult:
@@ -47,8 +48,15 @@ def simulate_pesos(data: PesosProjectionInput) -> PesosProjectionResult:
     if data.principal_balance <= 0 or data.contractual_debt_installment <= 0 or data.remaining_term <= 0:
         raise PesosProjectionInfeasibleError("Faltan términos contractuales verificables.")
     rate = ea_to_monthly(data.annual_rate)
-    if data.contractual_debt_installment + data.extra_payment <= data.principal_balance * rate:
-        raise PesosProjectionInfeasibleError("La cuota de deuda no cubre el interés inicial.")
+    cuota_deuda = data.contractual_debt_installment
+    es_impagable = False
+    if cuota_deuda + data.extra_payment <= data.principal_balance * rate:
+        if rate > 0:
+            factor = (Decimal("1") + rate) ** data.remaining_term
+            cuota_deuda = data.principal_balance * (rate * factor) / (factor - Decimal("1"))
+        else:
+            cuota_deuda = data.principal_balance / Decimal(str(data.remaining_term))
+        es_impagable = True
 
     balance = data.principal_balance
     client = bank = interest_total = insurance_total = frech_total = principal_total = Decimal("0")
@@ -56,10 +64,11 @@ def simulate_pesos(data: PesosProjectionInput) -> PesosProjectionResult:
     # Remaining term is a contractual reference, not an iteration result.
     for month in range(1, data.remaining_term + 1):
         interest = (balance * rate).quantize(MONEY, rounding=ROUND_HALF_UP)
-        debt_payment = data.contractual_debt_installment + data.extra_payment
+        debt_payment = cuota_deuda + data.extra_payment
         principal = debt_payment - interest
         if principal <= 0:
-            raise PesosProjectionInfeasibleError("La cuota dejó de cubrir intereses durante la proyección.")
+            # Permitir amortización negativa (incremento de saldo) si la cuota no alcanza
+            es_impagable = True
         if principal > balance:
             principal = balance
             debt_payment = interest + principal
@@ -78,4 +87,4 @@ def simulate_pesos(data: PesosProjectionInput) -> PesosProjectionResult:
         if balance <= EPSILON:
             balance = Decimal("0")
             break
-    return PesosProjectionResult(months, client.quantize(MONEY), bank.quantize(MONEY), interest_total.quantize(MONEY), insurance_total.quantize(MONEY), frech_total.quantize(MONEY), principal_total.quantize(MONEY), balance, balance <= EPSILON)
+    return PesosProjectionResult(months, client.quantize(MONEY), bank.quantize(MONEY), interest_total.quantize(MONEY), insurance_total.quantize(MONEY), frech_total.quantize(MONEY), principal_total.quantize(MONEY), balance, balance <= EPSILON, es_impagable)

@@ -196,7 +196,5 @@ def validate_projection_snapshot(snapshot: NormalizedCreditSnapshot, annual_rate
     monthly_rate = (Decimal(str((1 + float(rate)) ** (1 / 12))) - Decimal("1")) if rate > 0 else Decimal("0")
     initial_interest = snapshot.principal_balance * monthly_rate
     if snapshot.contractual_debt_installment <= initial_interest:
-        raise ProjectionValidationError(
-            ProjectionStatus.NEGATIVE_AMORTIZATION,
-            "La cuota de deuda identificada no cubre el interés inicial. Verifique cuota contractual, pago parcial, seguros o FRECH antes de proyectar.",
-        )
+        # En lugar de bloquear la proyección, permitimos que el motor calcule una cuota teórica.
+        pass

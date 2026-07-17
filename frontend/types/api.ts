@@ -359,6 +359,7 @@ export interface ApiError {
   message: string;
   status_code: number;
   detail?: string | object;
+  reason_code?: string | null;
 }
 
 // ==========================================

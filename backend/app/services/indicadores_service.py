@@ -276,8 +276,9 @@ class LaRepublicaUVRProvider(BaseProvider):
                 provider=self.name,
                 indicator_key=indicator_key,
                 status=200,
-                records_found=1,
-                sample_data=[{"fecha": hoy, "valor": valor}]
+                content_type="html/scraper",
+                payload={"records_found": 1},
+                normalized=[{"fecha": hoy, "valor": valor}]
             )
             return [{"fecha": hoy, "valor": valor}]
             
@@ -286,8 +287,9 @@ class LaRepublicaUVRProvider(BaseProvider):
                 provider=self.name,
                 indicator_key=indicator_key,
                 status=0,
-                records_found=0,
-                error=str(exc)
+                content_type="error",
+                payload={"error": str(exc)},
+                normalized=[]
             )
             raise
 

@@ -91,13 +91,15 @@ class ApiClient {
               apiError = responseData;
             } else if (responseData.detail) {
               // FastAPI HTTPException format
+              const isObj = typeof responseData.detail === 'object' && responseData.detail !== null;
               apiError = {
                 error: 'http_error',
-                message: typeof responseData.detail === 'string' 
-                  ? responseData.detail 
-                  : JSON.stringify(responseData.detail),
+                message: isObj && typeof responseData.detail.message === 'string' 
+                  ? responseData.detail.message 
+                  : (typeof responseData.detail === 'string' ? responseData.detail : JSON.stringify(responseData.detail)),
                 status_code: error.response.status,
-                detail: responseData.detail
+                detail: responseData.detail,
+                reason_code: isObj && typeof responseData.detail.reason_code === 'string' ? responseData.detail.reason_code : undefined
               };
             } else {
               // Unknown format - stringify it

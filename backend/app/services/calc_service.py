@@ -139,6 +139,9 @@ class ResultadoProyeccion:
     honorarios: Decimal
     honorarios_con_iva: Decimal
     ingreso_minimo_requerido: Decimal
+    
+    # Flags adicionales
+    es_impagable: bool = False
 
 
 @dataclass

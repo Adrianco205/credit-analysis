@@ -1164,6 +1164,7 @@ class AnalysisService:
                     costo_total_proyectado=pesos_result.total_client_payment,
                     costo_total_proyectado_banco=pesos_result.total_bank_flow,
                     total_subsidio_frech_proyectado=pesos_result.total_frech,
+                    es_impagable=pesos_result.es_impagable,
                 )
             except Exception as exc:
                 logger.exception(
@@ -1199,25 +1200,6 @@ class AnalysisService:
                 )
 
                 baseline_uvr = simulate_uvr_scenario(payload_baseline, abono_adicional_override=Decimal("0"))
-                if baseline_uvr.es_impagable:
-                    return {
-                        "cuotas_actuales": analisis.cuotas_pendientes,
-                        "total_actual": None,
-                        "total_actual_simple": None,
-                        "costo_total_proyectado": None,
-                        "costo_total_proyectado_banco": None,
-                        "total_subsidio_frech_proyectado": None,
-                        "veces_pagado_actual": None,
-                        "cuota_actual_visible": datos_visible.valor_cuota_actual,
-                        "cuota_actual_proyeccion": datos_proyeccion.valor_cuota_actual,
-                        "cuota_base_source": cuota_base_source,
-                        "ipc_anual_proyectado": ipc_anual_proyectado_resuelto,
-                        "datos": datos_visible,
-                        "datos_visible": datos_visible,
-                        "datos_proyeccion": datos_proyeccion,
-                        "es_impagable": True,
-                    }
-
                 costo_total_proyectado = baseline_uvr.total_pagado_cliente
                 total_subsidio_frech_proyectado = baseline_uvr.total_frech
                 costo_total_proyectado_banco = baseline_uvr.total_pagado_banco
@@ -1229,7 +1211,7 @@ class AnalysisService:
                     costo_total_proyectado_banco=costo_total_proyectado_banco,
                     total_subsidio_frech_proyectado=total_subsidio_frech_proyectado,
                     total_por_pagar=costo_total_proyectado,
-                    es_impagable=False,
+                    es_impagable=baseline_uvr.es_impagable,
                 )
             except Exception as exc:
                 logger.exception(
@@ -1277,7 +1259,7 @@ class AnalysisService:
             "datos": datos_visible,
             "datos_visible": datos_visible,
             "datos_proyeccion": datos_proyeccion,
-            "es_impagable": False,
+            "es_impagable": getattr(proyeccion_actual, "es_impagable", False),
         }
 
     def _resolve_frech_meses_restantes(self, analisis: AnalisisHipotecario) -> int | None:
@@ -1548,33 +1530,8 @@ class AnalysisService:
 
             comparacion = compare_uvr_scenarios(payload)
 
-            if comparacion.escenario_con_abono.es_impagable:
-                honorarios = self.calc.calcular_honorarios(datos_visible.saldo_capital)
-                honorarios_con_iva = self.calc.calcular_honorarios_con_iva(honorarios)
-                ingreso_minimo = self.calc.calcular_ingreso_minimo(
-                    (datos_visible.valor_cuota_actual + opcion.abono_adicional_mensual).quantize(Decimal("0.01"))
-                )
-                return {
-                    "cuotas_nuevas": None,
-                    "tiempo_restante_anios": None,
-                    "tiempo_restante_meses": None,
-                    "cuotas_reducidas": None,
-                    "tiempo_ahorrado_anios": None,
-                    "tiempo_ahorrado_meses": None,
-                    "nuevo_valor_cuota": (datos_visible.valor_cuota_actual + opcion.abono_adicional_mensual).quantize(Decimal("0.01")),
-                    "total_por_pagar_aprox": None,
-                    "total_por_pagar_simple": None,
-                    "costo_total_proyectado": None,
-                    "costo_total_proyectado_banco": None,
-                    "total_subsidio_frech_proyectado": None,
-                    "valor_ahorrado_intereses": None,
-                    "veces_pagado": None,
-                    "honorarios_calculados": honorarios,
-                    "honorarios_con_iva": honorarios_con_iva,
-                    "ingreso_minimo_requerido": ingreso_minimo,
-                    "es_impagable": True,
-                }
-
+            # La proyección teórica (incluso si la cuota inicial era impagable) es matemáticamente correcta.
+            # No ocultaremos los resultados. Pasamos el flag es_impagable al frontend.
             cuotas_nuevas = comparacion.escenario_con_abono.meses_totales
             tiempo_restante = TiempoAhorro.desde_meses(cuotas_nuevas)
             cuotas_reducidas = comparacion.meses_reducidos
@@ -1636,7 +1593,7 @@ class AnalysisService:
                 "honorarios_calculados": honorarios,
                 "honorarios_con_iva": honorarios_con_iva,
                 "ingreso_minimo_requerido": ingreso_minimo,
-                "es_impagable": False,
+                "es_impagable": comparacion.escenario_con_abono.es_impagable,
             }
         except Exception as exc:
             logger.exception(

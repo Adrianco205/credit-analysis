@@ -183,6 +183,11 @@ export default function AnalysisSummaryPage() {
                         Volver al Inicio
                     </Button>
                 </Link>
+                <Link href={`/dashboard/analysis/${analysisId}/manual`}>
+                    <Button variant="outline">
+                        Ajustar Extracción
+                    </Button>
+                </Link>
             </div>
         </div>
     );
