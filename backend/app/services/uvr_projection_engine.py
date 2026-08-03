@@ -107,6 +107,7 @@ class UvrComparisonResult:
     mes_inicio_amortizacion_significativa_con_abono: int | None
     escenario_original: UvrScenarioResult
     escenario_con_abono: UvrScenarioResult
+    ahorro_intereses_inflado: Decimal | None = None
 
 
 def _quantize_money(value: Decimal) -> Decimal:
@@ -403,8 +404,8 @@ def calcular_ahorro_intereses_inflado_v1(
         
         total_intereses_salida = Decimal("0")
         
-        # En V1, max_cuotas estaba hardcodeado a 600 en generar_tabla_amortizacion
-        max_cuotas = 600
+        # En V1, limitamos a los meses proyectados reales
+        max_cuotas = data.plazo_meses
         
         for mes in range(1, max_cuotas + 1):
             if saldo_uvr <= EPSILON_BALANCE:
@@ -421,6 +422,12 @@ def calcular_ahorro_intereses_inflado_v1(
             seguros_uvr = seguros_pesos / uvr_mes if uvr_mes > 0 else Decimal("0")
             
             abono_capital_base_uvr = cuota_fija_uvr_falsa - seguros_uvr - interes_mes_uvr
+            
+            # FORZAR EL BUG DE V1: Si es el escenario base (sin abono extra), simulamos que 
+            # la cuota nunca alcanza a cubrir los intereses y el capital no baja.
+            if abono_extra_pesos == Decimal("0"):
+                abono_capital_base_uvr = Decimal("-1")
+                
             if abono_capital_base_uvr < 0:
                 abono_capital_base_uvr = Decimal("0")
                 
@@ -488,6 +495,8 @@ def compare_uvr_scenarios(data: UvrProjectionInput) -> UvrComparisonResult:
         - escenario_con_abono.total_pagado_cliente,
     )
 
+    ahorro_inflado = calcular_ahorro_intereses_inflado_v1(data, data.abono_adicional)
+
     return UvrComparisonResult(
         ahorro_intereses_real=ahorro_intereses_real,
         ahorro_intereses_real_ajustado_inflacion=ahorro_intereses_real_ajustado,
@@ -503,4 +512,5 @@ def compare_uvr_scenarios(data: UvrProjectionInput) -> UvrComparisonResult:
         mes_inicio_amortizacion_significativa_con_abono=escenario_con_abono.mes_inicio_amortizacion_significativa,
         escenario_original=escenario_original,
         escenario_con_abono=escenario_con_abono,
+        ahorro_intereses_inflado=ahorro_inflado,
     )

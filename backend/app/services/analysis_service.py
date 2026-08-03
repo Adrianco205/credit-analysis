@@ -1585,7 +1585,7 @@ class AnalysisService:
                 "costo_total_proyectado": costo_total_proyectado,
                 "costo_total_proyectado_banco": costo_total_proyectado_banco,
                 "total_subsidio_frech_proyectado": total_subsidio_frech_proyectado,
-                "valor_ahorrado_intereses": ahorro_intereses,
+                "valor_ahorrado_intereses": comparacion.ahorro_intereses_inflado if comparacion.ahorro_intereses_inflado is not None else ahorro_intereses,
                 "ahorro_seguros_proyectado": ahorro_seguros,
                 "reduccion_frech_proyectado": reduccion_frech,
                 "ahorro_total_cliente": ahorro_total_cliente,

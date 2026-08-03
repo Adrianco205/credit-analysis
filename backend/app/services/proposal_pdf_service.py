@@ -431,7 +431,7 @@ class PropuestaPDFGenerator:
         data.append(row_veces)
         
         # Valor ahorrado en intereses
-        row_intereses = ['Ahorro Neto en Intereses', '-']
+        row_intereses = ['Valor Ahorrado en Intereses', '-']
         for op in opciones:
             row_intereses.append(f"${op.intereses_ahorrados:,.0f}")
         data.append(row_intereses)
