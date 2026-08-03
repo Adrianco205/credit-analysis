@@ -145,6 +145,7 @@ export interface AdminClientAnalysisUploadRequest {
 }
 
 export interface AdminManualProjectionRequest {
+  // Cliente
   customer_full_name: string;
   customer_id_number: string;
   customer_email: string;
@@ -152,40 +153,59 @@ export interface AdminManualProjectionRequest {
   ingresos_mensuales: number;
   capacidad_pago_max?: number;
   tipo_contrato_laboral?: string;
+  // Identificación del crédito
   banco_id: number;
-  opcion_abono_1?: number;
-  opcion_abono_2?: number;
-  opcion_abono_3?: number;
   numero_credito: string;
   sistema_amortizacion: string;
   plan_credito?: string;
-  valor_prestado_inicial: number;
-  fecha_desembolso?: string;
   fecha_extracto: string;
-  plazo_total_meses: number;
+  fecha_desembolso?: string;
+  plazo_total_meses?: number;
+  // Saldos
+  valor_prestado_inicial: number;
+  saldo_capital_pesos: number;
+  total_por_pagar?: number;
+  // Cuotas
   cuotas_pactadas: number;
   cuotas_pagadas: number;
   cuotas_pendientes: number;
-  tasa_interes_pactada_ea?: number;
+  cuotas_vencidas?: number;
+  nro_cuota_a_cancelar?: number;
+  // Tasas EA
   tasa_interes_cobrada_ea: number;
+  tasa_interes_pactada_ea?: number;
   tasa_interes_subsidiada_ea?: number;
   tasa_mora_pactada_ea?: number;
-  valor_cuota_sin_seguros?: number;
+  // Cuota mensual
   valor_cuota_con_seguros: number;
-  beneficio_frech_mensual?: number;
+  valor_cuota_sin_seguros?: number;
   valor_cuota_con_subsidio?: number;
-  saldo_capital_pesos: number;
-  total_por_pagar?: number;
+  // FRECH
+  tiene_beneficio_frech?: boolean;
+  beneficio_frech_mensual?: number;
+  total_frech_recibido?: number;
+  frech_fecha_inicio?: string;
+  frech_fecha_fin?: string;
+  // Acumulados declarados
+  total_pagado_cliente?: number;
+  // UVR
   saldo_capital_uvr?: number;
   valor_uvr_fecha_extracto?: number;
   valor_cuota_uvr?: number;
+  // Seguros
   seguro_vida?: number;
   seguro_incendio?: number;
   seguro_terremoto?: number;
+  // Componentes del período
   capital_pagado_periodo?: number;
   intereses_corrientes_periodo?: number;
   intereses_mora?: number;
   otros_cargos?: number;
+  // Abonos
+  opcion_abono_1?: number;
+  opcion_abono_2?: number;
+  opcion_abono_3?: number;
+  // Documento
   file: File;
   password?: string;
 }

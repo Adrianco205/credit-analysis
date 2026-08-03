@@ -10,7 +10,7 @@ import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { cleanDigitsInput, formatDigitsInput, formatMonetaryInput, parseMonetaryInput } from '@/lib/utils';
+import { cleanDigitsInput, formatDigitsInput, formatMonetaryInput, numberToNumericInput, parseMonetaryInput } from '@/lib/utils';
 import type { AdminAnalysisDetailResponse, AdminUpdateAnalysisRequest } from '@/types/api';
 
 type RequiredFieldKey =
@@ -393,8 +393,7 @@ function parseInteger(raw: string): number | null {
 }
 
 function numberToInput(value?: number | null): string {
-  if (value === null || value === undefined) return '';
-  return formatMonetaryInput(String(value));
+  return numberToNumericInput(value, { maxDecimals: 2, thousands: true });
 }
 
 function intToInput(value?: number | null): string {

@@ -518,19 +518,24 @@ class AnalysesRepo:
         else:
             cuota_pago_cliente = cuota_usuario
         
-        if cuota_pago_cliente and cuotas_pagadas:
-            analisis.total_pagado_fecha = cuota_pago_cliente * cuotas_pagadas
-            analisis.is_total_paid_estimated = True
-        
-        # Total FRECH recibido = beneficio × cuotas pagadas
-        if beneficio_frech and cuotas_pagadas:
-            analisis.total_frech_recibido = beneficio_frech * cuotas_pagadas
-        else:
-            analisis.total_frech_recibido = Decimal("0")
-        
+        # Los acumulados digitados por un admin (proyección manual) son un dato
+        # duro del extracto: no se sobrescriben con la estimación por cuotas.
+        totales_declarados = analisis.is_total_paid_estimated is False
+
+        if not totales_declarados:
+            if cuota_pago_cliente and cuotas_pagadas:
+                analisis.total_pagado_fecha = cuota_pago_cliente * cuotas_pagadas
+                analisis.is_total_paid_estimated = True
+
+            # Total FRECH recibido = beneficio × cuotas pagadas
+            if beneficio_frech and cuotas_pagadas:
+                analisis.total_frech_recibido = beneficio_frech * cuotas_pagadas
+            else:
+                analisis.total_frech_recibido = Decimal("0")
+
         # Monto real al banco = pagado por usuario + FRECH
         analisis.monto_real_pagado_banco = (
-            (analisis.total_pagado_fecha or Decimal("0")) + 
+            (analisis.total_pagado_fecha or Decimal("0")) +
             (analisis.total_frech_recibido or Decimal("0"))
         )
         

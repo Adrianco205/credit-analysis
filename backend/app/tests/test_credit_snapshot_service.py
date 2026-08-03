@@ -100,6 +100,9 @@ def test_osnaider_uvr_with_frech_is_valid():
         valor_cuota_uvr=Decimal("810.8742"), valor_cuota_sin_seguros=Decimal("305034.17"),
         valor_cuota_con_seguros=Decimal("326168.17"), seguros_total_mensual=Decimal("21134"),
         beneficio_frech_mensual=Decimal("183855.65"), cuotas_pendientes=325,
+        # Tasa real del extracto de Osnaider: el default del helper es la de Hosman
+        # y con 6,4% la cuota no reconcilia con las 325 cuotas reportadas.
+        tasa_interes_cobrada_ea=Decimal("0.0471"),
     )
     snapshot = normalize_credit_snapshot(osnaider)
     assert snapshot.validation_status == ProjectionStatus.VALID
@@ -155,3 +158,54 @@ def test_andres_uvr_baja_is_unsupported():
     with pytest.raises(ProjectionValidationError):
         validate_projection_snapshot(snapshot, Decimal("0.0695"))
 
+
+
+# ── Coherencia cuota/tasa en créditos con subsidio ────────────────────────────
+# Caso Addeson (Banco de Bogotá 00558564407): el extracto reporta la cuota que
+# recibe el banco (642.095,70 = capital + interés liquidado a la tasa pactada)
+# junto a la tasa ya subsidiada (7,47%). Emparejarlas da un capital mensual de
+# 272.316 en vez de los 70.280,58 reales y liquida el crédito en 143 cuotas en
+# vez de las 305 que reporta el banco.
+
+def _addeson(**overrides):
+    values = dict(
+        sistema_amortizacion="PESOS", plan_credito="PESOS - C. FIJA",
+        saldo_capital_pesos=Decimal("61409771.65"),
+        valor_cuota_sin_seguros=Decimal("642095.70"),
+        valor_cuota_con_seguros=Decimal("724696.78"),
+        valor_cuota_con_subsidio=Decimal("523427.08"),
+        seguros_total_mensual=Decimal("47172.35"), otros_cargos=Decimal("35428.73"),
+        beneficio_frech_mensual=Decimal("201269.70"), frech_meses_restantes=29,
+        cuotas_pendientes=305, tasa_interes_cobrada_ea=Decimal("0.0747"),
+    )
+    values.update(overrides)
+    return analysis(**values)
+
+
+def test_subsidio_con_cuota_bruta_y_tasa_neta_se_bloquea():
+    snapshot = normalize_credit_snapshot(_addeson())
+    assert snapshot.validation_status == ProjectionStatus.SUBSIDY_INSTALLMENT_MISMATCH
+    assert "305" in (snapshot.reason_message or "")
+    with pytest.raises(ProjectionValidationError):
+        validate_projection_snapshot(snapshot, Decimal("0.0747"))
+
+
+def test_subsidio_con_cuota_neta_coherente_pasa():
+    """Misma deuda con la cuota que realmente amortiza: 440.826 a 7,47% -> 305 cuotas."""
+    snapshot = normalize_credit_snapshot(
+        _addeson(valor_cuota_sin_seguros=Decimal("440826.00"),
+                 valor_cuota_con_seguros=Decimal("523427.08"))
+    )
+    assert snapshot.validation_status == ProjectionStatus.VALID
+    validate_projection_snapshot(snapshot, Decimal("0.0747"))
+
+
+def test_guardia_de_subsidio_no_toca_creditos_sin_frech():
+    """Hosman: la cuota del extracto no amortiza, pero sin subsidio no hay ambigüedad."""
+    hosman = analysis(
+        saldo_capital_pesos=Decimal("177833619.37"), valor_uvr_fecha_extracto=Decimal("414.7340"),
+        valor_cuota_uvr=Decimal("1311.4866"), valor_cuota_sin_seguros=Decimal("543918.08"),
+        valor_cuota_con_seguros=Decimal("543918.08"), cuotas_pendientes=354,
+    )
+    snapshot = normalize_credit_snapshot(hosman)
+    assert snapshot.validation_status == ProjectionStatus.VALID

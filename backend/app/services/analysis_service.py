@@ -264,24 +264,36 @@ class AnalysisService:
                 tasa_ea_equivalente,
             )
 
-    def _resolve_ipc_anual_proyectado(self, ipc_proyectado: Decimal | float | None) -> Decimal:
-        """Convierte IPC comercial (% o decimal) a tasa anual decimal para el motor."""
-        default_ipc = Decimal("0.022")
-        if ipc_proyectado is None:
-            return default_ipc
+    IPC_ANUAL_FALLBACK = Decimal("0.022")
 
+    @staticmethod
+    def _normalizar_ipc(valor: Decimal | float | None) -> Decimal | None:
+        """Normaliza un IPC comercial (7,5 o 0,075) a tasa anual decimal."""
+        if valor is None:
+            return None
         try:
-            ipc_normalizado = Decimal(str(ipc_proyectado))
+            normalizado = Decimal(str(valor))
         except Exception:
-            return default_ipc
+            return None
+        if normalizado <= 0:
+            return None
+        if normalizado > 1:
+            normalizado = normalizado / Decimal("100")
+        return normalizado.quantize(Decimal("0.000001"))
 
-        if ipc_normalizado <= 0:
-            return default_ipc
+    def _resolve_ipc_anual_proyectado(self, ipc_proyectado: Decimal | float | None) -> Decimal:
+        """Convierte IPC comercial (% o decimal) a tasa anual decimal para el motor.
 
-        if ipc_normalizado > 1:
-            ipc_normalizado = ipc_normalizado / Decimal("100")
+        Sin valor explícito se usa `UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT`, que es
+        el parámetro que el negocio calibra por fecha de estudio. Antes esta
+        constante se ignoraba y toda proyección UVR corría al 2,2%.
+        """
+        explicito = self._normalizar_ipc(ipc_proyectado)
+        if explicito is not None:
+            return explicito
 
-        return ipc_normalizado.quantize(Decimal("0.000001"))
+        configurado = self._normalizar_ipc(getattr(self, "uvr_inflacion_anual_default", None))
+        return configurado if configurado is not None else self.IPC_ANUAL_FALLBACK
 
     def _extract_identity_from_pdf_text(self, pdf_content: bytes) -> tuple[str | None, str | None]:
         """Extrae nombre y CC con heurísticas desde texto plano del PDF."""
@@ -853,7 +865,7 @@ class AnalysisService:
                 )
             
             # Validar estado
-            if analisis.status not in ["EXTRACTED", "VALIDATED", "NAME_MISMATCH"]:
+            if analisis.status not in ["EXTRACTED", "VALIDATED", "VALIDATED_MANUAL", "NAME_MISMATCH"]:
                 return ProjectionGenerationResult(
                     success=False,
                     error_message=f"El análisis debe estar validado. Estado actual: {analisis.status}"
@@ -1585,7 +1597,11 @@ class AnalysisService:
                 "costo_total_proyectado": costo_total_proyectado,
                 "costo_total_proyectado_banco": costo_total_proyectado_banco,
                 "total_subsidio_frech_proyectado": total_subsidio_frech_proyectado,
-                "valor_ahorrado_intereses": comparacion.ahorro_intereses_inflado if comparacion.ahorro_intereses_inflado is not None else ahorro_intereses,
+                # Ahorro real = intereses del baseline − intereses con abono.
+                # No se usa `ahorro_intereses_inflado`: esa función reproduce a
+                # propósito el bug de la V1 (el baseline nunca amortiza) y
+                # duplicaba con creces el ahorro mostrado al cliente.
+                "valor_ahorrado_intereses": ahorro_intereses,
                 "ahorro_seguros_proyectado": ahorro_seguros,
                 "reduccion_frech_proyectado": reduccion_frech,
                 "ahorro_total_cliente": ahorro_total_cliente,

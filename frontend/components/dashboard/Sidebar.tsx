@@ -75,13 +75,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         { href: '/dashboard/admin/clientes/subir-analisis', label: 'Subir análisis de clientes', icon: FileText },
         { href: '/dashboard/admin/analyses', label: 'Ver historial de análisis', icon: History },
         { href: '/dashboard/admin/proyecciones', label: 'Generar proyecciones', icon: Sparkles },
-        {
-          href: '/dashboard/admin/proyeccion-manual',
-          label: 'Proyección manual',
-          icon: FileText,
-          disabled: true,
-          disabledReason: 'Próximamente',
-        },
+        { href: '/dashboard/admin/proyeccion-manual', label: 'Proyección manual', icon: FileText },
         ...(showAdminFinancialIndicators
           ? [{ href: '/dashboard/admin/indicadores-financieros', label: 'Indicadores Financieros', icon: ChartColumn }]
           : []),

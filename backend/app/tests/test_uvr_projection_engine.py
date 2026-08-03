@@ -152,3 +152,58 @@ def test_negative_amortization_short_circuits_as_impagable():
     assert result.terminado is False
     assert result.meses_totales == 0
     assert result.tabla == []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VENCIMIENTO DEL FRECH EN UVR — el subsidio es de TASA, no de cuota
+# ═══════════════════════════════════════════════════════════════════════════════
+# Caso Osnaider (Bancolombia 90000158974): 4,71% subsidiada, 9,53% pactada,
+# 36 cuotas de FRECH restantes sobre un plazo de 325.
+
+def _osnaider(post_rate=Decimal("0.0953"), abono=Decimal("0")):
+    return UvrProjectionInput(
+        saldo_inicial=Decimal("56069733.47"),
+        tasa_efectiva_anual=Decimal("0.0471"),
+        plazo_meses=325,
+        cuota_actual=Decimal("326168.17"),
+        abono_adicional=abono,
+        uvr_actual=Decimal("376.1794"),
+        inflacion_anual_estimada=Decimal("0.06"),
+        subsidio_frech=Decimal("183855.65"),
+        seguro_mensual=Decimal("0"),
+        cuota_deuda_pesos=Decimal("305034.17"),
+        cuota_deuda_uvr=Decimal("810.8742"),
+        cuota_uvr_actual=Decimal("810.8742"),
+        valor_seguro_incendio_fijo=Decimal("21134"),
+        frech_meses_restantes=36,
+        tasa_efectiva_anual_post_subsidio=post_rate,
+    )
+
+
+def test_uvr_subsidio_de_tasa_no_descuenta_del_bolsillo_del_cliente():
+    """El extracto factura 326.168,17; restarle el subsidio lo contaba dos veces."""
+    resultado = simulate_uvr_scenario(_osnaider(), abono_adicional_override=Decimal("0"))
+    primer_pago = resultado.tabla[0].pago_cliente_mes
+    assert primer_pago == Decimal("326168.17")
+
+
+def test_uvr_vencimiento_frech_sube_la_cuota_y_respeta_el_plazo():
+    resultado = simulate_uvr_scenario(_osnaider(), abono_adicional_override=Decimal("0"))
+    ultimo_subsidiado = resultado.tabla[35].pago_cliente_mes
+    primero_pleno = resultado.tabla[36].pago_cliente_mes
+
+    assert primero_pleno > ultimo_subsidiado
+    assert resultado.meses_totales <= 325  # el plazo no se alarga
+
+
+def test_uvr_ignorar_el_vencimiento_subestima_el_credito():
+    con = simulate_uvr_scenario(_osnaider(), abono_adicional_override=Decimal("0"))
+    sin = simulate_uvr_scenario(_osnaider(post_rate=None), abono_adicional_override=Decimal("0"))
+
+    assert con.total_pagado_cliente > sin.total_pagado_cliente
+    assert con.total_pagado_banco == (con.total_pagado_cliente + con.total_frech).quantize(Decimal("0.01"))
+
+
+def test_uvr_sin_tasa_post_subsidio_conserva_el_descuento_de_caja():
+    resultado = simulate_uvr_scenario(_osnaider(post_rate=None), abono_adicional_override=Decimal("0"))
+    assert resultado.tabla[0].subsidio_frech_mes == Decimal("183855.65")

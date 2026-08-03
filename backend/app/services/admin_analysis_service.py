@@ -20,6 +20,7 @@ class AdminAnalysisService:
         "EXTRACTED",
         "NAME_MISMATCH",
         "PENDING_MANUAL",
+        "VALIDATED_MANUAL",
     }
 
     def __init__(self, repo: AdminAnalysesRepo):

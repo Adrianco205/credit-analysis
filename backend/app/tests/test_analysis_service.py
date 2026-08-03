@@ -1266,3 +1266,36 @@ class TestResultDataclasses:
         
         assert result.success is False
         assert "validado" in result.error_message
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IPC PROYECTADO
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestResolveIpcAnualProyectado:
+    """`UVR_INFLACION_ANUAL_ESTIMADA_DEFAULT` era configuración muerta: el método
+    tenía 0.022 fijo y toda proyección UVR sin IPC explícito corría al 2,2%."""
+
+    def _service(self, default):
+        service = AnalysisService.__new__(AnalysisService)
+        service.uvr_inflacion_anual_default = default
+        return service
+
+    def test_sin_ipc_explicito_usa_el_configurado(self):
+        service = self._service(Decimal("0.06"))
+        assert service._resolve_ipc_anual_proyectado(None) == Decimal("0.060000")
+
+    def test_ipc_explicito_gana_sobre_el_configurado(self):
+        service = self._service(Decimal("0.06"))
+        assert service._resolve_ipc_anual_proyectado(Decimal("0.03")) == Decimal("0.030000")
+
+    def test_acepta_porcentaje_comercial(self):
+        service = self._service(Decimal("0.06"))
+        assert service._resolve_ipc_anual_proyectado(3) == Decimal("0.030000")
+        assert self._service(Decimal("6"))._resolve_ipc_anual_proyectado(None) == Decimal("0.060000")
+
+    def test_valores_invalidos_caen_al_fallback(self):
+        service = self._service(None)
+        assert service._resolve_ipc_anual_proyectado(None) == AnalysisService.IPC_ANUAL_FALLBACK
+        assert service._resolve_ipc_anual_proyectado(Decimal("-1")) == AnalysisService.IPC_ANUAL_FALLBACK
+        assert service._resolve_ipc_anual_proyectado("no-es-un-numero") == AnalysisService.IPC_ANUAL_FALLBACK

@@ -303,8 +303,34 @@ class MortgageSummaryBuilder:
         monto_real_pagado_conf: float | None = None
         monto_real_pagado_refs: list[str] = []
 
+        # Un análisis de proyección manual trae los acumulados digitados por el
+        # admin; ahí `is_total_paid_estimated` es False y ese valor manda sobre
+        # cualquier estimación por cuotas.
+        totales_declarados = getattr(analisis, "is_total_paid_estimated", True) is False
+        pagado_cliente_declarado = (
+            _to_decimal_or_none(getattr(analisis, "total_pagado_fecha", None))
+            if totales_declarados
+            else None
+        )
+        frech_acumulado_declarado = (
+            _to_decimal_or_none(getattr(analisis, "total_frech_recibido", None))
+            if totales_declarados
+            else None
+        )
+
         pagos_reales_acumulados = self._resolve_real_paid_from_movements(raw_data)
-        if cuota_pago_cliente is not None and cuotas_pagadas is not None:
+        if pagado_cliente_declarado is not None:
+            total_pagado_dia = pagado_cliente_declarado
+            total_pagado_source = "extracted"
+            total_pagado_refs = ["model:total_pagado_fecha"]
+            if frech_acumulado_declarado is not None:
+                total_beneficio_frech = frech_acumulado_declarado
+            elif cuotas_pagadas is not None:
+                total_beneficio_frech = beneficio_frech * Decimal(cuotas_pagadas)
+            else:
+                total_beneficio_frech = Decimal("0")
+            monto_real_pagado = total_pagado_dia + total_beneficio_frech
+        elif cuota_pago_cliente is not None and cuotas_pagadas is not None:
             if pagos_reales_acumulados is not None:
                 total_pagado_dia = pagos_reales_acumulados
                 total_pagado_source = "extracted"

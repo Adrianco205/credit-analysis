@@ -26,6 +26,7 @@ class AnalisisStatus(str, Enum):
     PENDING_MANUAL = "PENDING_MANUAL"          # Requiere datos manuales del usuario
     PENDING_PROJECTION = "PENDING_PROJECTION"  # Diagnóstico listo, esperando proyecciones admin
     VALIDATED = "VALIDATED"                    # Listo para generar propuestas
+    VALIDATED_MANUAL = "VALIDATED_MANUAL"      # Datos cargados y validados manualmente por un admin
     PROJECTED = "PROJECTED"                    # Proyecciones generadas, propuesta lista
     NAME_MISMATCH = "NAME_MISMATCH"            # Nombre no coincide
     ID_MISMATCH = "ID_MISMATCH"                # NUEVO: Cédula no coincide (alerta crítica)

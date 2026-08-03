@@ -122,60 +122,94 @@ export function calculateCreditSummary(input: CreditSummaryInput): CreditSummary
   return { pagadoCliente, frechAcumulado, totalAbonadoCredito };
 }
 
-export function formatMonetaryInput(value: string): string {
-  if (!value) return '';
+export interface NumericInputOptions {
+  /** Dígitos permitidos después de la coma decimal. 0 = solo enteros. */
+  maxDecimals?: number;
+  /** Aplica separador de miles (punto) a la parte entera. */
+  thousands?: boolean;
+}
 
-  const sanitized = value.replace(/\s/g, '').replace(/[^\d.,]/g, '');
-  if (!sanitized) return '';
+/**
+ * Descompone lo que el usuario escribió usando la convención es-CO:
+ * el punto es SIEMPRE separador de miles y la coma es el decimal.
+ *
+ * Interpretar el punto como decimal rompía el campo apenas superaba las
+ * tres cifras: al formatear 1000 como "1.000" la siguiente tecla releía ese
+ * punto como coma decimal y colapsaba el valor a "1,00".
+ */
+function splitNumericInput(
+  value: string,
+  maxDecimals: number
+): { integerDigits: string; decimalDigits: string; hasDecimalMark: boolean } {
+  const sanitized = String(value ?? '').replace(/[^\d.,]/g, '');
+  const withoutThousands = sanitized.replace(/\./g, '');
+  const [integerRaw = '', ...decimalParts] = withoutThousands.split(',');
 
-  const lastComma = sanitized.lastIndexOf(',');
-  const lastDot = sanitized.lastIndexOf('.');
-  const decimalIndex = Math.max(lastComma, lastDot);
+  const hasDecimalMark = maxDecimals > 0 && decimalParts.length > 0;
+  const integerDigits = cleanDigitsInput(integerRaw).replace(/^0+(?=\d)/, '');
+  const decimalDigits = hasDecimalMark
+    ? cleanDigitsInput(decimalParts.join('')).slice(0, maxDecimals)
+    : '';
 
-  let integerPartRaw = sanitized;
-  let decimalPartRaw = '';
+  return { integerDigits, decimalDigits, hasDecimalMark };
+}
 
-  if (decimalIndex >= 0) {
-    integerPartRaw = sanitized.slice(0, decimalIndex);
-    decimalPartRaw = sanitized.slice(decimalIndex + 1);
+/**
+ * Normaliza el texto de un campo numérico mientras se escribe.
+ * Conserva la coma final para que el usuario pueda seguir con los decimales.
+ */
+export function formatNumericInput(value: string, options: NumericInputOptions = {}): string {
+  const { maxDecimals = 2, thousands = true } = options;
+  const { integerDigits, decimalDigits, hasDecimalMark } = splitNumericInput(value, maxDecimals);
+
+  if (!integerDigits && !hasDecimalMark) return '';
+
+  let formattedInteger = '';
+  if (integerDigits) {
+    formattedInteger = thousands
+      ? INTEGER_FORMATTER.format(Number(integerDigits))
+      : integerDigits;
+  } else if (hasDecimalMark) {
+    formattedInteger = '0';
   }
 
-  const integerDigits = cleanDigitsInput(integerPartRaw);
-  const decimalDigits = cleanDigitsInput(decimalPartRaw).slice(0, 2);
+  return hasDecimalMark ? `${formattedInteger},${decimalDigits}` : formattedInteger;
+}
 
-  const formattedInteger = integerDigits
-    ? INTEGER_FORMATTER.format(Number(integerDigits))
-    : '0';
+/** Convierte el texto de un campo numérico al número que espera la API. */
+export function parseNumericInput(value: string, maxDecimals = 2): number | null {
+  const { integerDigits, decimalDigits } = splitNumericInput(value, maxDecimals);
+  if (!integerDigits && !decimalDigits) return null;
 
-  return decimalDigits ? `${formattedInteger},${decimalDigits}` : formattedInteger;
+  const parsed = Number(`${integerDigits || '0'}.${decimalDigits || '0'}`);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * Convierte un número de la API al texto localizado que muestra el campo.
+ * `String(1234.5)` usa punto decimal, así que no puede pasarse directo a
+ * `formatNumericInput` (que lee el punto como separador de miles).
+ */
+export function numberToNumericInput(
+  value?: number | string | null,
+  options: NumericInputOptions = {}
+): string {
+  if (value === null || value === undefined || value === '') return '';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '';
+
+  const { maxDecimals = 2, thousands = true } = options;
+  const [integerPart, decimalPart = ''] = numeric.toFixed(maxDecimals).split('.');
+  const trimmedDecimals = decimalPart.replace(/0+$/, '');
+  const localized = trimmedDecimals ? `${integerPart},${trimmedDecimals}` : integerPart;
+
+  return formatNumericInput(localized, { maxDecimals, thousands });
+}
+
+export function formatMonetaryInput(value: string): string {
+  return formatNumericInput(value, { maxDecimals: 2, thousands: true });
 }
 
 export function parseMonetaryInput(value: string): number | null {
-  if (!value) return null;
-
-  const sanitized = value.replace(/\s/g, '').replace(/[^\d.,]/g, '');
-  if (!sanitized) return null;
-
-  const lastComma = sanitized.lastIndexOf(',');
-  const lastDot = sanitized.lastIndexOf('.');
-  const decimalIndex = Math.max(lastComma, lastDot);
-
-  let integerPartRaw = sanitized;
-  let decimalPartRaw = '';
-
-  if (decimalIndex >= 0) {
-    integerPartRaw = sanitized.slice(0, decimalIndex);
-    decimalPartRaw = sanitized.slice(decimalIndex + 1);
-  }
-
-  const integerDigits = cleanDigitsInput(integerPartRaw);
-  const decimalDigits = cleanDigitsInput(decimalPartRaw).slice(0, 2);
-
-  if (!integerDigits && !decimalDigits) {
-    return null;
-  }
-
-  const normalized = `${integerDigits || '0'}${decimalDigits ? `.${decimalDigits}` : ''}`;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
+  return parseNumericInput(value, 2);
 }

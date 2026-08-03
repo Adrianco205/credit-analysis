@@ -139,7 +139,7 @@ class AnalisisHipotecario(Base):
     status: Mapped[str] = mapped_column(
         String(30), 
         server_default=text("'PENDING_EXTRACTION'")
-    )  # PENDING_EXTRACTION, EXTRACTED, VALIDATED, NAME_MISMATCH, ID_MISMATCH, INVALID_DOCUMENT, ERROR
+    )  # PENDING_EXTRACTION, EXTRACTED, VALIDATED, VALIDATED_MANUAL, NAME_MISMATCH, ID_MISMATCH, INVALID_DOCUMENT, ERROR
     
     # Campos que el usuario llenó manualmente (si Gemini no los detectó)
     campos_manuales: Mapped[list | None] = mapped_column(JSONB)  # ["tasa_interes", "seguros"]

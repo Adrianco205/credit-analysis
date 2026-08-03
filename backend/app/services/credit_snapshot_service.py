@@ -6,6 +6,7 @@ amount, or an insurance-inclusive total is the contractual debt installment.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
@@ -31,6 +32,7 @@ class ProjectionStatus(str, Enum):
     INVALID_INSTALLMENT_MAPPING = "INVALID_INSTALLMENT_MAPPING"
     INCONSISTENT_UVR_DATA = "INCONSISTENT_UVR_DATA"
     FRECH_TERM_UNKNOWN = "FRECH_TERM_UNKNOWN"
+    SUBSIDY_INSTALLMENT_MISMATCH = "SUBSIDY_INSTALLMENT_MISMATCH"
     OVERDUE_SNAPSHOT = "OVERDUE_SNAPSHOT"
     MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
     UNSUPPORTED_UVR_PRODUCT = "UNSUPPORTED_UVR_PRODUCT"
@@ -87,6 +89,69 @@ def _raw_decimal(raw: dict[str, Any], *names: str) -> Decimal:
         if raw.get(name) is not None:
             return _d(raw[name])
     return Decimal("0")
+
+
+def _monthly_rate(annual: Any) -> Decimal:
+    rate = _d(annual)
+    if rate > 1:
+        rate /= Decimal("100")
+    if rate <= 0:
+        return Decimal("0")
+    return Decimal(str((1 + float(rate)) ** (1 / 12))) - Decimal("1")
+
+
+def _implied_term(balance: Decimal, installment: Decimal, monthly_rate: Decimal) -> int | None:
+    """Meses en que `installment` liquida `balance`. None si nunca amortiza."""
+    if balance <= 0 or installment <= 0:
+        return None
+    if monthly_rate <= 0:
+        return int(math.ceil(balance / installment))
+    interest = balance * monthly_rate
+    if installment <= interest:
+        return None
+    ratio = float(installment / (installment - interest))
+    return int(math.ceil(math.log(ratio) / math.log(1 + float(monthly_rate))))
+
+
+# Margen sobre el plazo del extracto antes de considerar incoherente el par
+# cuota/tasa. Generoso a propósito: en UVR el saldo se indexa y el cálculo
+# francés simple se queda corto por unos pocos meses.
+SUBSIDY_TERM_TOLERANCE = Decimal("0.25")
+
+
+def _subsidy_mapping_mismatch(
+    analysis: Any, principal: Decimal, installment: Decimal, term: int
+) -> str | None:
+    """Detecta una cuota bruta emparejada con una tasa ya subsidiada.
+
+    En un crédito con subsidio conviven dos cuotas: la que recibe el banco
+    (incluye el interés que paga el gobierno) y la que paga el cliente. Si se
+    proyecta la primera con la tasa neta, el capital mensual se dispara y el
+    crédito aparenta liquidarse en la mitad del tiempo que reporta el extracto.
+    """
+    if term <= 0 or principal <= 0 or installment <= 0:
+        return None
+
+    monthly = _monthly_rate(getattr(analysis, "tasa_interes_cobrada_ea", None))
+    if monthly <= 0:
+        return None
+
+    implied = _implied_term(principal, installment, monthly)
+    if implied is None:
+        # La cuota no cubre el interés: ese caso ya lo resuelve el motor con
+        # una cuota teórica, no es una inconsistencia del subsidio.
+        return None
+
+    desvio = abs(Decimal(implied) - Decimal(term)) / Decimal(term)
+    if desvio <= SUBSIDY_TERM_TOLERANCE:
+        return None
+
+    return (
+        f"La cuota contractual y la tasa cobrada no describen el mismo crédito: a esa tasa el "
+        f"saldo se liquidaría en {implied} cuotas, pero el extracto reporta {term}. "
+        "Con subsidio hay que confirmar si la cuota incluye el interés que cubre el gobierno; "
+        "captura el crédito por proyección manual."
+    )
 
 
 def _evidence_value(raw: dict[str, Any], section: str, field: str) -> Decimal:
@@ -168,6 +233,10 @@ def normalize_credit_snapshot(analysis: Any) -> NormalizedCreditSnapshot:
         message = "El pago del período cubrió intereses/cargos pero no capital; requiere confirmar la cuota contractual."
     elif frech > 0:
         snapshot_type = SnapshotType.FULL_INSTALLMENT_WITH_FRECH
+        mismatch = _subsidy_mapping_mismatch(analysis, principal, debt_installment, term)
+        if mismatch is not None:
+            status = ProjectionStatus.SUBSIDY_INSTALLMENT_MISMATCH
+            message = mismatch
 
     return NormalizedCreditSnapshot(
         system_type="UVR" if is_uvr else "PESOS", snapshot_type=snapshot_type,
