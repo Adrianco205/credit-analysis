@@ -265,9 +265,13 @@ class AnalysisService:
             )
 
     IPC_ANUAL_FALLBACK = Decimal("0.022")
+    # Tope defensivo: un IPC por encima de esto no es un escenario comercial,
+    # es un error de digitación. Sin el tope, un "100" en el campo hace crecer
+    # la UVR 2^27 veces y el costo proyectado desborda Numeric(15,2) al guardar.
+    IPC_ANUAL_MAXIMO = Decimal("0.30")
 
-    @staticmethod
-    def _normalizar_ipc(valor: Decimal | float | None) -> Decimal | None:
+    @classmethod
+    def _normalizar_ipc(cls, valor: Decimal | float | None) -> Decimal | None:
         """Normaliza un IPC comercial (7,5 o 0,075) a tasa anual decimal."""
         if valor is None:
             return None
@@ -279,7 +283,26 @@ class AnalysisService:
             return None
         if normalizado > 1:
             normalizado = normalizado / Decimal("100")
+        if normalizado > cls.IPC_ANUAL_MAXIMO:
+            logger.warning(
+                "IPC proyectado %s fuera de rango; se limita a %s",
+                normalizado,
+                cls.IPC_ANUAL_MAXIMO,
+            )
+            normalizado = cls.IPC_ANUAL_MAXIMO
         return normalizado.quantize(Decimal("0.000001"))
+
+    @staticmethod
+    def _ipc_persistido(analisis: AnalisisHipotecario) -> Decimal | None:
+        """IPC con el que se generaron las propuestas guardadas.
+
+        El baseline se recalcula al vuelo en cada consulta; sin esto usaría el
+        default y quedaría descuadrado contra las opciones ya persistidas.
+        """
+        snapshot = getattr(analisis, "normalized_snapshot_json", None)
+        if isinstance(snapshot, dict):
+            return snapshot.get("ipc_anual_proyectado")
+        return None
 
     def _resolve_ipc_anual_proyectado(self, ipc_proyectado: Decimal | float | None) -> Decimal:
         """Convierte IPC comercial (% o decimal) a tasa anual decimal para el motor.
@@ -895,13 +918,19 @@ class AnalysisService:
                     reason_code=exc.status.value,
                 )
 
-            analisis.normalized_snapshot_json = self._serialize_for_json(asdict(snapshot))
             analisis.projection_validation_status = "VALID"
 
             # Eliminar propuestas anteriores
             self.propuestas_repo.delete_by_analisis(analisis_id)
 
             ipc_anual_proyectado = self._resolve_ipc_anual_proyectado(ipc_proyectado)
+
+            # El IPC queda junto al snapshot: las consultas posteriores
+            # recalculan el baseline con el mismo escenario de las propuestas.
+            analisis.normalized_snapshot_json = {
+                **self._serialize_for_json(asdict(snapshot)),
+                "ipc_anual_proyectado": float(ipc_anual_proyectado),
+            }
             
             # Calcular estado actual (baseline)
             baseline = self._calculate_baseline(
@@ -1072,6 +1101,10 @@ class AnalysisService:
         - datos_proyeccion: copia calibrable para cerrar amortizacion del baseline
         """
         frech = analisis.beneficio_frech_mensual or Decimal("0")
+        # Sin IPC explícito se reutiliza el de las propuestas guardadas, para que
+        # la columna "estado actual" y las opciones hablen del mismo escenario.
+        if ipc_anual_proyectado is None:
+            ipc_anual_proyectado = self._ipc_persistido(analisis)
         ipc_anual_proyectado_resuelto = self._resolve_ipc_anual_proyectado(ipc_anual_proyectado)
 
         cuota_cliente = (
@@ -1562,7 +1595,17 @@ class AnalysisService:
             else:
                 veces_pagado = Decimal("0")
 
-            ahorro_intereses = comparacion.ahorro_intereses_real
+            # Ahorro comercial = diferencia entre el costo total del escenario
+            # actual y el de la opción, que es la resta de dos cifras que el
+            # cliente ya ve en la tabla. Misma definición que usa el motor
+            # PESOS y que la competencia (verificado contra sus propios PDF).
+            # `ahorro_intereses_real` (solo intereses) queda disponible en la
+            # comparación para auditoría, pero subestima el beneficio.
+            baseline_total_banco = baseline.get("costo_total_proyectado_banco")
+            if baseline_total_banco is not None:
+                ahorro_intereses = (baseline_total_banco - costo_total_proyectado_banco).quantize(Decimal("0.01"))
+            else:
+                ahorro_intereses = comparacion.ahorro_intereses_real
             ahorro_seguros = comparacion.ahorro_seguros
             reduccion_frech = comparacion.reduccion_frech
             ahorro_total_cliente = comparacion.ahorro_total_cliente
@@ -1597,10 +1640,6 @@ class AnalysisService:
                 "costo_total_proyectado": costo_total_proyectado,
                 "costo_total_proyectado_banco": costo_total_proyectado_banco,
                 "total_subsidio_frech_proyectado": total_subsidio_frech_proyectado,
-                # Ahorro real = intereses del baseline − intereses con abono.
-                # No se usa `ahorro_intereses_inflado`: esa función reproduce a
-                # propósito el bug de la V1 (el baseline nunca amortiza) y
-                # duplicaba con creces el ahorro mostrado al cliente.
                 "valor_ahorrado_intereses": ahorro_intereses,
                 "ahorro_seguros_proyectado": ahorro_seguros,
                 "reduccion_frech_proyectado": reduccion_frech,

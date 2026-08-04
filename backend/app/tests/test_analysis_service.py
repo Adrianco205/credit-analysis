@@ -1299,3 +1299,42 @@ class TestResolveIpcAnualProyectado:
         assert service._resolve_ipc_anual_proyectado(None) == AnalysisService.IPC_ANUAL_FALLBACK
         assert service._resolve_ipc_anual_proyectado(Decimal("-1")) == AnalysisService.IPC_ANUAL_FALLBACK
         assert service._resolve_ipc_anual_proyectado("no-es-un-numero") == AnalysisService.IPC_ANUAL_FALLBACK
+
+
+class TestIpcBaselineConsistencia:
+    """El baseline se recalcula en cada consulta; si no reutiliza el IPC de las
+    propuestas guardadas, la columna 'estado actual' habla de otro escenario que
+    las opciones. Además un IPC absurdo desbordaba Numeric(15,2) al guardar."""
+
+    def _service(self):
+        service = AnalysisService.__new__(AnalysisService)
+        service.uvr_inflacion_anual_default = Decimal("0.06")
+        return service
+
+    def test_ipc_absurdo_se_limita_en_vez_de_desbordar(self):
+        # Escribir "100" en el campo daba 100% anual -> costo de 877 billones.
+        service = self._service()
+        assert service._resolve_ipc_anual_proyectado(100) == AnalysisService.IPC_ANUAL_MAXIMO
+        assert service._resolve_ipc_anual_proyectado(999) == AnalysisService.IPC_ANUAL_MAXIMO
+
+    def test_ipc_comercial_normal_no_se_toca(self):
+        service = self._service()
+        assert service._resolve_ipc_anual_proyectado(3) == Decimal("0.030000")
+        assert service._resolve_ipc_anual_proyectado(Decimal("0.055")) == Decimal("0.055000")
+
+    def test_ipc_persistido_se_lee_del_snapshot(self):
+        analisis = SimpleNamespace(normalized_snapshot_json={"ipc_anual_proyectado": 0.03})
+        assert AnalysisService._ipc_persistido(analisis) == 0.03
+
+    def test_ipc_persistido_ausente_no_rompe(self):
+        for snapshot in ({}, None, "no-es-un-dict"):
+            analisis = SimpleNamespace(normalized_snapshot_json=snapshot)
+            assert AnalysisService._ipc_persistido(analisis) is None
+
+    def test_baseline_sin_ipc_explicito_toma_el_persistido(self):
+        service = self._service()
+        analisis = SimpleNamespace(normalized_snapshot_json={"ipc_anual_proyectado": 0.03})
+        resuelto = service._resolve_ipc_anual_proyectado(service._ipc_persistido(analisis))
+        # Sin el fix caía al default configurado (6%) y descuadraba con las opciones.
+        assert resuelto == Decimal("0.030000")
+        assert resuelto != service._resolve_ipc_anual_proyectado(None)
