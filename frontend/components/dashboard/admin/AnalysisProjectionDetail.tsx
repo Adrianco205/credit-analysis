@@ -360,10 +360,17 @@ export function AnalysisProjectionDetail({ analysisId }: AnalysisProjectionDetai
 
       const response = await apiClient.calculateAdminProjections(analysisId, requestPayload);
 
+      // El cálculo guarda el IPC en el análisis y el backend recalcula con él la
+      // columna "límites con el banco hoy". Sin releer el detalle, esa columna
+      // se quedaría con el escenario anterior mientras las opciones ya muestran
+      // el nuevo, y el ahorro no cuadraría con la resta de ambas.
+      const refreshedDetail = await apiClient.getAdminAnalysisDetail(analysisId);
+      setDetail(refreshedDetail);
+
       // The backend can return either a full PropuestaCompletaResponse or an array of AdminProjectionResponse
       if (Array.isArray(response)) {
         // Legacy format: array of projections — wrap into PropuestaCompletaResponse
-        const legacyProposal = buildLegacyProposal(detail, response as AdminProjectionResponse[]);
+        const legacyProposal = buildLegacyProposal(refreshedDetail, response as AdminProjectionResponse[]);
         setProposal(legacyProposal);
       } else {
         // Full proposal format
