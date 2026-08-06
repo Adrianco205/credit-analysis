@@ -189,11 +189,17 @@ class CalculadoraFinanciera:
         self._precision_tasa = PRECISION_TASA
 
     def _normalizar_sistema_amortizacion(self, sistema_amortizacion: str | None) -> str:
-        """Normaliza variantes del sistema de amortizacion a PESOS o UVR."""
+        """Normaliza variantes del sistema de amortizacion a PESOS o UVR.
+
+        Los bancos nombran el producto de formas distintas: "UVR", "BAJA UVR",
+        "CUOTA CONSTANTE EN UVR-VIVDA VIS". Antes se comparaba por igualdad
+        exacta contra "UVR", asi que cualquier variante caia al motor de PESOS
+        y el credito se proyectaba sin indexacion: el IPC no tenia ningun efecto.
+        """
         sistema = (sistema_amortizacion or "PESOS").upper().strip()
-        if sistema in {"PESOS", "CAPITAL"}:
-            return "PESOS"
-        return "UVR" if sistema == "UVR" else "PESOS"
+        if "UVR" in sistema:
+            return "UVR"
+        return "PESOS"
 
     def calcular_tasa_inflacion_mensual(self, ipc_anual: Decimal) -> Decimal:
         """Calcula la tasa de inflacion mensual efectiva."""
