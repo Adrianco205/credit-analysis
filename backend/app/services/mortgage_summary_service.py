@@ -286,6 +286,18 @@ class MortgageSummaryBuilder:
             else:
                 cuota_completa = cuota_actual + beneficio_frech
 
+        # La cuota completa no puede quedar por debajo de la cuota contractual
+        # registrada. Cuando el extracto factura un valor rebajado por un
+        # beneficio que no viene cuantificado como FRECH, `cuota_actual` sale de
+        # ese valor y el resumen terminaba reportando la cuota rebajada como si
+        # fuera la completa, contradiciendo la tabla de proyecciones.
+        cuota_contractual_registrada = _to_decimal_or_none(
+            getattr(analisis, "valor_cuota_con_seguros", None)
+        )
+        if cuota_contractual_registrada is not None and cuota_contractual_registrada > 0:
+            if cuota_completa is None or cuota_contractual_registrada > cuota_completa:
+                cuota_completa = cuota_contractual_registrada
+
         # Cuota que realmente paga el cliente (sin subsidio FRECH)
         cuota_pago_cliente: Decimal | None = None
         if cuota_actual is not None:

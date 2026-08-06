@@ -247,3 +247,64 @@ def test_summary_sets_extract_section_title_with_corte_and_pago_dates():
     summary = payload["mortgage_summary"]
 
     assert summary.sections[1].title == "CORTE DEL EXTRACTO (corte: 2024-08-31, pago: 2024-09-29)"
+
+
+# ── Cuota completa vs cuota facturada ─────────────────────────────────────────
+# Caso Hosman (Bancolombia UVR 90000394948): el extracto factura 543.918,08,
+# rebajada por un beneficio que el banco no cuantifica como FRECH. La cuota
+# contractual es 1.148.411,97 (proyección de pagos del banco). El resumen
+# reportaba la rebajada como "cuota completa" y contradecía la proyección.
+
+def _hosman(**overrides):
+    valores = dict(
+        sistema_amortizacion="UVR", plan_credito="CUOTA CONSTANTE EN UVR-VIVDA VIS",
+        valor_prestado_inicial=Decimal("170820000"),
+        saldo_capital_pesos=Decimal("177833619.37"),
+        cuotas_pactadas=360, cuotas_pagadas=6, cuotas_pendientes=354, cuotas_vencidas=0,
+        valor_cuota_sin_seguros=Decimal("1097677.97"),
+        valor_cuota_con_seguros=Decimal("1148411.97"),
+        valor_cuota_con_subsidio=None, valor_cuota_uvr=None,
+        total_por_pagar=Decimal("543918.08"),
+        seguros_total_mensual=Decimal("50734"), otros_cargos=Decimal("0"),
+        beneficio_frech_mensual=Decimal("0"),
+        saldo_capital_uvr=None, valor_uvr_fecha_extracto=Decimal("414.7340"),
+        fecha_extracto=None, total_pagado_fecha=Decimal("2400000"),
+        total_frech_recibido=Decimal("0"), monto_real_pagado_banco=Decimal("2400000"),
+        is_total_paid_estimated=False, total_intereses_seguros=None,
+        raw_data_json={}, datos_raw_gemini=None, computed_summary_json=None,
+        confidence_map_json=None,
+    )
+    valores.update(overrides)
+    return SimpleNamespace(**valores)
+
+
+def test_cuota_completa_no_queda_por_debajo_de_la_contractual():
+    datos = build_mortgage_summary_payload(_hosman())["datos_basicos"]
+    # Lo que factura el extracto se mantiene como "cuota a cancelar"...
+    assert datos.cuota_actual_aprox == Decimal("543918.08")
+    # ...pero la completa es la contractual, no la rebajada.
+    assert datos.cuota_completa_aprox == Decimal("1148411.97")
+
+
+def test_sin_total_por_pagar_ambas_cuotas_son_la_contractual():
+    datos = build_mortgage_summary_payload(_hosman(total_por_pagar=None))["datos_basicos"]
+    assert datos.cuota_actual_aprox == Decimal("1148411.97")
+    assert datos.cuota_completa_aprox == Decimal("1148411.97")
+
+
+def test_credito_con_frech_conserva_el_desglose():
+    """Addeson: la completa sigue saliendo de cuota facturada + subsidio."""
+    addeson = _hosman(
+        sistema_amortizacion="PESOS", saldo_capital_pesos=Decimal("61409771.65"),
+        valor_cuota_sin_seguros=Decimal("642095.70"),
+        valor_cuota_con_seguros=Decimal("724696.78"),
+        valor_cuota_con_subsidio=Decimal("523427.08"),
+        total_por_pagar=Decimal("523427.08"),
+        beneficio_frech_mensual=Decimal("201269.70"),
+        seguros_total_mensual=Decimal("47172.35"), otros_cargos=Decimal("35428.73"),
+        cuotas_pendientes=305, is_total_paid_estimated=True,
+        total_pagado_fecha=None, monto_real_pagado_banco=None,
+    )
+    datos = build_mortgage_summary_payload(addeson)["datos_basicos"]
+    assert datos.cuota_actual_aprox == Decimal("523427.08")
+    assert datos.cuota_completa_aprox == Decimal("724696.78")
