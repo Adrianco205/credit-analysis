@@ -1,0 +1,695 @@
+===============================================================================
+MANUAL DE USUARIO
+MÓDULO DE PROYECCIÓN MANUAL
+PerFinanzas — Panel de Administración
+===============================================================================
+
+Versión del documento: 1.0
+Dirigido a: administradores de PerFinanzas
+Requisito de acceso: rol ADMIN
+
+
+===============================================================================
+INSTRUCCIONES PARA EL DISEÑO DEL PDF
+===============================================================================
+
+Paleta oficial de PerFinanzas (usar estos códigos exactos):
+
+  Verde bosque    #1B5E20   Títulos, encabezados de sección, barra lateral
+  Verde hoja      #4CAF50   Botones principales, acentos, íconos activos
+  Verde claro     #66BB6A   Subrayados, bordes de tarjetas destacadas
+  Verde suave     #E8F5E9   Fondos de bloques informativos, filas alternas
+  Blanco          #FFFFFF   Fondo general de página
+
+Grises de apoyo:
+
+  Gris 50         #F9FAFB   Fondo de tablas y cajas neutras
+  Gris 200        #E5E7EB   Líneas divisorias
+  Gris 500        #6B7280   Texto secundario, notas al pie
+  Gris 700        #374151   Texto de párrafo
+  Gris 900        #111827   Texto de máximo contraste
+
+Colores semánticos (usar solo para avisos):
+
+  Éxito           #4CAF50   Confirmaciones, campos correctos
+  Advertencia     #FBA500   Cajas de "ten en cuenta", campos que requieren criterio
+  Error           #DC2626   Errores, validaciones que bloquean
+  Información     #0284C7   Notas técnicas, referencias cruzadas
+
+Criterios de maquetación sugeridos:
+
+  - Títulos de capítulo en verde bosque #1B5E20, tipografía sans serif, peso bold.
+  - Cada sección del formulario como una tarjeta con borde gris 200 y encabezado
+    con fondo verde suave #E8F5E9.
+  - Los campos obligatorios se marcan con asterisco rojo #DC2626.
+  - Las tablas de campos: encabezado con fondo verde bosque #1B5E20 y texto
+    blanco; filas alternas en gris 50 #F9FAFB.
+  - Las cajas de advertencia con fondo #FFF7E6 y borde izquierdo de 4px en
+    #FBA500.
+  - Las cajas de error con fondo #FEF2F2 y borde izquierdo de 4px en #DC2626.
+  - Las cajas de "buena práctica" con fondo #E8F5E9 y borde izquierdo en #4CAF50.
+  - Incluir numeración de páginas en gris 500 #6B7280.
+
+
+===============================================================================
+1. QUÉ ES ESTE MÓDULO
+===============================================================================
+
+El módulo de Proyección Manual permite crear un análisis de crédito hipotecario
+digitando a mano todos los datos del extracto, sin depender de la extracción
+automática con inteligencia artificial.
+
+El resultado alimenta exactamente los mismos cálculos, resúmenes y proyecciones
+que un análisis extraído automáticamente. La única diferencia es el origen de
+los datos.
+
+CUÁNDO USARLO
+
+  - El PDF del extracto tiene un formato que la extracción automática no lee
+    bien, o está escaneado con mala calidad.
+  - El extracto reporta cifras que no describen el crédito real (ver el
+    capítulo 10, "Casos especiales").
+  - El banco entregó información complementaria por otro canal (por ejemplo una
+    proyección de pagos aparte) y esos son los valores correctos.
+  - Se necesita corregir un análisis cuyo cálculo automático quedó bloqueado.
+
+QUÉ LO DIFERENCIA
+
+  El análisis creado por este módulo queda marcado en el historial con el estado
+  "Validado manualmente". Eso indica que un administrador revisó y digitó cada
+  cifra, y da trazabilidad sobre quién respondió por los datos.
+
+
+===============================================================================
+2. CÓMO ACCEDER
+===============================================================================
+
+  1. Iniciar sesión con una cuenta de rol ADMIN.
+  2. En la barra lateral izquierda, hacer clic en "Proyección manual".
+
+La ruta directa es:  /dashboard/admin/proyeccion-manual
+
+Si la opción no aparece o está deshabilitada, la cuenta no tiene rol ADMIN.
+
+
+===============================================================================
+3. ANTES DE EMPEZAR: QUÉ TENER A LA MANO
+===============================================================================
+
+  - El PDF del extracto del crédito (obligatorio adjuntarlo).
+  - La contraseña del PDF, si está protegido.
+  - Los datos de contacto del cliente: nombre completo, cédula, correo y
+    teléfono. Estos NO vienen en el extracto y hay que pedirlos aparte.
+  - Los ingresos mensuales del cliente.
+  - Si el banco entregó una proyección de pagos por separado, tenerla a mano:
+    puede contener la cuota contractual real.
+
+RECOMENDACIÓN
+  Llenar el formulario con el extracto abierto al lado. Cada campo de este
+  manual indica de dónde sale el dato dentro del extracto.
+
+
+===============================================================================
+4. ESTRUCTURA DEL FORMULARIO
+===============================================================================
+
+El formulario está dividido en bloques. Los campos marcados con asterisco (*)
+son obligatorios. Algunos bloques aparecen o desaparecen según lo que se
+seleccione (ver capítulo 6).
+
+Orden de los bloques:
+
+  A. Extracto y banco
+  B. Datos del cliente
+  C. Identificación del crédito
+  D. Saldos y cuotas
+  E. Tasas de interés
+  F. Cuota mensual y seguros
+  G. Beneficio FRECH
+  H. Pagos acumulados
+  I. Datos UVR (solo si el sistema es UVR)
+  J. Componentes del período
+  K. Opciones de abono a proyectar
+  L. Totales calculados (solo lectura)
+
+
+-------------------------------------------------------------------------------
+BLOQUE A — EXTRACTO Y BANCO
+-------------------------------------------------------------------------------
+
+Banco *
+  Lista desplegable. Seleccionar la entidad del crédito.
+
+Contraseña del PDF (si aplica)
+  Solo si el archivo está protegido. Si el PDF tiene contraseña y no se
+  suministra, el sistema avisa y no permite continuar.
+
+PDF del extracto *
+  Botón para adjuntar el archivo. Solo se aceptan archivos PDF.
+  Una vez seleccionado se muestra el nombre del archivo debajo del botón.
+
+
+-------------------------------------------------------------------------------
+BLOQUE B — DATOS DEL CLIENTE
+-------------------------------------------------------------------------------
+
+Si la cédula o el correo ya existen en la plataforma, el sistema reutiliza ese
+cliente y actualiza sus datos. No se crean duplicados.
+
+Nombre completo *
+  Nombre y apellidos del titular, tal como debe aparecer en la propuesta.
+
+Cédula *
+  Solo números. Mínimo 5 dígitos.
+
+Email *
+  Debe ser un correo válido. Se normaliza a minúsculas.
+
+Teléfono *
+  Solo números. Mínimo 7 dígitos.
+
+Ingresos mensuales *
+  Ingreso declarado por el cliente. No viene en el extracto.
+
+Capacidad de pago máxima
+  Tope mensual que el cliente puede destinar al crédito. Opcional.
+
+Tipo de contrato
+  Lista desplegable: Indefinido, Término fijo, Independiente, Prestación de
+  servicios, Otro.
+
+
+-------------------------------------------------------------------------------
+BLOQUE C — IDENTIFICACIÓN DEL CRÉDITO
+-------------------------------------------------------------------------------
+
+Número del crédito *
+  Tal como aparece en el extracto.
+
+Sistema de amortización *
+  PESOS o UVR. Esta selección determina si aparece el bloque de datos UVR.
+
+Plan del crédito
+  Descripción del producto. Ejemplo: "Cuota constante en UVR - VIS".
+
+Fecha del extracto *
+  La fecha de corte, no la fecha de pago. En los extractos de Bancolombia es el
+  campo "Fecha en que se generó el extracto". En Banco de Bogotá es "Fecha de
+  corte".
+
+Fecha de desembolso
+  Fecha en que se entregó el crédito. Es necesaria para estimar la vigencia del
+  beneficio FRECH.
+
+Plazo total (meses)
+  Plazo original pactado. Si se deja vacío, el sistema toma el número de cuotas
+  pactadas.
+
+
+-------------------------------------------------------------------------------
+BLOQUE D — SALDOS Y CUOTAS
+-------------------------------------------------------------------------------
+
+Valor prestado *
+  Monto original desembolsado. En Bancolombia es "Valor desembolso"; en Banco de
+  Bogotá es "Monto aprobado".
+
+  ATENCIÓN: este NO es el saldo actual. Son dos cifras distintas y ambas se
+  piden por separado.
+
+Saldo capital *
+  Lo que el cliente debe a la fecha del extracto. En Bancolombia es "Saldo a la
+  fecha en que se generó el extracto".
+
+  Esta es la cifra base de toda la proyección. En créditos UVR suele ser MAYOR
+  que el valor prestado, porque el saldo se indexa con la inflación.
+
+Total por pagar del período
+  Lo que el cliente debe pagar este mes.
+
+Cuotas pactadas *
+  Número total de cuotas del crédito. Normalmente 360 o 180.
+
+Cuotas pagadas *
+  Cuántas ha pagado hasta la fecha del extracto.
+
+Cuotas por pagar *
+  Cuántas le faltan. En Bancolombia es "Nro. cuotas pendientes para pago total".
+
+Nro. cuota a cancelar
+  Número de la cuota que se está cobrando en el extracto.
+
+Cuotas vencidas
+  Cuotas en mora.
+
+  ATENCIÓN: si este valor es mayor a 0, el sistema BLOQUEA la generación de
+  proyecciones. Un crédito en mora no se puede proyectar con la cuota corriente.
+
+
+-------------------------------------------------------------------------------
+BLOQUE E — TASAS DE INTERÉS (EFECTIVA ANUAL)
+-------------------------------------------------------------------------------
+
+Se puede escribir tanto 7,47 como 0,0747: el sistema interpreta ambas como
+7,47% efectivo anual. El valor máximo aceptado es 100.
+
+Tasa cobrada E.A. *
+  La tasa que el banco está aplicando hoy. Es la que se usa para calcular los
+  intereses de la proyección.
+
+Tasa pactada E.A.
+  La tasa plena del contrato original. Importante en créditos con FRECH: es la
+  tasa a la que vuelve el crédito cuando se acaba el subsidio.
+
+Tasa subsidiada E.A.
+  Los puntos que cubre el gobierno, si aplica.
+
+Tasa de mora E.A.
+  Tasa de interés moratorio pactada.
+
+
+-------------------------------------------------------------------------------
+BLOQUE F — CUOTA MENSUAL Y SEGUROS
+-------------------------------------------------------------------------------
+
+Este es el bloque más delicado del formulario. Leer el capítulo 10 antes de
+llenarlo si el crédito tiene algún beneficio o subsidio.
+
+Cuota completa aproximada *
+  Cuota total facturada, incluyendo seguros.
+
+Cuota sin seguros
+  Solo capital más intereses, sin seguros ni comisiones.
+
+Cuota que paga el cliente
+  Cuota neta después de descontar el subsidio FRECH. Si el crédito no tiene
+  subsidio, se deja vacío.
+
+Seguro de vida
+Seguro de incendio
+Seguro de terremoto
+  Los tres valores mensuales por separado. El sistema los suma
+  automáticamente. Si el extracto trae incendio y terremoto en una sola línea,
+  registrar el total en "Seguro de incendio" y dejar terremoto en cero.
+
+
+-------------------------------------------------------------------------------
+BLOQUE G — BENEFICIO FRECH
+-------------------------------------------------------------------------------
+
+¿Cuenta con beneficio FRECH?
+  Casilla de verificación. Al activarla aparecen los campos siguientes.
+  Si el extracto muestra "Valor subsidio Gobierno" en cero, dejarla desmarcada.
+
+Beneficio FRECH mensual *  (obligatorio solo si la casilla está activa)
+  Valor mensual que aporta el gobierno.
+
+FRECH recibido hasta hoy
+  Total acumulado que el gobierno ha aportado. Si se deja vacío, el sistema lo
+  calcula como beneficio mensual × cuotas pagadas.
+
+Inicio de vigencia FRECH
+Fin de vigencia FRECH
+  Fechas del subsidio. El FRECH de vivienda VIS suele durar 84 meses (7 años)
+  desde el desembolso.
+
+NOTA IMPORTANTE
+  Si se desmarca la casilla, el sistema limpia automáticamente todos los campos
+  de subsidio. No quedan residuos de datos.
+
+
+-------------------------------------------------------------------------------
+BLOQUE H — PAGOS ACUMULADOS
+-------------------------------------------------------------------------------
+
+Pagado por el cliente hasta hoy
+  Total que el cliente ha desembolsado de su bolsillo desde que inició el
+  crédito. Si se deja vacío, el sistema lo estima como cuota del cliente ×
+  cuotas pagadas.
+
+  Cuando se digita un valor aquí, el sistema lo respeta como dato duro y no lo
+  sobrescribe con la estimación.
+
+
+-------------------------------------------------------------------------------
+BLOQUE I — DATOS UVR
+-------------------------------------------------------------------------------
+
+Este bloque solo aparece cuando el sistema de amortización es UVR.
+
+Saldo capital en UVR *
+Valor UVR a la fecha *
+Valor de la cuota en UVR
+  Admiten hasta 4 decimales.
+
+  ATENCIÓN sobre "Valor de la cuota en UVR": en algunos extractos este valor
+  corresponde a la cuota ya rebajada por un beneficio, no a la cuota
+  contractual. Si es el caso, dejar el campo vacío y registrar la cuota
+  contractual en el bloque F. Ver el capítulo 10.
+
+
+-------------------------------------------------------------------------------
+BLOQUE J — COMPONENTES DEL PERÍODO
+-------------------------------------------------------------------------------
+
+Desglose del último pago reportado en el extracto. Son opcionales y sirven
+principalmente para auditoría.
+
+Capital abonado en el período
+Intereses corrientes del período
+Intereses de mora
+Otros cargos
+
+
+-------------------------------------------------------------------------------
+BLOQUE K — OPCIONES DE ABONO A PROYECTAR
+-------------------------------------------------------------------------------
+
+Abono opción 1
+Abono opción 2
+Abono opción 3
+  Los tres montos de abono extra mensual que se quieren proyectar. Vienen
+  precargados en 200.000, 300.000 y 400.000 y se pueden cambiar.
+
+
+-------------------------------------------------------------------------------
+BLOQUE L — TOTALES CALCULADOS (SOLO LECTURA)
+-------------------------------------------------------------------------------
+
+Este bloque no se llena: se actualiza solo, en tiempo real, a medida que se
+digitan los datos. Sirve para verificar antes de guardar.
+
+Cuota que paga el cliente
+  Cuota completa menos el beneficio FRECH.
+
+Pagado por el cliente
+  Lo declarado, o la estimación por cuotas pagadas.
+
+FRECH acumulado
+  Lo declarado, o beneficio mensual × cuotas pagadas.
+
+Total abonado al crédito
+  Suma de lo que puso el cliente más lo que puso el gobierno. Es el total que
+  ha recibido el banco.
+
+CÓMO USARLO
+  Comparar estas cuatro cifras contra el extracto antes de guardar. Si alguna se
+  ve desproporcionada, hay un dato mal digitado más arriba.
+
+
+===============================================================================
+5. CÓMO ESCRIBIR LOS NÚMEROS
+===============================================================================
+
+El formulario usa el formato colombiano:
+
+  - El punto separa los miles:      1.148.411
+  - La coma separa los decimales:   1.148.411,97
+
+Se puede escribir de corrido, sin puntos: el campo los agrega solo mientras se
+escribe. Para los decimales hay que usar coma.
+
+Decimales admitidos por tipo de campo:
+
+  Campos de dinero          2 decimales
+  Campos de tasa            4 decimales
+  Campos UVR                4 decimales
+  Campos de cantidad        sin decimales (cuotas, meses, cédula, teléfono)
+
+Los campos de tasa no llevan separador de miles.
+
+
+===============================================================================
+6. CAMPOS QUE APARECEN Y DESAPARECEN
+===============================================================================
+
+El formulario se adapta para no pedir datos que no aplican:
+
+  Si "Sistema de amortización" = UVR
+      → aparece el bloque I (Datos UVR) y sus dos primeros campos pasan a ser
+        obligatorios.
+
+  Si "Sistema de amortización" = PESOS
+      → el bloque I desaparece por completo.
+
+  Si "¿Cuenta con beneficio FRECH?" está marcado
+      → aparecen el valor mensual (obligatorio), el acumulado y las dos fechas
+        de vigencia.
+
+  Si está desmarcado
+      → esos campos desaparecen y se limpian.
+
+
+===============================================================================
+7. VALIDACIONES
+===============================================================================
+
+El sistema no deja guardar si alguna de estas reglas no se cumple. El mensaje
+aparece en pantalla indicando exactamente qué falla.
+
+COHERENCIA DE CUOTAS
+
+  - Cuotas pagadas + cuotas por pagar no puede superar las cuotas pactadas.
+  - Las cuotas vencidas no pueden superar las cuotas por pagar.
+
+COHERENCIA DE FECHAS
+
+  - La fecha del extracto no puede ser anterior a la fecha de desembolso.
+  - La vigencia FRECH no puede terminar antes de empezar.
+
+COHERENCIA DE MONTOS
+
+  - El beneficio FRECH no puede ser mayor o igual a la cuota completa.
+  - La cuota sin seguros no puede superar la cuota con seguros.
+
+TASAS
+
+  - Ninguna tasa efectiva anual puede superar el 100%.
+
+CRÉDITOS UVR
+
+  - Se exigen el saldo de capital en UVR y el valor de la UVR a la fecha.
+
+BENEFICIO FRECH
+
+  - Si se marca que tiene FRECH, hay que registrar el valor mensual.
+
+ARCHIVO
+
+  - El PDF es obligatorio.
+  - Si está protegido, hay que suministrar la contraseña correcta.
+
+AYUDA EN PANTALLA
+  Mientras falten campos obligatorios, aparece una caja ámbar con la lista de lo
+  que falta, y el botón de guardar permanece deshabilitado.
+
+
+===============================================================================
+8. GUARDAR
+===============================================================================
+
+Al presionar "Guardar y abrir proyecciones":
+
+  1. El sistema valida todo el formulario.
+  2. Guarda el PDF (lo desencripta antes si tenía contraseña).
+  3. Crea o actualiza el cliente.
+  4. Crea el análisis con estado "Validado manualmente".
+  5. Redirige automáticamente a la pantalla de proyecciones de ese crédito.
+
+Si algo falla, aparece un mensaje con el motivo concreto y no se pierde lo
+digitado.
+
+DÓNDE QUEDA REGISTRADO
+  En "Ver historial de análisis", el crédito aparece con la etiqueta
+  "Validado manualmente" en la columna de estado.
+
+
+===============================================================================
+9. GENERAR LAS PROYECCIONES
+===============================================================================
+
+Después de guardar se llega a la pantalla de proyecciones.
+
+PASO 1 — Definir el IPC proyectado
+
+  Solo aplica a créditos UVR. Es la inflación anual estimada con la que crecerá
+  la UVR durante la proyección.
+
+  Referencias de mercado:
+      Suave / Bancos          2,2%
+      Medio / Meta Banrep     3,0% a 3,5%
+      Alto                    5,0%
+
+  Para estudios de 2026 el valor recomendado es 3.
+
+  El IPC tiene un efecto muy fuerte sobre el resultado. A modo de ejemplo, en un
+  crédito de 66 millones de saldo:
+
+      IPC 2,2%   →  costo total proyectado  187.706.558
+      IPC 3,0%   →  costo total proyectado  211.274.693
+      IPC 6,0%   →  costo total proyectado  339.653.871
+
+  El sistema limita el IPC a un máximo de 30% anual para evitar errores de
+  digitación.
+
+PASO 2 — Revisar los abonos
+
+  Se pueden ajustar los tres montos antes de calcular.
+
+PASO 3 — Calcular proyecciones
+
+  El sistema genera la comparación entre el escenario actual y las tres
+  opciones.
+
+VERIFICACIÓN DE COHERENCIA
+  La tabla es coherente cuando se cumple:
+
+      Ahorro = Total del escenario actual − Total de la opción
+
+  Si no cuadra, significa que las proyecciones guardadas son de un cálculo
+  anterior con otro IPC. La solución es volver a presionar "Calcular
+  proyecciones".
+
+
+===============================================================================
+10. CASOS ESPECIALES Y ERRORES FRECUENTES
+===============================================================================
+
+-------------------------------------------------------------------------------
+CASO 1 — El extracto reporta una cuota que no amortiza
+-------------------------------------------------------------------------------
+
+Es el error más costoso y el más difícil de detectar.
+
+QUÉ PASA
+  Algunos extractos muestran como "cuota" el valor ya rebajado por un beneficio,
+  no la cuota contractual. Si se digita esa cifra, la proyección arroja
+  resultados absurdos: plazos de 100 años y costos de miles de millones.
+
+CÓMO DETECTARLO
+  Comparar la cuota contra el interés mensual del saldo. Si la cuota es menor
+  que el interés, el crédito nunca se pagaría, lo cual es imposible en un
+  crédito vigente.
+
+  Cálculo rápido del interés mensual aproximado:
+
+      interés mensual ≈ saldo capital × (tasa cobrada anual ÷ 12)
+
+  Ejemplo real: un extracto reportaba una cuota de 543.918 sobre un saldo de
+  177.833.619 al 6,40% anual. El interés mensual de ese saldo es cercano a
+  921.712. La cuota no alcanzaba ni para los intereses.
+
+CÓMO RESOLVERLO
+  Pedir al banco la proyección de pagos del crédito. Ese documento trae la cuota
+  contractual real (capital + intereses). En el ejemplo anterior era 1.097.678,
+  no 543.918.
+
+  Registrar esa cuota contractual en el bloque F y dejar vacío el campo "Valor
+  de la cuota en UVR" del bloque I.
+
+-------------------------------------------------------------------------------
+CASO 2 — Créditos con FRECH
+-------------------------------------------------------------------------------
+
+El FRECH es un subsidio sobre la TASA de interés, no sobre la cuota. El gobierno
+cubre unos puntos porcentuales durante un plazo determinado.
+
+QUÉ REGISTRAR
+  - Tasa cobrada: la que el banco aplica hoy, ya con el subsidio.
+  - Tasa pactada: la tasa plena del contrato, a la que volverá el crédito.
+  - Beneficio FRECH mensual: el valor que aporta el gobierno.
+  - Fechas de vigencia, si el extracto las trae.
+
+QUÉ SUCEDE AL VENCER EL SUBSIDIO
+  El plazo del crédito no se altera (alargarlo constituiría una reestructuración
+  y es causal de pérdida anticipada del beneficio). La tasa vuelve a la pactada
+  y la cuota mensual sube para amortizar el saldo en el tiempo que queda.
+
+VERIFICACIÓN
+  Si la cuota que se digita y la tasa cobrada no son coherentes con las cuotas
+  pendientes que reporta el extracto, el sistema bloquea la proyección con un
+  mensaje que indica en cuántas cuotas se liquidaría el saldo según los datos
+  digitados frente a las que reporta el banco. Es señal de que la cuota y la
+  tasa corresponden a dos lecturas distintas del mismo crédito.
+
+-------------------------------------------------------------------------------
+CASO 3 — Créditos en mora
+-------------------------------------------------------------------------------
+
+Si "Cuotas vencidas" es mayor a cero, el sistema no genera proyecciones. El
+saldo vencido no puede tratarse como cuota recurrente. Hay que normalizar el
+crédito antes de proyectar.
+
+-------------------------------------------------------------------------------
+CASO 4 — Confundir valor prestado con saldo
+-------------------------------------------------------------------------------
+
+Son dos campos distintos y ambos son necesarios:
+
+  Valor prestado   lo que el banco entregó en su momento
+  Saldo capital    lo que el cliente debe hoy
+
+En créditos UVR el saldo suele ser mayor que el valor prestado, porque se indexa
+con la inflación. No es un error del sistema.
+
+-------------------------------------------------------------------------------
+CASO 5 — El PDF está protegido
+-------------------------------------------------------------------------------
+
+Si el archivo tiene contraseña y no se suministra, el sistema avisa. Al
+digitarla correctamente, el PDF se guarda ya desencriptado.
+
+
+===============================================================================
+11. GLOSARIO
+===============================================================================
+
+UVR
+  Unidad de Valor Real. Unidad de cuenta que se ajusta con la inflación. En un
+  crédito en UVR el saldo crece con el IPC.
+
+E.A.
+  Efectiva Anual. Forma de expresar una tasa de interés en Colombia.
+
+FRECH
+  Fondo de Reserva para la Estabilización de la Cartera Hipotecaria. Subsidio
+  del gobierno sobre los puntos de interés de créditos de vivienda.
+
+VIS / VIP
+  Vivienda de Interés Social / Vivienda de Interés Prioritario.
+
+IPC
+  Índice de Precios al Consumidor. Mide la inflación.
+
+Cuota contractual
+  Capital más intereses, sin seguros. Es la que realmente amortiza la deuda.
+
+Abono extra
+  Pago mensual adicional a la cuota, destinado a reducir capital.
+
+Veces pagado
+  Cuántas veces el saldo actual terminará pagando el cliente a lo largo del
+  crédito. Un valor de 3,18 significa que pagará 3,18 veces lo que debe hoy.
+
+
+===============================================================================
+12. RESUMEN DE UN VISTAZO
+===============================================================================
+
+  1. Sidebar → Proyección manual
+  2. Adjuntar el PDF y seleccionar el banco
+  3. Datos del cliente (nombre, cédula, correo, teléfono, ingresos)
+  4. Identificación del crédito (número, sistema, fechas)
+  5. Saldos y cuotas — no confundir valor prestado con saldo
+  6. Tasas — se acepta 7,47 o 0,0747
+  7. Cuota y seguros — verificar que la cuota cubra el interés mensual
+  8. FRECH, si aplica
+  9. Datos UVR, si aplica
+ 10. Abonos a proyectar
+ 11. Revisar el bloque de totales calculados
+ 12. Guardar y abrir proyecciones
+ 13. Definir el IPC (3 para estudios de 2026) y calcular
+
+===============================================================================
+FIN DEL DOCUMENTO
+===============================================================================
